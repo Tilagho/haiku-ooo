@@ -28,4 +28,4 @@ function frame(now) {
   if (!clock.manual) { const dt = Math.min(0.05, (now - last) / 1000); flush(now); tickers.forEach(f => f(dt, now)); }
   last = now; requestAnimationFrame(frame);
 }
-requestAnimationFrame(frame);
+if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(frame);   // (no-op when imported by Node tests)

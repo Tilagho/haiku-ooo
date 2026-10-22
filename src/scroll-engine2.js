@@ -13,17 +13,16 @@
 // APPEND STABILITY. The scroll grows upward (y up, art row 0 = oldest). Region k only writes rows >= its own start
 // row, and every region's content is fixed by (seed, k). So rows below the newest region's start never change, and
 // poems are only placed in rows that are already final.
-import STAMPS from './stamps.js';
 import { measure, lineHeight, font, rng, hash, sealDims } from './brush-text.js';
 
 export const SCROLL_W = 390, AW = 130, PX = SCROLL_W / AW;   // art grid: 130 px across, 3 units per art px
 export const U = 1.5;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-export const STAMP_IDS = Object.keys(STAMPS);
 
 // the signature shows the reader's LOCAL date, but layout reserves the widest possible date, so geometry (and
 // therefore placement) is identical on every client whatever its time zone
-export const sigAuthor = post => `${post.sample ? 'sample' : post.author || 'anon'}, `;
+// an unsigned post (author '') has no author at all: the byline is just the date, and the seal hugs it
+export const sigAuthor = post => post.sample ? 'sample, ' : post.author === '' ? '' : `${post.author || 'anon'}, `;
 export function signatureFor(post) { const d = new Date(post.createdAt); return `${sigAuthor(post)}${MONTHS[d.getMonth()]} ${d.getDate()}`; }
 let DATE_W = 0;
 const dateW = Sm => DATE_W || (DATE_W = Math.max(...MONTHS.flatMap(m => [28, 30, 31].map(d => measure(`${m} ${d}`, Sm)))));
@@ -325,34 +324,10 @@ export class ScrollComposer {
     }
     if (!best) { const L = layouts[0]; best = { L, x: 6, y: Math.ceil((this.prevTop + gap) / PX) * PX, bw: Math.ceil(L.w * L.u / PX), bh: Math.ceil(L.h * L.u / PX), d1: 99, fallback: true }; }
     const { L, x, y, bw, bh } = best, W = bw * PX, Hh = bh * PX;
-    const poem = { n, post, x, y, w: W, h: Hh, layout: L, overlap: best.d1, score: best.s, fallback: !!best.fallback, stamp: null };
+    const poem = { n, post, x, y, w: W, h: Hh, layout: L, overlap: best.d1, score: best.s, fallback: !!best.fallback };
     this.rects.push(poem); this.prevTop = y + Hh;
-    const hs = hash('joke', n, post.id);            // a playful hanko for roughly one poem in seven (independent of the art seed)
-    if (hs % 7 === 3) poem.stamp = this.placeStamp(poem, STAMP_IDS[(hs >>> 8) % STAMP_IDS.length], R);
     this.poems.push(poem);
     A.ensure(Math.ceil((this.height + 900) / PX));
     return { poem };
-  }
-  placeStamp(p, id, R) {
-    // a gag hanko somewhere around the poem box, never on its letters, other poems or dark ink
-    const s = STAMPS[id], su = s.u || U, w = Math.ceil(s.w * su), h = Math.ceil(s.h * su), A = this.art, L = p.layout, F = font('main'), Sm = font('small');
-    const top = p.y + p.h, rects = L.lines.map(l => [l.x, l.y, measure(l.t, F), lineHeight(F)])
-      .concat([[L.sig.x, L.sig.y, measure(L.sig.t, Sm) + 30, 24]])
-      .map(([x, y, rw, rh]) => [p.x + x * L.u - 4, top - (y + rh) * L.u - 4, p.x + (x + rw) * L.u + 4, top - y * L.u + 4]);
-    const want = R() < .5 ? [p.x + p.w + w / 2, p.y + p.h * .3] : [p.x - w / 2, p.y + p.h * .7], cands = [];
-    for (let y = p.y - h - 9; y <= p.y + p.h + 9; y += PX) for (let x = p.x - w - 12; x <= p.x + p.w + 12; x += PX) cands.push([x, y]);
-    cands.sort((u, v) => Math.hypot(u[0] + w / 2 - want[0], u[1] + h / 2 - want[1]) - Math.hypot(v[0] + w / 2 - want[0], v[1] + h / 2 - want[1]));
-    for (const [x, y] of cands) {
-      if (x < 6 || x + w > SCROLL_W - 6 || y < 0) continue;
-      if (rects.some(r => x < r[2] && x + w > r[0] && y < r[3] && y + h > r[1])) continue;
-      if (!this.clear(x, y, w, h, 6, p)) continue;
-      let bad = false;
-      for (let r = Math.floor(y / PX); r < Math.ceil((y + h) / PX) && !bad; r++) for (let c = Math.floor(x / PX); c < Math.ceil((x + w) / PX); c++) if (A.ink(c, r) > .35) { bad = true; break; }
-      if (bad) continue;
-      const st = { ...s, id, x, y, w, h, fw: s.w, fh: s.h };
-      this.rects.push(st); this.prevTop = Math.max(this.prevTop, y + h);
-      return st;
-    }
-    return null;
   }
 }

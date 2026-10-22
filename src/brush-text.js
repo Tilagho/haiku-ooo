@@ -2,6 +2,8 @@
 // always horizontal, drawn pixel by pixel with a very mild seeded unevenness.
 // Measuring is pure arithmetic on fixed advances, so layout is identical on every device.
 import FONTS from './brush-font.js';
+import KANJI from './kanji-glyphs.js';
+import { sealLayout } from './kanji.js';
 
 const decoded = new Map();
 function glyph(font, ch) {
@@ -47,20 +49,35 @@ export function drawLine(buf, text, x, y, f, rand, { color = [24, 22, 26], alpha
   }
 }
 
-// Chunky chibi number seal: a straight, square red block (zero rotation) with the post number cut out in 2x pixel digits.
-const DIG = ['111101101101111', '010110010010111', '111001111100111', '111001111001111', '101101111001001', '111100111001111', '111100111101111', '111001001010010', '111101111101111', '111101111001111'];
-export function sealDims(n) { const k = String(n).length; return [Math.max(16, k * 8 + 4), 16]; }
+// Number seal: a real red hanko, perfectly straight (zero rotation), upright oval or square, with the post number
+// in KANJI numerals (src/kanji.js) carved out in cream: Misaki Gothic 8x8 glyphs, doubled for 1-2 characters.
+// A thin carved ring follows the rim, a few pixels are worn pale, and the edge has a couple of nicks.
+const SEAL_RED = [214, 52, 40], SEAL_PAPER = [248, 240, 222];
+export function sealDims(n) { const L = sealLayout(n); return [L.W, L.H]; }
 export function sealSize(n) { return sealDims(n)[0]; }
-export function drawSeal(buf, n, x, y, rand) {
-  const s = String(n), [W, H] = sealDims(n), RED = [214, 52, 40], PAPER = [248, 240, 222], r = 1.5;   // square seal, corners only just softened
+export function drawSeal(buf, n, x, y, rand, { red = SEAL_RED, paper = SEAL_PAPER } = {}) {
+  const L = sealLayout(n), { W, H } = L;
   const put = (px, py, c, a = 255) => { if (px < 0 || py < 0 || px >= buf.w || py >= buf.h) return; const i = (py * buf.w + px) * 4; buf.data[i] = c[0]; buf.data[i + 1] = c[1]; buf.data[i + 2] = c[2]; buf.data[i + 3] = a; };
-  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
-    const cx = Math.min(Math.max(i, r - .5), W - r - .5), cy = Math.min(Math.max(j, r - .5), H - r - .5);
-    if ((i - cx) ** 2 + (j - cy) ** 2 > r * r) continue;
-    put(x + i, y + j, RED, rand() < 0.02 ? 170 : 255);
+  // inside(i, j, k): pixel centre inside the shape shrunk by k px
+  const inside = L.shape === 'oval'
+    ? (i, j, k = 0) => (((i + .5) - W / 2) / (W / 2 - k)) ** 2 + (((j + .5) - H / 2) / (H / 2 - k)) ** 2 <= 1
+    : (i, j, k = 0) => { const r = 1.5, a = k, b = W - 1 - k, c = H - 1 - k; if (i < a || j < a || i > b || j > c) return false;
+        const cx = Math.min(Math.max(i, a + r - .5), b - r + .5), cy = Math.min(Math.max(j, a + r - .5), c - r + .5); return (i - cx) ** 2 + (j - cy) ** 2 <= r * r; };
+  const cut = new Uint8Array(W * H);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (inside(i, j, 2) && !inside(i, j, 3)) cut[j * W + i] = 1;   // carved ring inside a 2 px rim
+  for (const c of L.cells) {
+    const g = KANJI[c.ch]; if (!g) continue;
+    for (let gy = 0; gy < 7; gy++) for (let gx = 0; gx < 7; gx++) if (g[gy][gx] === '1')
+      for (let a = 0; a < L.scale; a++) for (let b = 0; b < L.scale; b++) { const X = c.x + gx * L.scale + a, Y = c.y + gy * L.scale + b; if (X >= 0 && Y >= 0 && X < W && Y < H) cut[Y * W + X] = 1; }
   }
-  const tw = s.length * 8 - 2, ox = x + Math.floor((W - tw) / 2), oy = y + 3;
-  [...s].forEach((d, k) => { const m = DIG[+d]; for (let q = 0; q < 15; q++) if (m[q] === '1') for (let a = 0; a < 2; a++) for (let b = 0; b < 2; b++) put(ox + k * 8 + (q % 3) * 2 + a, oy + Math.floor(q / 3) * 2 + b, PAPER); });
+  const nicks = new Set([Math.floor(rand() * W), Math.floor(rand() * H) + 1000]);          // two tiny chips in the rim
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    if (!inside(i, j)) continue;
+    const edge = !inside(i, j, 1);   // nicks only bite the outermost pixel row
+    if (edge && ((j === 0 || j === H - 1) && nicks.has(i) || (i === 0 || i === W - 1) && nicks.has(j + 1000))) continue;
+    if (cut[j * W + i]) put(x + i, y + j, paper);
+    else put(x + i, y + j, red, rand() < 0.025 ? 175 : 255);
+  }
 }
 
 // Pixel DITHERED paper backing: every transparent pixel near ink gets paper colour with a probability that falls
