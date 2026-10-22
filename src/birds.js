@@ -8,10 +8,14 @@
 //   a leader along a lane, plus separation, gusty wind, altitude drift and its own flap rate / glides.
 // - The lane comes from skyLanes() in scroll-engine2.js: emptiest paper, above the mountains, clear of poems.
 //   Birds that still stray over a poem box are nudged out of it and drawn faint.
-// - Round 14: a flight every 6-18 s (clock time while the board is visible), up to 3 in the air at once, ~50/50 left /
-//   right, now and then two groups at once crossing opposite ways on different lanes; kinds few (2-3), small (4-8),
-//   flock (15-30), skein (30-50). Paused while the tab is hidden or compose is open; off under prefers-reduced-motion.
-//   ?birds=few|small|flock|skein forces the kind (first flight after ~1 s); ?birds=off disables.
+// - Round 14: a flight every 6-18 s (clock time while the board is visible), ~50/50 left / right, now and then two
+//   groups at once crossing opposite ways on different lanes. Paused while the tab is hidden or compose is open; off
+//   under prefers-reduced-motion.
+// - Round 14.1: never more than 12 birds in a flight and at most 2 flights at once (<= 19 birds on screen: a second
+//   flight beside an 8-12 skein is always a pair / trio or a small group). Kinds: few = a pair or trio (2-3, ~45% of
+//   flights), small (4-7, ~30%), skein (8-12, ~25%, the same loose skein that loosens into a V and reforms).
+//   'flock' is kept as another name for an 8-12 skein. Same frequency as round 14.
+//   ?birds=few|small|skein|flock forces the kind (first flight after ~1 s); ?birds=off disables.
 //   Captures: HB.view.birds.spawn(kind, { dir }) / spawnPair() with HB.clock in manual mode; .flocks = all in the air.
 // The sim and sprite masks are pure (Node-testable); only mountBirds() touches the DOM.
 import { SCROLL_W, skyLanes } from './scroll-engine2.js';
@@ -58,9 +62,9 @@ export class Flock {
   // mode 'few' | 'flock'; dir +1 = left to right; lane {y, slope}; poems [{x,y,w,h}] in scroll units
   constructor({ mode = 'few', dir = 1, lane = { y: 400, slope: 0 }, seed = 1, poems = [], lean = 0 } = {}) {
     const R = this.R = rng(hash('flock', seed)); this.seed = seed; this.mode = mode; this.dir = dir; this.lane = lane; this.poems = poems; this.t = 0;
-    const n = mode === 'few' ? 2 + (R() < .5) : mode === 'small' ? 4 + Math.floor(R() * 5) : mode === 'skein' ? 30 + Math.floor(R() * 21) : 15 + Math.floor(R() * 16);
+    const n = mode === 'few' ? 2 + (R() < .5) : mode === 'small' ? 4 + Math.floor(R() * 4) : 8 + Math.floor(R() * 5);   // round 14.1: <= 12 a flight
     if (mode === 'small') this.mode = mode = 'few';                    // a small group flies like 'few' (loose), just more of them
-    this.sp = mode === 'few' ? 15 + R() * 6 : mode === 'skein' ? 8.5 + R() * 2.5 : 11 + R() * 4;   // slot spacing (units)
+    this.sp = mode === 'few' ? 15 + R() * 6 : mode === 'skein' ? 10.5 + R() * 3 : 11 + R() * 4;   // slot spacing (units)
     this.speed = mode === 'few' ? 64 + R() * 8 : 56 + R() * 8;       // units / s
     this.form = R() < .5 ? 0 : 1;                                     // 0 skein first, 1 V first; they morph back and forth
     this.lean = lean || (R() < .5 ? -1 : 1);                          // which way the skein trails (up / down the screen)
@@ -140,11 +144,12 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
   // ROUND 14: more birds. A new flight every ~6-18 s (not 15-45), they may overlap; half go each way; now and then two
   // groups cross at once in opposite directions on different lanes. Kinds: a few (2-3), a small group (4-8), a flock
   // (15-30), sometimes a big skein (30-50). Still behind the poems' text, in open sky lanes (skyLanes), over the mist.
-  const NEXT = () => 6 + Math.random() * 12, MAX_FLIGHTS = 3;
+  const NEXT = () => 6 + Math.random() * 12, MAX_FLIGHTS = 2, MAX_FLIGHT = 12;
   let win = null, wait = forced ? 1 : 3 + Math.random() * 5, seed = (Math.random() * 1e9) | 0, n = 0;
   ctl.flocks = [];
   Object.defineProperty(ctl, 'flock', { get: () => ctl.flocks[0] ?? null, set: v => { if (!v) ctl.flocks.length = 0; else if (!ctl.flocks.includes(v)) ctl.flocks.push(v); }, configurable: true });
-  const pickMode = () => { const r = Math.random(); return r < .3 ? 'few' : r < .55 ? 'small' : r < .85 ? 'flock' : 'skein'; };
+  const pickMode = (small = false) => { const r = Math.random() * (small ? .75 : 1); return r < .45 ? 'few' : r < .75 ? 'small' : Math.random() < .5 ? 'skein' : 'flock'; };   // small: no skein (another flight is up)
+  const inAir = () => ctl.flocks.reduce((s, F) => s + F.birds.length, 0);
   const viewWin = () => {   // visible window in scroll units (y up from the scroll bottom)
     const r = view.host.getBoundingClientRect(), s = view.host.clientWidth / SCROLL_W || 1, H = view.composer.height;
     return { lo: H - (innerHeight - r.top) / s, hi: H + r.top / s, H };
@@ -168,7 +173,7 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
     ctl.flocks.push(F); return F;
   };
   // two groups at once, opposite ways (captures / tests too)
-  ctl.spawnPair = (a = pickMode(), b2 = Math.random() < .5 ? 'few' : 'small') => { const d = Math.random() < .5 ? 1 : -1, A = ctl.spawn(a, { dir: d }), B = ctl.spawn(b2, { dir: -d, avoid: A ? [A.lane.y] : null }); return [A, B].filter(Boolean); };
+  ctl.spawnPair = (a = pickMode(), b2 = Math.random() < .6 ? 'few' : 'small') => { const d = Math.random() < .5 ? 1 : -1, A = ctl.spawn(a, { dir: d }), B = ctl.spawn(b2, { dir: -d, avoid: A ? [A.lane.y] : null }); return [A, B].filter(Boolean); };
   const draw = () => {
     g.clearRect(0, 0, cv.width, cv.height);
     for (const F of ctl.flocks) for (const b of F.birds) {
@@ -182,7 +187,7 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
     if (busy()) return;
     if ((wait -= dt) <= 0) {
       wait = NEXT();
-      if (ctl.flocks.length < MAX_FLIGHTS) { if (!forced && Math.random() < .2 && ctl.flocks.length === 0) ctl.spawnPair(); else ctl.spawn(); }
+      if (ctl.flocks.length < MAX_FLIGHTS) { if (!forced && Math.random() < .2 && ctl.flocks.length === 0) ctl.spawnPair(); else ctl.spawn(forced || pickMode(inAir() > 7)); }
     }
     if (!ctl.flocks.length) return;
     const v = viewWin();

@@ -7,9 +7,26 @@
 //   the poem scrolls: each visible poem sways downwind and lifts a hair, in WHOLE font pixels (CSS `translate`, which
 //   composes with any running animation): text stays crisp and readable, no resampling blur, much subtler than the noren.
 // Reduced motion: the gust is scaled to .15 (a mild lean at most). Hooks: HB.wind.gust(v) injects a scroll velocity.
+// Round 14.1, SMOOTHER on fast up/down scrolling: the scroll velocity is low-passed (WIND_TAU, ~150 ms), and the gust
+// follows its target on a slightly over-damped spring (WIND_OMEGA, WIND_DAMP > 1) whose rate is slew-limited
+// (WIND_SLEW per second), so a reversal swings smoothly through centre instead of snapping, and never buzzes. Same
+// target (noren.js gustTarget: same strength), so a steady scroll still blows just as hard. The noren keeps its own
+// leaf-blower gust (stepGust) untouched.
 import { clock } from './clock.js';
-import { stepGust } from './noren.js';
+import { gustTarget } from './noren.js';
 
+export const WIND_TAU = .15, WIND_OMEGA = 13, WIND_DAMP = 1.15, WIND_SLEW = 6.5;
+// one 1/60 s step of the board wind (pure: tested): low-pass the scroll velocity, then a damped, slew-limited follow
+export function stepWind(W, h) {
+  W.vf = (W.vf || 0) + ((W.gustIn || 0) - (W.vf || 0)) * (1 - Math.exp(-h / WIND_TAU));
+  W.gustIn = (W.gustIn || 0) * Math.exp(-h * 9);                                     // scroll input fades if no new scroll events
+  const tgt = gustTarget(W.vf) * (W.gustScale ?? 1), g = W.gust || 0;
+  let gv = (W.gv || 0) + (WIND_OMEGA * WIND_OMEGA * (tgt - g) - 2 * WIND_DAMP * WIND_OMEGA * (W.gv || 0)) * h;
+  gv = Math.max(-WIND_SLEW, Math.min(WIND_SLEW, gv));
+  W.gv = gv; W.gust = g + gv * h;
+  if (!W.gustHist) W.gustHist = new Float32Array(64);
+  W.gustHist.copyWithin(1, 0); W.gustHist[0] = W.gust;
+}
 export const POEM_SWAY = 1.8, POEM_LIFT = 1, POEM_FLUTTER = .9, LAG_FRAMES = 24;
 // a poem's offset in font px for a gust g at time t (pure: tested). Integer steps only.
 export function poemOffset(g, t, phase = 0) {
@@ -18,7 +35,7 @@ export function poemOffset(g, t, phase = 0) {
 }
 
 export function mountWind({ view, reduced = false } = {}) {
-  const W = { gustIn: 0, gust: 0, gustScale: reduced ? .15 : 1, gustHist: new Float32Array(64), acc: 0, t: 0 };
+  const W = { gustIn: 0, vf: 0, gust: 0, gv: 0, gustScale: reduced ? .15 : 1, gustHist: new Float32Array(64), acc: 0, t: 0 };
   {
     let sy = null, st = 0;
     addEventListener('scroll', () => {
@@ -36,7 +53,7 @@ export function mountWind({ view, reduced = false } = {}) {
   const api = { sim: W, get value() { return W.gust; }, gust: v => { W.gustIn = v; }, at: frac => W.gustHist[Math.max(0, Math.min(63, Math.round(frac * LAG_FRAMES)))], poems: on };
   clock.onTick(dt => {
     W.acc = Math.min(.1, W.acc + dt); const h = 1 / 60;
-    while (W.acc >= h) { W.acc -= h; W.t += h; stepGust(W, h); }
+    while (W.acc >= h) { W.acc -= h; W.t += h; stepWind(W, h); }
     if (!on.size) return;
     const H = innerHeight || 1, quiet = Math.abs(W.gust) < .02 && W.gustHist.every(v => Math.abs(v) < .02), c = view?.fontScale?.() || 1;
     const next = [];

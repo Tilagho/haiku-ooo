@@ -23,8 +23,8 @@ export class RedInky {
   // c2's "red ink birth" (rivers from the edges gathering into Inky, washIn below) is cut from c3 but kept here:
   // pages check RedInky.BIRTH (c3: ?birth) before using it.
   static BIRTH = false;
-  constructor({ R = 9, z = 60, bigEyes = false, fury = false } = {}) {
-    this.bigEyes = bigEyes; this.fury = fury;   // c4: larger open eyes; a fuller angry face (brows, 💢 vein, steam, gritted teeth)
+  constructor({ R = 9, z = 60, bigEyes = false, fury = false, chunky = false, worried = false } = {}) {
+    this.bigEyes = bigEyes; this.fury = fury; this.chunky = chunky; this.worried = worried;   // round 14.1: a chunkier body; worried brows by default   // c4: larger open eyes; a fuller angry face (brows, 💢 vein, steam, gritted teeth)
     this.cv = document.createElement('canvas'); this.cv.className = 'inky-canvas red'; this.cv.style.zIndex = z; this.cv.setAttribute('aria-hidden', 'true');
     document.body.appendChild(this.cv); this.ctx = this.cv.getContext('2d');
     this.R = R; this.x = 40; this.fy = 100; this.vx = 0; this.vy = 0; this.floor = null; this.grounded = false;
@@ -33,11 +33,15 @@ export class RedInky {
     this.drops = []; this.puddles = []; this.sparks = []; this.trail = [];
     this.mood = 'happy'; this.look = 0; this.lookY = 0; this.blink = 0; this.nextBlink = 2; this.t = 0; this.spin = 0; this.shiver = 0;
     this.visible = false; this.mode = 'idle'; this.dock = null; this.hanko = false; this.wash = null; this.whipS = null; this.tapping = false;
-    this.resize(); addEventListener('resize', () => this.resize());
+    this.resize(); addEventListener('resize', () => this.resize()); globalThis.visualViewport?.addEventListener('resize', () => this.resize());
     clock.onTick(dt => this.step(dt));
   }
   resize() {
-    this.cw = Math.ceil(innerWidth / P); this.ch = Math.ceil(innerHeight / P);
+    // round 14.1: the canvas covers the largest the viewport can be (keyboard down, Safari's bars collapsed), so a
+    // keyboard opening or closing never leaves him drawn past a stale, shorter canvas (clipped under the roller)
+    const vv = globalThis.visualViewport, H = Math.max(innerHeight, vv ? vv.height + vv.offsetTop : 0, document.documentElement.clientHeight || 0, globalThis.screen?.height || 0);
+    const cw = Math.ceil(innerWidth / P), ch = Math.ceil(H / P); if (cw === this.cw && ch === this.ch && this.img) return;
+    this.cw = cw; this.ch = ch;
     this.cv.width = this.cw; this.cv.height = this.ch; this.cv.style.width = this.cw * P + 'px'; this.cv.style.height = this.ch * P + 'px';
     this.img = this.ctx.createImageData(this.cw, this.ch);
   }
@@ -207,9 +211,10 @@ export class RedInky {
     const R = this.R, cx = this.x + (this.shiver > 0 ? Math.sin(this.t * 70) * .8 : 0), cy = this.fy - R * .92 * this.sy;
     const showBody = this.visible;
     if (showBody) {
-      balls.push([cx, cy, R * .62]);
+      const ch = this.chunky ? 1.12 : 1;                                    // chunky: fatter core + rim balls (a rounder, sturdier blob)
+      balls.push([cx, cy, R * .62 * ch]);
       const sp = this.spin > 0 ? this.spin * 14 : 0, c = Math.cos(sp), s = Math.sin(sp);
-      for (const r of this.rim) balls.push([cx + r.ox * c - r.oy * s, cy + r.ox * s + r.oy * c, R * .42]);
+      for (const r of this.rim) balls.push([cx + r.ox * c - r.oy * s, cy + r.ox * s + r.oy * c, R * .42 * ch]);
       const lean = Math.max(-1.5, Math.min(1.5, -this.vx / 40)) * (this.whipS ? 2 : 1);
       balls.push([cx + lean * .5, cy - R * .7 * this.sy, R * .4], [cx + lean, cy - R * 1.12 * this.sy, R * .24], [cx + lean * 1.4, cy - R * 1.42 * this.sy, R * .12]);
       for (const p of this.trail) balls.push([p.x, p.y, R * .5 * Math.pow(p.life, .8)]);
@@ -241,6 +246,8 @@ export class RedInky {
     const R = this.R, m = this.mood, sx = this.sx, sy = this.sy, k = R / 7;
     const lx = Math.round(this.look * k), ey = Math.round(cy - R * .12 * sy + (this.lookY || 0));
     const ex = [Math.round(cx - 2.6 * k * sx + lx * .6), Math.round(cx + 1.6 * k * sx + lx * .6)];
+    if (!this.bigEyes && this.worried && ex[1] - ex[0] < 4) { ex[0] = Math.round(cx - 2.5 + lx * .6) - 1; ex[1] = ex[0] + 4; }   // small R: two 2 px eyes, 2 px apart
+    if (this.bigEyes && ex[1] - ex[0] < 5) { const c0 = Math.round((ex[0] + ex[1]) / 2); ex[0] = c0 - 3; ex[1] = c0 + 2; }   // round 14.1: small R, still two separate 3 px eyes (2 px apart)
     const W = PAPER;
     put(cx - R * .5, cy - R * .45, HI); put(cx - R * .5, cy - R * .3, HI); put(cx - R * .38, cy - R * .55, HI);
     for (const e of ex) {
@@ -272,15 +279,19 @@ export class RedInky {
         const px = e + (this.look > 0 ? 2 : this.look < 0 ? 0 : 1);
         put(px, ey + py - 1, INK); put(px, ey + py, INK);
         if (m === 'worry') put(e + (left ? 2 : 0), ey - 3, W);
+        else if (this.worried && m !== 'cheer') { if (left) { put(e, ey - 3, W); put(e + 1, ey - 3, W); put(e + 2, ey - 4, W); } else { put(e, ey - 4, W); put(e + 1, ey - 3, W); put(e + 2, ey - 3, W); } }   // worried brows: up in the middle
         continue;
       }
       const eh = k >= 1.2 ? 4 : 3;
       for (let j = 0; j < eh; j++) { put(e, ey + j, W); put(e + 1, ey + j, W); }
       put(e + (this.look > 0 ? 1 : 0), ey + (this.lookY < 0 ? 0 : eh - 1), INK);
       if (m === 'worry') put(e + (e === ex[0] ? 1 : 0), ey - 2, W);
+      else if (this.worried && m !== 'cheer') { if (left) { put(e - 1, ey - 1, W); put(e, ey - 2, W); put(e + 1, ey - 3, W); } else { put(e, ey - 3, W); put(e + 1, ey - 2, W); put(e + 2, ey - 1, W); } }   // worried brows: up in the middle
     }
     const my = Math.round(cy + R * .32 * sy), mx = Math.round(cx - .5 + lx * .5);
-    if (m === 'happy' || m === 'cheer') { put(mx - 1, my, W); put(mx, my + 1, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); put(ex[0] - 2, my - 1, CHEEK); put(ex[1] + 3, my - 1, CHEEK); if (m === 'cheer') { put(mx, my + 2, INK); put(mx + 1, my + 2, INK); } }
+    if (m === 'happy' && this.worried) { put(mx - 1, my + 1, W); put(mx, my, W); put(mx + 1, my, W); put(mx + 2, my + 1, W); }   // a nervous little frown
+    else if (m === 'think' && this.worried) { put(mx, my + 1, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); }
+    else if (m === 'happy' || m === 'cheer') { put(mx - 1, my, W); put(mx, my + 1, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); put(ex[0] - 2, my - 1, CHEEK); put(ex[1] + 3, my - 1, CHEEK); if (m === 'cheer') { put(mx, my + 2, INK); put(mx + 1, my + 2, INK); } }
     else if (m === 'shout') { for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) put(mx + i - 1, my + j - 1, j === 0 ? W : INK); }
     else if (m === 'worry') { put(mx - 1, my + 1, W); put(mx, my, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); const sx2 = cx + R * .9, sy2 = cy - R * .5; put(sx2, sy2, BLUE); put(sx2, sy2 + 1, BLUE); put(sx2 + 1, sy2 + 1, BLUE); }
     else if (m === 'sad') { put(mx - 1, my + 2, W); put(mx, my + 1, W); put(mx + 1, my + 1, W); put(mx + 2, my + 2, W); }

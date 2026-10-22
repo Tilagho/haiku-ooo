@@ -16,9 +16,17 @@ const NAMES = ['five', 'seven', 'five'];
 const PH = ['five syllables', 'then seven', 'and five to end'];
 const NO_RUSH = ['no rush~', 'take your time.', 'no rush. the pond<br>can wait.', '…still here!<br>no rush', 'counting clouds.<br>no rush'];
 const ROWS_OPEN = 72, IDLE_MS = 9000;
-// keyboard up: a free band under the lower roller for red Inky (his body may overlap the roller, never the paper), and how
-// far the top roller may tuck up under the screen edge on a very short visible viewport before the type steps down a size
-const INKY_BAND = 30, ST_KB = 30, ST_MIN = 6, ST_TUCK = -54;
+// ROUND 14.1 - ONE STABLE LAYOUT on touch devices (phones: an on-screen keyboard): the compact layout is sized for the
+// keyboard-UP case once per session (the real keyboard height if it is up, else an estimate, KB_EST) and kept identical
+// when the keyboard goes down (just more dark space below): no reflow, no font jump. Red Inky stands in his own band
+// fully UNDER the lower roller (INKY_GAP below it), never over a stamp, the roller or the paper. When the visible height
+// is short, the top roller tucks up under the screen edge (st down to ST_MIN) before the type steps down a size.
+const ST_KB = 30, ST_MIN = -48, ST_TUCK = -54, INKY_GAP = 4;
+// the visible height with the keyboard up, before it is up: the screen height minus a keyboard + its ^ v ✓ bar + the
+// status bar (iPhone 390x844: ~454 css px, the 375x667 SE: ~357, 430x932: ~503)
+const KB_VIS = () => { const sh = (typeof screen !== 'undefined' && screen.height) || innerHeight; return sh - Math.round(sh * .45) - 10; };
+// keyboard timing: 'late' (default) = no keyboard during the animation, 'tap to write' after it; 'early' = round 14 (primer at the tap)
+const KB_MODE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('kb') === 'early' ? 'early' : 'late';
 const FOCUS_DELAY = 420;                                  // ms after the unroll has fully played before the caret lands on line 1
 const DENY_STAMPS = [{ src: 'assets/compose/stamp-kyakka.png', alt: '却下 (rejected)' }, { src: 'assets/compose/stamp-fuka.png', alt: '不可 (not allowed)' }];
 // at most 3 lines: anything past the 3rd joins the 3rd (a pasted 4-line poem does not vanish)
@@ -68,11 +76,19 @@ let mctx = null;
 const DPR3 = typeof devicePixelRatio === 'number' && devicePixelRatio >= 2.5;
 // every row starts at the biggest size (48px = 3x the pixel font) and shrinks on its own, only as far as its own text needs.
 // (40px at DPR 3 is 7.5 device px per font px, so its blocks differ by 1 device px; worth it so a typical line gets > 37.33px)
-const FS_OPEN = DPR3 ? [48, 128 / 3, 40, 112 / 3, 32, 80 / 3, 64 / 3, 16] : [48, 40, 32, 24, 20, 16], FS_KB = DPR3 ? [32, 80 / 3, 64 / 3, 16] : [32, 24, 20, 16], FS_KB_SHORT = DPR3 ? [80 / 3, 64 / 3, 16] : [24, 20, 16], FS_KB_TINY = [16];
+const FS_OPEN = DPR3 ? [48, 128 / 3, 40, 112 / 3, 32, 80 / 3, 64 / 3, 16] : [48, 40, 32, 24, 20, 16];
+// round 14.1, keyboard-up / touch type: about DOUBLE round 14's (32-40px), each row shrinking only if it would hit the edge
+const FS_KB = DPR3 ? [112 / 3, 32, 80 / 3, 64 / 3, 16] : [40, 32, 24, 20, 16], FS_KB_SHORT = DPR3 ? [32, 80 / 3, 64 / 3, 16] : [32, 24, 20, 16],
+  FS_KB_SMALL = DPR3 ? [80 / 3, 64 / 3, 16] : [24, 20, 16], FS_KB_TINY = DPR3 ? [64 / 3, 16] : [20, 16];
+export const FS_TIERS = [FS_KB, FS_KB_SHORT, FS_KB_SMALL, FS_KB_TINY];
+// round 14.1: with the big touch type the pixel font is set one font px tighter per letter (KERN, CSS letter-spacing
+// -fs/16 on the drawn words and the textarea alike), so a typical line keeps the big size; tw() = the drawn width
+let KERN = 0;
+const tw = (t, sz) => mctx.measureText(t).width - t.length * KERN * sz / 16;
 const OVERHANG = 0;                                  // px a long line may run past its ruled guide (0: the torn edge nicks would eat it)
 function fitSize(texts, avail, sizes = FS_OPEN) {     // the biggest size every line fits at (32 = 2x the pixel font)
   mctx ||= document.createElement('canvas').getContext('2d');
-  for (const s of sizes) { mctx.font = `${s}px ChiKareGo2`; if (texts.every(t => mctx.measureText(t).width <= avail)) return s; }
+  for (const s of sizes) { mctx.font = `${s}px ChiKareGo2`; if (texts.every(t => tw(t, s) <= avail)) return s; }
   return sizes[sizes.length - 1];
 }
 
@@ -85,7 +101,7 @@ const MARKUP = `
       <div class="paper" id="cpaper">
         <div id="clines"><textarea id="cpoem" rows="3" wrap="off" maxlength="240" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" enterkeyhint="next" data-1p-ignore data-lpignore="true" data-form-type="other" aria-multiline="true" aria-label="your haiku: three lines of 5, 7 and 5 syllables. return goes to the next line"></textarea></div>
         <p class="sr" id="cnote" aria-live="polite"></p>
-        <div class="sign" id="csign"><label id="csignlab">sign</label><span class="nm"><span class="nmm" aria-hidden="true"></span><span class="nph" aria-hidden="true">(optional)</span><i class="rl" aria-hidden="true"></i><input id="cname" type="text" maxlength="12" disabled tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" inputmode="text" enterkeyhint="done" data-1p-ignore data-lpignore="true" data-form-type="other" placeholder="(optional)" aria-label="sign with your name, up to 12 characters, optional"><button class="nmb" id="cnamebtn" type="button" aria-label="sign with your name (optional)"></button></span></div>
+        <div class="sign" id="csign"><span class="nm"><span class="nmm" aria-hidden="true"></span><span class="nph" aria-hidden="true">Sign? (optional)</span><i class="rl" aria-hidden="true"></i><input id="cname" type="text" maxlength="12" disabled tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" inputmode="text" enterkeyhint="done" data-1p-ignore data-lpignore="true" data-form-type="other" placeholder="Sign? (optional)" aria-label="sign with your name, up to 12 characters, optional"><button class="nmb" id="cnamebtn" type="button" aria-label="sign with your name (optional)"></button></span></div>
         <button class="back" id="cback" type="button" aria-label="back to the board, discard this haiku"><span class="blot"><canvas id="arw"></canvas></span></button>
         <button class="cpost" id="cpost" type="button" aria-label="seal and post"><span class="wax"><canvas id="wax"></canvas></span></button>
       </div>
@@ -100,7 +116,8 @@ export function mountCompose(deps) {
   const $ = s => root.querySelector(s), body = document.body, html = document.documentElement;
   const theme = document.querySelector('meta[name="theme-color"]'), theme0 = theme?.content;
   const field = new InkField({ z: 20 });
-  const inky = new RedInky({ R: 7, z: 60, bigEyes: true, fury: true });   // R 7 = 78% of the round-13 size (9): he never sits on a stamp, a line or the sign
+  const inky = new RedInky({ R: 5.6, z: 60, bigEyes: false, fury: true, chunky: true, worried: true });   // round 14.1: 80% of round 14 (R 7), chunkier, more worried
+  const INKY_H = () => Math.ceil(inky.R * 2.6 * 4) + 2;          // css px from his foot to the top of his head
   const art = new ScrollArt($('#scv'), { maxRows: 92, seed: 8370, outline: 2 });   // 8370: the torn edges stay shallow beside the three writing rows (more room for big type)
   const bubble = document.createElement('div'); bubble.className = 'cbubble'; bubble.hidden = true; root.appendChild(bubble);
   const bcv = document.createElement('canvas'); bcv.className = 'bcv';
@@ -176,35 +193,41 @@ export function mountCompose(deps) {
   // a keyboard that rises mid-animation (iOS raises it at the write tap, see prime()) is covered by the wash and only
   // re-lays the scroll after the unroll + FOCUS_DELAY, never mid-animation.
   const VV = window.visualViewport;
+  const coarse = matchMedia?.('(pointer: coarse)').matches || 'ontouchstart' in window, compact = coarse;   // touch: an on-screen keyboard
   let vvh = innerHeight, vvt = 0, kbUp = false, frozen = false, plan = null;
   function syncViewport() {
     vvt = Math.round(VV ? VV.offsetTop : 0); html.style.setProperty('--vvt', vvt + 'px');
     if (frozen) return;
     vvh = Math.round(VV ? VV.height : innerHeight); html.style.setProperty('--vvh', vvh + 'px');
-    const was = kbUp, wasPlan = plan && plan.rows + ':' + plan.st + ':' + plan.sizes[0];
-    kbUp = body.classList.contains('composing') && vvh < innerHeight * .8; body.classList.toggle('kb', kbUp);
-    plan = kbUp ? kbPlan() : null;
+    const wasKb = body.classList.contains('kb'), wasPlan = plan && plan.rows + ':' + plan.st + ':' + plan.sizes[0];
+    const composing = body.classList.contains('composing');
+    kbUp = composing && vvh < innerHeight * .8;                    // the real on-screen keyboard
+    const kb = composing && (compact || kbUp); body.classList.toggle('kb', kb); KERN = kb ? 1 : 0;
+    if (!kb) plan = null;
+    else if (!plan) plan = kbPlan(kbUp ? vvh : Math.min(vvh, KB_VIS()));  // decided once: the keyboard-up layout, kept when it goes down
+    else if (kbUp && plan.st + plan.body > vvh + .5) plan = kbPlan(vvh);   // the real keyboard is taller than planned: re-plan (rare)
     $('#cscroll').style.setProperty('--st', (plan ? plan.st : 34) + 'px');
-    if (was !== kbUp) drawSeals();
-    if (was !== kbUp || (plan && plan.rows + ':' + plan.st + ':' + plan.sizes[0]) !== wasPlan) { fitPaper(); update(); }
+    if (wasKb !== kb) drawSeals();
+    if (wasKb !== kb || (plan && plan.rows + ':' + plan.st + ':' + plan.sizes[0]) !== wasPlan) { fitPaper(); update(); }
   }
   if (VV) { VV.addEventListener('resize', syncViewport); VV.addEventListener('scroll', syncViewport); }
   addEventListener('resize', syncViewport);
-  // keyboard up: the biggest type tier whose three rows + the stamp row + the rods + Inky's band fit the visible height
-  // (rows: 4 + 4 margins, per row 4 + baseline + rule + numerals; then a 60 px stamp row). Too short even for the 16 px
-  // tier: the top roller tucks up under the screen edge (st < 0) rather than the stamps running into the lines.
-  const linesBottom = fs => 24 + 3 * (43 + ASC * fs);         // (+8 px slack over the measured rows)
-  function kbPlan() {
+  // keyboard-up layout: the biggest type tier whose three rows + the stamp row + the rollers + Inky's band under them fit
+  // the height h (compact rows: 4 top, per row 4 + baseline + rule + numerals tucked close (34 + asc*fs), 2 between; then a
+  // 68 px stamp row). The top roller may tuck up under the screen edge (st >= ST_MIN) before the type steps down a tier.
+  const linesBottom = fs => 16 + 3 * (34 + ASC * fs);         // (+8 px slack over the measured rows)
+  function kbPlan(h = vvh) {
     let p = null;
-    for (const sizes of [FS_KB, FS_KB_SHORT, FS_KB_TINY]) {
-      const rows = Math.ceil((linesBottom(sizes[0]) + 68) / SP);    // + the 9-cell stamp row (54 px) and its gap
-      p = { rows, sizes, st: Math.min(ST_KB, vvh - ((2 + RH * 2) * SP + rows * SP + INKY_BAND)) };
+    for (const sizes of FS_TIERS) {
+      const rows = Math.ceil((linesBottom(sizes[0]) + 68) / SP), body = (2 + RH * 2) * SP + rows * SP + INKY_H() + INKY_GAP + 2;
+      p = { rows, sizes, body, h, st: Math.min(ST_KB, h - body) };
       if (p.st >= ST_MIN) return p;
     }
     p.st = Math.max(ST_TUCK, p.st); return p;
   }
+  const isKb = () => body.classList.contains('kb');
   const kbRows = () => (plan || kbPlan()).rows;
-  const rowsNow = () => kbUp ? kbRows() : ROWS_OPEN;
+  const rowsNow = () => isKb() ? kbRows() : ROWS_OPEN;
   let busyScroll = false;
   function fitPaper() {
     $('#cpaper').style.setProperty('--ph', rowsNow() * SP + 'px');
@@ -281,13 +304,14 @@ export function mountCompose(deps) {
   }
   // the pixel caret (the native one would be as tall as the 81px line box on iOS)
   function syncCaret() {
-    const on = document.activeElement === ta && ta.selectionStart === ta.selectionEnd, { li, col } = caretAt();
+    const waiting = body.classList.contains('await-tap') && document.activeElement !== ta;   // 'tap to write': a pulsing caret where typing resumes
+    const on = (document.activeElement === ta || waiting) && ta.selectionStart === ta.selectionEnd, { li, col } = caretAt();
     if (ta.scrollTop) ta.scrollTop = 0;
     const sx = ta.scrollLeft; linesEl.style.setProperty('--sx', -sx + 'px');
     mctx ||= document.createElement('canvas').getContext('2d');
     rows.forEach((r, k) => {
       const show = on && k === li; r.caret.hidden = !show; r.el.classList.toggle('focus', document.activeElement === ta && k === li);
-      if (show) { mctx.font = `${rowFs[k]}px ChiKareGo2`; r.caret.style.left = Math.round(mctx.measureText(texts()[k].slice(0, col)).width - sx) + 'px'; r.caret.style.animation = 'none'; void r.caret.offsetWidth; r.caret.style.animation = ''; }
+      if (show) { mctx.font = `${rowFs[k]}px ChiKareGo2`; r.caret.style.left = Math.round(tw(texts()[k].slice(0, col), rowFs[k]) - sx) + 'px'; r.caret.style.animation = 'none'; void r.caret.offsetWidth; r.caret.style.animation = ''; }
     });
     const hint = li < MAXL - 1 ? 'next' : 'done'; if (ta.getAttribute('enterkeyhint') !== hint) ta.setAttribute('enterkeyhint', hint);
   }
@@ -308,7 +332,7 @@ export function mountCompose(deps) {
     const li = Math.max(0, Math.min(MAXL - 1, Math.floor((e.clientY - tr.top) / pitch))), t = texts()[li];
     const x = e.clientX - rows[li].mirror.getBoundingClientRect().left;
     mctx ||= document.createElement('canvas').getContext('2d'); mctx.font = `${rowFs[li]}px ChiKareGo2`;
-    let col = t.length; for (let c = 0; c < t.length; c++) { const w0 = mctx.measureText(t.slice(0, c)).width, w1 = mctx.measureText(t.slice(0, c + 1)).width; if (x < (w0 + w1) / 2) { col = c; break; } }
+    let col = t.length; for (let c = 0; c < t.length; c++) { const w0 = tw(t.slice(0, c), rowFs[li]), w1 = tw(t.slice(0, c + 1), rowFs[li]); if (x < (w0 + w1) / 2) { col = c; break; } }
     const at = lineStart(ta.value, li); if (at >= 0) setCaret(Math.min(at + col, ta.value.length)); update();
   });
   // pick the type size: the biggest step at which EVERY line fits its own row, from the text column to 2 art px inside the
@@ -324,13 +348,13 @@ export function mountCompose(deps) {
       const y0 = Math.floor((top0 + i * pitch) / SP) - py0, y1 = Math.ceil((top0 + i * pitch + sizes[0] + 34) / SP) - py0;
       let rt = 0; for (let y = Math.max(0, y0); y <= y1; y++) rt = Math.max(rt, art.Rt[y] ?? 0);
       const avail = Math.min(wr0, (art.px1 - rt - 1) * SP - left) + OVERHANG;   // 1 art px clear of the torn edge
-      for (const sz of sizes) { mctx.font = `${sz}px ChiKareGo2`; if (mctx.measureText(t).width <= avail) return sz; }
+      for (const sz of sizes) { mctx.font = `${sz}px ChiKareGo2`; if (tw(t, sz) <= avail) return sz; }
       return sizes[sizes.length - 1];
     });
   }
   const safeWidth = () => rows[0].wr.clientWidth;
   function render(a, ok) {
-    const sizes = kbUp ? (plan || kbPlan()).sizes : FS_OPEN;
+    const sizes = isKb() ? (plan || kbPlan()).sizes : FS_OPEN;
     measureAsc();
     rowFs = pickSize(a.map((l, i) => l.text || PH[i]), sizes); fsMax = sizes[0]; fsNow = Math.min(...rowFs);
     linesEl.style.setProperty('--fsm', fsMax + 'px'); linesEl.style.setProperty('--fs', fsNow + 'px'); linesEl.style.setProperty('--asc', ASC);
@@ -416,8 +440,33 @@ export function mountCompose(deps) {
     ta.value = v; setCaret(Math.min(v.length, clampLines(ta.value.slice(0, s0) + t).length));
     if (denied) clearDenied(); poke(); update();
   });
-  ta.addEventListener('focus', () => { syncCaret(); poke(); });
-  ta.addEventListener('blur', () => { rows.forEach(r => { r.caret.hidden = true; r.el.classList.remove('focus'); }); });
+  ta.addEventListener('focus', () => { if (body.classList.contains('await-tap')) { body.classList.remove('await-tap'); if (tapBubble) { tapBubble = false; bubble.hidden = true; } } syncCaret(); poke(); });
+  ta.addEventListener('blur', () => {
+    rows.forEach(r => { r.caret.hidden = true; r.el.classList.remove('focus'); });
+    // round 14.1: iOS dismissed the keyboard (a page cannot stop that, and a focus() outside a tap cannot bring it back): no
+    // fighting the user; the caret pulses where typing resumes and the next tap on the paper or a line refocuses inside that tap
+    setTimeout(() => { if (opened && !busy && !denied && coarse && document.activeElement !== ta && document.activeElement !== nameIn && !nameNm.classList.contains('edit')) awaitTap(false); }, 0);
+  });
+  // ---------- keyboard back fast: any tap on the scroll paper or a line refocuses the current line INSIDE that tap ----------
+  let tapBubble = false;
+  function awaitTap(first) {
+    body.classList.add('await-tap'); syncCaret();
+    if (first) { tapBubble = true; say('tap to write', 600000); }
+  }
+  function refocus() {
+    if (!opened || busy) return false;
+    const s0 = ta.selectionStart ?? 0, s1 = ta.selectionEnd ?? s0;
+    if (ta.disabled) ta.disabled = false;
+    if (document.activeElement === ta) ta.blur();          // a focused-but-keyboardless field: blur + focus inside the tap reopens it
+    ta.focus({ preventScroll: true }); try { ta.setSelectionRange(s0, s1); } catch {}
+    syncCaret(); update(); return true;
+  }
+  $('#cscroll').addEventListener('click', e => {
+    if (!opened || busy || e.target.closest?.('#cpoem, .back, .cpost, .sign, #cname')) return;
+    if (document.activeElement === ta && !body.classList.contains('await-tap')) return;
+    if (document.activeElement === nameIn) return;
+    refocus();
+  });
   // with the name being typed the textarea is disabled (one field = no iOS arrows); a tap on the lines brings it back at once
   linesEl.addEventListener('pointerdown', e => {
     if (!ta.disabled || !opened || busy) return;
@@ -437,7 +486,6 @@ export function mountCompose(deps) {
   function closeName() { nameNm.classList.remove('edit'); nameIn.disabled = true; ta.disabled = false; fitName(); }
   $('#cnamebtn').addEventListener('pointerdown', e => e.preventDefault());
   $('#cnamebtn').addEventListener('click', e => { e.preventDefault(); openName(); });
-  $('#csignlab').addEventListener('click', openName);
   nameIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== nameIn) closeName(); }, 0));
   nameIn.addEventListener('input', () => { const c = cleanName(nameIn.value); if (c !== nameIn.value) nameIn.value = c; fitName(); poke(); });
   function fitName() {                          // mirror the typed name in label ink; shrink (never below 16px: no iOS focus zoom) only if it must
@@ -453,10 +501,9 @@ export function mountCompose(deps) {
 
   // ---------- keyboard auto-open: iOS only raises it for focus() inside a tap, so the write tap focuses a 1px primer
   // field right away; when the scroll has unrolled, focus moves to line 1 (a focus hand-off keeps the keyboard up) ----------
-  const coarse = matchMedia?.('(pointer: coarse)').matches || 'ontouchstart' in window;
-  let primer = null, primerT = 0;
+    let primer = null, primerT = 0;
   function prime() {
-    if (!coarse || opened || busy || body.classList.contains('composing')) return;
+    if (KB_MODE !== 'early' || !coarse || opened || busy || body.classList.contains('composing')) return;
     primer ||= Object.assign(document.createElement('input'), { type: 'text', tabIndex: -1, autocomplete: 'off', className: 'kb-primer' });
     for (const [k, v] of Object.entries({ 'aria-hidden': 'true', autocorrect: 'off', autocapitalize: 'off', spellcheck: 'false', inputmode: 'text', enterkeyhint: 'next', 'data-1p-ignore': '', 'data-lpignore': 'true' })) primer.setAttribute(k, v);
     root.appendChild(primer); primer.focus({ preventScroll: true });
@@ -468,16 +515,46 @@ export function mountCompose(deps) {
 
   // Inky parks LOWER-LEFT, standing in front of the lower roller with his feet in the free band under it (kbPlan keeps
   // that band): his body may cover the wooden roller but never the paper, so never a stamp, a writing line or the sign
-  const INKY_H = () => Math.ceil(inky.R * 2.6 * 4) + 2;          // css px from his foot to the top of his head
   const dock = () => {
     const l = Math.max(0, innerWidth / 2 - 230), vb = vvt + vvh, sb = scrollBottom(), pb = paperBottom();
-    const foot = Math.min(vb - 4, Math.max(pb + INKY_H(), kbUp ? sb + 6 : vb - 36));
-    return { x: l + (kbUp ? 56 : 62), foot };
+    if (isKb()) return { x: l + 46, foot: Math.min(vb - 2, sb + INKY_H() + INKY_GAP) };   // round 14.1: his own band, fully under the roller
+    const foot = Math.min(vb - 4, Math.max(pb + INKY_H(), vb - 36));
+    return { x: l + 62, foot };
   };
+
+  // ---------- round 14.1: bugging red Inky. A tap squishes him, he wobbles and pulls a face (worried, then flustered,
+  // then annoyed after repeated taps) and pops a tiny short-lived bubble drawn from a pool with no repeats. The tap target
+  // never takes focus (preventDefault on pointerdown + the compat mousedown), so the keyboard and the caret stay put. ----------
+  const BUG_POOL = ['hmm…', 'what to write…', 'thinking…', 'five, then seven…', "shh, I'm counting", 'ok ok!'];
+  let bugBag = [], bugLast = '', bugTaps = 0, bugAt = -1e9;
+  const nextBug = () => { if (!bugBag.length) { bugBag = BUG_POOL.filter(t => t !== bugLast); for (let i = bugBag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bugBag[i], bugBag[j]] = [bugBag[j], bugBag[i]]; } } return (bugLast = bugBag.pop()); };
+  const hit = document.createElement('div'); hit.className = 'rihit'; hit.setAttribute('aria-hidden', 'true'); root.appendChild(hit);
+  for (const ev of ['pointerdown', 'mousedown', 'touchstart']) hit.addEventListener(ev, e => { if (e.cancelable) e.preventDefault(); if (ev === 'pointerdown') bugInky(); }, { passive: false });
+  function bugInky() {
+    if (!opened || !inky.visible || inky.mode !== 'coach') return;
+    const now = clock.now(); bugTaps = now - bugAt < 2200 ? bugTaps + 1 : 1; bugAt = now;
+    inky.s = .55 + Math.min(.15, bugTaps * .04); inky.sv = 0; inky.wobble(.9 + Math.min(.8, bugTaps * .15));   // squish + wobble
+    if (busy || denied) return;                    // mid-post / mid-denial: only the squish, no face or words over it
+    inky.tapping = false;
+    if (bugTaps >= 5) { inky.setMood('angry'); inky.shiver = .35; }
+    else if (bugTaps >= 3) inky.setMood('shout');
+    else inky.setMood(bugTaps === 2 ? 'worry' : 'think');
+    if (tapBubble) { tapBubble = false; }
+    say(bugTaps >= 5 && bugLast !== 'ok ok!' ? (bugBag = bugBag.filter(t => t !== 'ok ok!'), bugLast = 'ok ok!') : nextBug(), 1100);
+    const mine = now; clock.wait(bugTaps >= 5 ? 1800 : 1300).then(() => { if (bugAt === mine && opened && !busy && !denied && ['angry', 'shout', 'worry', 'think'].includes(inky.mood)) { inky.setMood('happy'); inky.shiver = 0; } });
+  }
+  clock.onTick(() => {                             // the tap target follows him (only while he is coaching)
+    const on = opened && inky.visible && inky.mode === 'coach', st = hit.style;
+    if (!on) { if (st.display !== 'none') st.display = 'none'; return; }
+    const p = inky.pos, w = Math.ceil(inky.R * 3.2 * 4), h = INKY_H(), l = Math.round(p.x - w / 2), t = Math.round(p.foot - h);
+    if (st.display !== 'block') st.display = 'block';
+    const key = l + ',' + t + ',' + w + ',' + h; if (key !== hit._k) { hit._k = key; Object.assign(st, { transform: `translate(${l}px, ${t}px)`, width: w + 'px', height: h + 'px' }); }
+  });
 
   // ---------- bubble: drawn pixel by pixel, always points back at Inky ----------
   let bubbleUntil = 0;
   function say(text, ms = 1800, big = false) {
+    if (text !== 'tap to write') tapBubble = false;
     bubble.innerHTML = `<span class="bt">${text}</span>`; bubble.prepend(bcv); bubble.hidden = false; bubble.classList.toggle('big', big);
     bubble.style.width = bubble.style.height = '';
     const t = bubble.querySelector('.bt').getBoundingClientRect();
@@ -487,7 +564,7 @@ export function mountCompose(deps) {
     bubble.animate([{ transform: `translateY(${2 * BU}px)`, opacity: 0 }, { transform: `translateY(${-BU}px)`, opacity: 1, offset: .5 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 200, easing: 'steps(3, end)' });
   }
   clock.onTick(() => {
-    if (opened && !busy && !denied && body.classList.contains('composing') && !allOk && clock.now() - lastInput > IDLE_MS * (idleN ? 1.6 : 1)) {
+    if (opened && !busy && !denied && body.classList.contains('composing') && !allOk && !body.classList.contains('await-tap') && clock.now() - lastInput > IDLE_MS * (idleN ? 1.6 : 1)) {
       inky.setMood('bored'); inky.tapping = true; say(NO_RUSH[idleN % NO_RUSH.length], 3200); idleN++; lastInput = clock.now();
     }
     if (bubble.hidden) return;
@@ -547,7 +624,8 @@ export function mountCompose(deps) {
     await clock.wait(FOCUS_DELAY);              // the unroll has fully played; a short breath before the caret
     frozen = false; syncViewport(); fitPaper(); update();
     busy = false; opened = true; body.classList.add('opened'); lastInput = clock.now();
-    focusLine(0, 0); dropPrimer();               // focus hand-off: primer (focused during the tap) -> line 1, the keyboard stays up
+    if (KB_MODE === 'late' && coarse) awaitTap(true);   // round 14.1: no keyboard during the animation; the first tap on the paper brings it
+    else { focusLine(0, 0); dropPrimer(); }        // focus hand-off: primer (focused during the tap) -> line 1, the keyboard stays up
   }
   async function unroll() {
     const sc = $('#cscroll'); syncViewport(); frozen = true; fitPaper();   // the layout is decided now and held until the unroll is over

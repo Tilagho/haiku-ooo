@@ -52,9 +52,12 @@ export function drawLine(buf, text, x, y, f, rand, { color = [24, 22, 26], alpha
 // Number seal: a real red hanko, perfectly straight (zero rotation), upright oval or square, with the post number
 // in KANJI numerals carved out in cream: hand-made 5x5 block glyphs (src/kanji.js SEAL_GLYPHS) on a tiny art grid,
 // every art px a 3x3 block of font px (near-Minecraft chunky). Two reds (one lighter bevel row on top) + cream.
-// A 1 px red rim, a 1 px carved cream ring inside it, then the red field.
+// A 2 art px red rim (round 14.1: one more art px all round), a 1 px carved cream ring inside it, then the red field.
+// Round 14.1: SEAL_PX 3 -> 2 (the closest whole-pixel size to a 20% shrink: with the thicker rim a seal is ~75% of
+// its round 14 width), so each block is 3 CSS px at the usual 1.5 text scale, the background's own art-grid pixel.
 const SEAL_RED = [214, 52, 40], SEAL_PAPER = [248, 240, 222];
-export const SEAL_PX = 3;                                     // font px per seal art px: big blocky pixels (4-4.5 CSS px)
+export const SEAL_PX = 2;                                     // font px per seal art px: blocky pixels (3 CSS px at text scale 1.5)
+export const SEAL_RIM = 2;                                    // art px of solid red rim
 export function sealDims(n) { const L = sealLayout(n); return [L.W * SEAL_PX, L.H * SEAL_PX]; }
 export function sealSize(n) { return sealDims(n)[0]; }
 const SEAL_HI = [236, 92, 70];                                // the one lighter shade: a blocky bevel along the top of the rim
@@ -69,7 +72,7 @@ export function drawSeal(buf, n, x, y, rand = Math.random, { red = SEAL_RED, pap
     : (i, j, k = 0) => { const a = k, b = W - 1 - k, c = H - 1 - k; if (i < a || j < a || i > b || j > c) return false; return !((i === a || i === b) && (j === a || j === c)); };
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
     if (!inside(i, j)) continue;
-    const ring = inside(i, j, 1) && !inside(i, j, 2);                     // the carved cream ring inside the 1 px rim
+    const ring = inside(i, j, SEAL_RIM) && !inside(i, j, SEAL_RIM + 1);   // the carved cream ring inside the 2 px rim
     let carved = ring;
     for (const c of L.cells) { const g = SEAL_GLYPHS[c.ch], gx = i - c.x, gy = j - c.y; if (g && gx >= 0 && gy >= 0 && gx < L.glyph && gy < L.glyph && g[gy][gx] === '#') carved = true; }
     const top = !inside(i, j - 1) && inside(i, j, 1) === false;           // the rim's top edge: one lighter row

@@ -19,8 +19,9 @@ export function toKanjiNumber(n) {
 }
 
 // ---------- the number seal on a tiny pixel grid (round 13: near-Minecraft blocky) ----------
-// Each seal is built on a tiny art grid, ~14-18 art px across (more for long numbers), and drawn at SEAL_PX = 3 font
-// px per art px (src/brush-text.js): 4-4.5 CSS px a block, always a whole number of device px at dpr 2 and 3.
+// Each seal is built on a tiny art grid, ~16-20 art px across (more for long numbers), and drawn at SEAL_PX = 2 font
+// px per art px (src/brush-text.js): at the usual 1.5 text scale that is 3 CSS px a block, exactly the background's
+// art-grid pixel, a whole number of device px at dpr 2 and 3. Round 14.1: the red rim is 2 art px thick.
 // Hand-designed 5x5 chunky glyphs, one art px strokes, no fine detail.
 export const SEAL_GLYPHS = Object.fromEntries(Object.entries({
   一: '.....|.....|#####|.....|.....',
@@ -38,7 +39,7 @@ export const SEAL_GLYPHS = Object.fromEntries(Object.entries({
   万: '#####|.#...|.####|.#..#|#..##',
   〇: '.###.|#...#|#...#|#...#|.###.',
 }).map(([k, v]) => [k, v.split('|')]));
-const GW = 5, GAP = 1, M = 3, MIN = 15;        // glyph size, gap, margin (1 red rim + 1 carved cream ring + 1 red), min width
+const GW = 5, GAP = 1, M = 4, MIN = 17;        // glyph size, gap, margin (round 14.1: 2 red rim + 1 carved cream ring + 1 red), min width
 // Layout: 1 char alone; 2 chars side by side in a rectangle, stacked in an upright oval; 3-4: 2x2; 5-6: 2 wide x 3
 // tall; 7+: 3 wide. Rows read left to right, top to bottom; a short last row is centred.
 // SHAPE ALTERNATES down the board by display order (n is the poem's place on the scroll, which is also its number):
@@ -65,7 +66,7 @@ export function sealLayout(n) {
     const fits = (W, H, cells) => cells.every(c => { const g = SEAL_GLYPHS[c.ch]; if (!g) return true;
       for (let gy = 0; gy < GW; gy++) for (let gx = 0; gx < GW; gx++) if (g[gy][gx] === '#') {
         const X = c.x + gx + .5, Y = c.y + gy + .5;
-        if (((X - W / 2) / (W / 2 - 3)) ** 2 + ((Y - H / 2) / (H / 2 - 3)) ** 2 > 1) return false;
+        if (((X - W / 2) / (W / 2 - M)) ** 2 + ((Y - H / 2) / (H / 2 - M)) ** 2 > 1) return false;
       }
       return true; });
     let best = null;

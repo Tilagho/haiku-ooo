@@ -200,7 +200,7 @@ export class Inky {
   squashOn(nx, ny, a) { const I = this.imp; if (a < I.s - .05) return; I.nx = nx; I.ny = ny; I.s = Math.max(I.s, a * (this.reduced ? .5 : 1)); I.sv = 0; }
   hitWall(side, v, flying) {
     if (v < 35) return;
-    this.squashOn(side, 0, Math.min(.6, v / 480));
+    this.squashOn(side, 0, Math.min(.74, v / 380));   // (14.1: flatter, toward almost flat on hard throws)
     if (v > 70 && this.visible) this.splat(Math.min(6, Math.round(v / 70)), v / 320, INK, this.x + side * this.R * .9, this.fy - this.R);
     if (flying && v > 130 && !this.reduced) { this.stick = .07 + Math.min(.11, v / 3600); this.stickV = this.vx; this.vx = 0; }   // stuck flat for a beat
   }
@@ -282,7 +282,7 @@ export class Inky {
     } else if (!this.grounded && this.floor != null) {             // body ballistics (hops, throws)
       if (this.stick > 0) {                                        // SPLATTED flat on the wall: hangs there a beat, sliding a little
         this.stick -= dt; this.imp.sv = 0; this.vy = Math.min(this.vy, 40); this.vx = 0;
-        if (this.stick <= 0) { this.vx = this.stickV; this.imp.sv = -9; this.wobble(1.1); }   // ...then springs off, jiggling
+        if (this.stick <= 0) { this.vx = this.stickV; this.imp.sv = -11; this.wobble(1.3); }   // ...then springs off, jiggling
       }
       this.vy += G * dt; this.x += this.vx * dt; this.fy += this.vy * dt;
       if (this.x < R || this.x > this.cw - R) { const side = this.x < R ? -1 : 1, v = Math.abs(this.vx); this.x = Math.max(R, Math.min(this.cw - R, this.x)); this.vx *= -.45; this.wobble(.5); this.hitWall(side, v, true); }   // off the screen sides
@@ -290,7 +290,7 @@ export class Inky {
       if (this.fy >= this.floor && this.vy > 0) {
         const impact = this.vy; this.fy = this.floor;
         this.s = Math.min(.45, impact / 300); this.sv = 0; if (impact > 70) this.splat(Math.round(impact / 25), impact / 160);
-        this.squashOn(0, 1, Math.min(.42, impact / 420));                          // flattens along the floor normal too
+        this.squashOn(0, 1, Math.min(.7, impact / 330));                          // flattens along the floor normal too
         if (impact > 70 && this.bounces < 1 && !this.reduced) { this.bounces++; this.vy = -impact * .28; this.vx *= .5; this.wobble(.8); }   // plop + one small bounce
         else { this.vy = 0; this.vx = 0; this.grounded = true; this.bounces = 0; }
         this.onLand?.(impact);
@@ -308,10 +308,10 @@ export class Inky {
     const stretch = 0;                                          // (round 14: the stretch now runs along his velocity, below)
     // MOMENTUM: while dragged / flying, the stretch builds up with speed (not instantly) and points along his velocity
     const spd = Math.hypot(this.vx, this.vy), moving = this.mode === 'drag' || (!this.grounded && this.stick <= 0);
-    this.mom += ((moving ? Math.min(1, spd / 300) : 0) - this.mom) * Math.min(1, dt * (this.mode === 'drag' ? 3.2 : 7));
+    this.mom += ((moving ? Math.min(1, spd / 250) : 0) - this.mom) * Math.min(1, dt * (this.mode === 'drag' ? 3.2 : 7));
     if (spd > 4) { this.ux = this.vx / spd; this.uy = this.vy / spd; }
     // the impact squash: a spring along the hit's normal (under-damped: it overshoots into a stretch = the jiggle)
-    { const I = this.imp; if (this.stick > 0) I.sv = 0; else { I.sv += (-300 * I.s - 7.5 * I.sv) * dt; I.s = Math.max(-.35, Math.min(.62, I.s + I.sv * dt)); } }   // held flat while stuck
+    { const I = this.imp; if (this.stick > 0) I.sv = 0; else { I.sv += (-300 * I.s - (this.reduced ? 7.5 : 4.6) * I.sv) * dt; I.s = Math.max(-.45, Math.min(.74, I.s + I.sv * dt)); } }   // held flat while stuck (14.1: bouncier, an extra jiggle or two)
     const run = this.grounded ? Math.min(.32, Math.abs(this.vx) / 260) : 0;            // long and low when sliding fast
     const puff = this.puff * .14;
     this.sx = 1 + this.s + breathe - stretch * .6 + run + puff; this.sy = Math.max(.18, 1 - this.s - breathe + stretch - run * .55 + puff);
@@ -319,8 +319,8 @@ export class Inky {
     if (this.dizzyT > 0) this.dizzyT = Math.max(0, this.dizzyT - dt);
     if (this.mood === 'cheer' || this.spin > 0) this.spin = Math.max(0, this.spin - dt);
     // rim balls lag behind the body (the gooey wobble)
-    const sx = this.sx, sy = this.sy, held = this.mode === 'drag', lag = this.reduced ? .012 : held ? .055 : .03, damp = held && !this.reduced ? 6.5 : 9;
-    const k = this.mom * (this.reduced ? .12 : .62), I = this.imp, ia = this.reduced ? I.s * .4 : I.s;
+    const sx = this.sx, sy = this.sy, held = this.mode === 'drag', lag = this.reduced ? .012 : held ? .075 : .036, damp = held && !this.reduced ? 5.4 : this.reduced ? 9 : 8;
+    const k = this.mom * (this.reduced ? .12 : .86), I = this.imp, ia = this.reduced ? I.s * .4 : I.s;
     for (const r of this.rim) {
       let tx = Math.cos(r.a) * R * .55 * sx, ty = Math.sin(r.a) * R * .55 * sy;
       [tx, ty] = aniso(tx, ty, this.ux ?? 0, this.uy ?? 1, -k);          // stretched along his velocity
@@ -390,12 +390,12 @@ export class Inky {
       // contact line, so he goes FLAT against it (a splat) and springs back round as the squash spring releases
       const I = this.imp, sq = Math.max(0, I.s), ccx = cx + I.nx * sq * R * .38, ccy = cy + I.ny * sq * R * .22;
       const wl = R * .82, flat = sq > .04;
-      balls.push([ccx, ccy, R * .62 * (1 - sq * .3)]);
+      balls.push([ccx, ccy, R * .62 * (1 - sq * .6)]);
       if (flat) { const tx = -I.ny, ty = I.nx; balls.push([ccx + tx * R * .42 * sq, ccy + ty * R * .42 * sq, R * .4], [ccx - tx * R * .42 * sq, ccy - ty * R * .42 * sq, R * .4]); }
       const sp = this.spin > 0 ? this.spin * 14 : 0;
       for (const r of this.rim) { const c = Math.cos(sp), s = Math.sin(sp); let bx = cx + r.ox * c - r.oy * s, by = cy + r.ox * s + r.oy * c;
         if (flat) { if (I.nx < -.5) bx = Math.max(bx, wl * .5); if (I.nx > .5) bx = Math.min(bx, cw - wl * .5); if (I.ny > .5) by = Math.min(by, this.fy - R * .3); }
-        balls.push([bx, by, R * .42]); }
+        balls.push([bx, by, R * .42 * (1 - sq * .4)]); }
       // the pointed top of the drop, trailing behind his motion like wet ink
       if (this.splatT <= 0) { const lean = Math.max(-2.2, Math.min(2.2, -this.vx / 34)); balls.push([cx + lean * .5, cy - R * .7 * this.sy, R * .4], [cx + lean, cy - R * 1.12 * this.sy, R * .24], [cx + lean * 1.5, cy - R * 1.42 * this.sy, R * .12]); }
     }

@@ -5,13 +5,21 @@
 //   fog     wide soft dithered bands, their edge breaking up with noise
 //   cumulus rolling billows: domain-warped (noise-advected) fbm that churns slowly, a faint grey ink-wash underside
 //   streak  thin long wisps, 1-3 px tall
-// Extremely subtle (at most ~half the pixels of a bank's core). Cost: the density is evaluated on a 2x2 px grid, only
+// Extremely subtle (at most ~half the pixels of a bank's core).
+// Round 14.1: the mist is a TINGE OFF THE PAPER, not white/cream highlights: one paper-toned colour (a hair off the
+// paper's own average, assets/paper.png = 244,236,218) laid at LOW opacity, and the opacity follows the density
+// (MIST_A0 at the faint fringe -> MIST_A1 in a bank's core), so every bank feathers out into the paper with no hard
+// edge; over open paper it all but disappears, over the ink it softly veils it - a hint of movement, not a cloud
+// drawn on top. The faint underside of a billow is the same tinge a shade darker, fainter still. Cost: the density is evaluated on a 2x2 px grid, only
 // in rows near a bank, and redrawn at 30 Hz (the drift is a few px per second); reduced motion: drawn still (redrawn
 // only when the window moves). Paused while compose is open or the tab is hidden. HB.view.mist = { banks, draws, ... }.
 import { SCROLL_W, AW, PX } from './scroll-engine2.js';
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + .5) / 16);
-const FOG = [244, 236, 218], FOG_HI = [248, 243, 230], WASH = [226, 219, 205];
+export const PAPER = [244, 236, 218], MIST_TINT = [241, 234, 218], MIST_SHADE = [234, 227, 212];   // paper avg; the mist a tinge off it
+export const MIST_A0 = .02, MIST_A1 = .26, MIST_SHADE_A = .1;   // opacity at the fringe .. the core; the underside
+// the opacity of a lit mist pixel at density d (0..MIST_MAX): eased so the fringe fades into the paper
+export const mistAlpha = d => { const q = Math.max(0, Math.min(1, d / MIST_MAX)); return MIST_A0 + (MIST_A1 - MIST_A0) * q * q * (3 - 2 * q); };
 export const MIST_MAX = .55, MIST_EVERY = 360, MIST_HZ = 30;
 const hash2 = (x, y, s) => { let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 function vnoise(x, y, s = 0) {
@@ -39,10 +47,10 @@ export function mistBanks(H, seed = 31) {
 export function mistDensity(B, x, y, t) {
   const dy = (y - B.y) / B.hh, x0 = x - B.vx * t;
   if (Math.abs(dy) > 2.4) return 0;
-  if (B.kind === 'fog') { const prof = Math.exp(-dy * dy), n = fbm(x0 * .045, y * .02 + t * .01, B.s); return prof * sstep(.38, .72, n) * MIST_MAX; }
-  if (B.kind === 'streak') { const prof = Math.exp(-dy * dy * 1.4), n = fbm(x0 * .022, B.s * .1 + t * .02, B.s); return prof * sstep(.42, .7, n) * MIST_MAX * .9; }
+  if (B.kind === 'fog') { const prof = Math.exp(-dy * dy), n = fbm(x0 * .045, y * .02 + t * .01, B.s); return prof * sstep(.3, .82, n) * MIST_MAX; }   // (14.1: softer edge)
+  if (B.kind === 'streak') { const prof = Math.exp(-dy * dy * 1.4), n = fbm(x0 * .022, B.s * .1 + t * .02, B.s); return prof * sstep(.34, .78, n) * MIST_MAX * .9; }
   const w = (fbm(x * .03 + t * .04, y * .03, B.s + 3) - .5) * 14, n = fbm((x0 + w) * .05, y * .05 + t * .035, B.s);   // cumulus: billowing
-  const prof = Math.exp(-dy * dy * 1.3); return Math.max(0, Math.min(1, (n * 1.3 * prof - .36) * 2.4)) * MIST_MAX;
+  const prof = Math.exp(-dy * dy * 1.3); return sstep(0, 1, (n * 1.3 * prof - .28) * 1.15) * MIST_MAX;   // (14.1: a smooth shoulder, no clipped rim)
 }
 
 export function mountMist(view, { clock, reduced = false } = {}) {
@@ -73,10 +81,10 @@ export function mountMist(view, { clock, reduced = false } = {}) {
           const d = mistDensity(B, x + 1, y, t); if (d < .03) continue;
           for (let j = 0; j < 2 && r + j < Hc; j++) for (let i = 0; i < 2; i++) {
             const px = x + i, py = r + j, th = BAYER[(py & 3) * 4 + (px & 3)], o = (py * AW + px) * 4;
-            let c = null;
-            if (d > th) c = (px + py) & 1 ? FOG : FOG_HI;
-            else if (B.kind === 'cumulus' && d > th * .55 && y < B.y && th > .6) c = WASH;   // the faint grey underside of a billow
-            if (c && D[o + 3] === 0) { D[o] = c[0]; D[o + 1] = c[1]; D[o + 2] = c[2]; D[o + 3] = 255; }
+            let c = null, a = 0;
+            if (d > th) { c = MIST_TINT; a = mistAlpha(d); }
+            else if (B.kind === 'cumulus' && d > th * .55 && y < B.y && th > .6) { c = MIST_SHADE; a = MIST_SHADE_A * mistAlpha(d) / MIST_A1; }   // the faint underside of a billow
+            if (c && D[o + 3] === 0) { D[o] = c[0]; D[o + 1] = c[1]; D[o + 2] = c[2]; D[o + 3] = Math.max(1, Math.round(a * 255)); }
           }
         }
       }

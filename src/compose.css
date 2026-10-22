@@ -76,8 +76,9 @@ body.kb .cscroll { --st: 30px; }
 /* sign (optional): max 12 characters; blank = no author */
 #compose .sign { display: none; margin: 12px 0 0 12px; align-items: center; gap: 8px; flex-wrap: nowrap; }
 body.ready #compose .sign { display: flex; }
-#compose .sign label { font: 400 20px/1 var(--ui); color: var(--ink); text-shadow: 1px 0 0 currentColor, 0 1px 0 currentColor, 1px 1px 0 currentColor; letter-spacing: 1px; }
-#compose .sign .nm { position: relative; width: 150px; }
+/* round 14.1: no separate black 'sign' label; the field's own muted tan placeholder reads 'Sign? (optional)'. The only black
+   text on the scroll is what the user typed (poem + name) */
+#compose .sign .nm { position: relative; width: 168px; }
 #compose .sign .nm .rl { position: absolute; left: 0; right: 0; top: 100%; height: 12px; pointer-events: none; }   /* anchor for the painted underline */
 #compose .sign input:disabled { visibility: hidden; }
 #compose .sign .nmb { position: absolute; left: -4px; right: -4px; top: -8px; bottom: -6px; z-index: 2; -webkit-tap-highlight-color: transparent; }
@@ -100,10 +101,17 @@ body.ready #compose .cpost .wax { animation: chop 1.1s steps(8) infinite; }
 body.ready #compose .cpost.stamped .wax { animation: none; }
 @keyframes chop { 0%, 60%, 100% { transform: translateY(0); } 20% { transform: translateY(-12px); } 40% { transform: translateY(0); } }   /* hops by whole 6 px grid cells */
 /* keyboard up: compact, so lines, tallies, name and Inky all stay above it */
-body.kb #compose .paper { padding-top: 8px; }
-body.kb #compose .ln { margin-top: 4px; }
+/* round 14.1: on touch devices this compact layout is used for the WHOLE session (keyboard up or down: one stable layout,
+   compose.js kbPlan), with big type (32-40px) and the numerals tucked close under the ruled line */
+body.kb #compose .paper { padding-top: 4px; }
+body.kb #compose .ln { margin-top: 2px; }
+body.kb #compose .field { height: calc(4px + var(--fsm, 48px) * var(--asc, .78) + 3px + 12px + 13px + 2px); }
+body.kb #compose .field .mirror .nums { top: calc(var(--fsr, 48px) * var(--asc, .78) + 3px + 12px); line-height: 13px; }   /* just clear of the 12 px painted rule */
+body.kb #compose .paper { padding-right: 30px; }
+body.kb #compose .field .mirror { letter-spacing: calc(var(--fsr, 48px) / -16); }          /* one font px tighter (compose.js KERN) */
+body.kb #compose #cpoem { letter-spacing: calc(max(16px, var(--fs, 32px)) / -16); }
 body.kb #compose .sign { position: absolute; margin: 0; left: 114px; right: 114px; top: calc(var(--ph) - 58px); justify-content: center; gap: 6px; }
-body.kb #compose .sign .nm { width: 150px; }
+body.kb #compose .sign .nm { width: 162px; }
 body.kb #compose .cpost { top: calc(var(--ph) - 66px); right: 54px; }
 body.kb #compose .cpost .wax { width: 54px; height: 54px; }
 
@@ -113,7 +121,12 @@ body.kb #compose .cpost .wax { width: 54px; height: 54px; }
 #compose .deny img { width: 144px; height: 240px; image-rendering: pixelated; display: block; }
 
 /* ---------- red Inky + his pixel bubble (drawn on a canvas, src/pixel-bubble.js) ---------- */
-.inky-canvas.red { position: fixed; left: 0; top: 0; pointer-events: none; image-rendering: pixelated; }
+.inky-canvas.red { position: fixed; left: 0; top: 0; pointer-events: none; image-rendering: pixelated; overflow: visible; }   /* canvas sized past any viewport (inky-red.js resize): never clipped */
+/* round 14.1: his tap target (never takes focus: compose.js prevents pointerdown / mousedown) */
+#compose .rihit { position: fixed; left: 0; top: 0; z-index: 61; display: none; touch-action: none; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+/* 'tap to write': the caret pulses on the line where typing resumes until a tap brings the keyboard */
+body.await-tap #compose .caret { animation: cpulse 1.2s steps(6) infinite; }
+@keyframes cpulse { 0%, 100% { opacity: 1; transform: scaleY(1); } 50% { opacity: .25; transform: scaleY(.8); } }
 .cbubble { position: fixed; z-index: 70; left: 0; top: 0; pointer-events: none; display: grid; place-items: center; transform-origin: 0 0;
   font: 400 16px/1.25 var(--ui); color: var(--ink); white-space: nowrap; }
 .cbubble .bcv { position: absolute; z-index: -1; image-rendering: pixelated; pointer-events: none; }

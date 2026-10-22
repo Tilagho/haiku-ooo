@@ -33,6 +33,7 @@ const view = new ScrollView($('#scroll'), { seed: 31, lib: await loadLibrary(SPR
 // tap a poem: no highlight (the scroll stays one painting); it is copied, with the site URL, and Inky says so
 view.onTapPoem = (rec, el, e) => rec && copyPoem(rec.post, e);
 import('./mist.js').then(m => m.mountMist(view, { clock, reduced }));     // round 14 rolling sumi mist (src/mist.js): over the ink, under the birds + poems
+import('./waterfall.js').then(m => m.mountWaterfalls(view, { clock, reduced }));   // round 14.1 waterfall shimmer (src/waterfall.js): only the falling water
 import('./birds.js').then(m => m.mountBirds(view, { clock, reduced }));   // round 13 background birds (src/birds.js, background worker)
 async function writeClipboard(text) {
   try {   // (a permission prompt that never answers must not swallow the tap: give up after 700 ms and use the fallback)
