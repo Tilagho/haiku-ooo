@@ -4,7 +4,7 @@
 // 390-unit-wide layer scaled to the phone width and positioned with CSS `bottom`, so new posts grow the scroll
 // upward without touching older nodes.
 import { ScrollComposer, SCROLL_W, U, AW, PX, paintRows } from './scroll-engine2.js';
-import { drawLine, drawSeal, sealDims, ditherBacking, font, rng, hash } from './brush-text.js';
+import { drawLine, drawSeal, sealDims, SEAL_PX, ditherBacking, font, rng, hash } from './brush-text.js';
 import { clock } from './clock.js';
 import { prefersReducedMotion } from './spring.js';
 
@@ -139,11 +139,11 @@ export class ScrollView {
     const fly = box('seal-fly', sx, sy, sw, sh), fctx = fly.getContext('2d'), fim = fctx.createImageData(sw, sh);
     drawSeal({ w: sw, h: sh, data: fim.data }, n, 0, 0, rng(hash(rec.post.id, n, 'fly'))); fctx.putImageData(fim, 0, 0);
     // wet ink that soaks out from under it on impact: the seal's shape grown by 2 px, dithered, fading away
-    const B = 2, bleed = box('seal-bleed', sx - B, sy - B, sw + 2 * B, sh + 2 * B), bctx = bleed.getContext('2d'), bim = bctx.createImageData(sw + 2 * B, sh + 2 * B);
+    const B = SEAL_PX, bleed = box('seal-bleed', sx - B, sy - B, sw + 2 * B, sh + 2 * B), bctx = bleed.getContext('2d'), bim = bctx.createImageData(sw + 2 * B, sh + 2 * B);
     for (let j = 0; j < sh + 2 * B; j++) for (let i = 0; i < sw + 2 * B; i++) {
       const SX = i - B, SY = j - B; if (SX >= 0 && SY >= 0 && SX < sw && SY < sh && fim.data[(SY * sw + SX) * 4 + 3]) continue;   // only around the seal, never over it
       let near = false; for (let dj = -B; dj <= B && !near; dj++) for (let di = -B; di <= B && !near; di++) { const X = i - B + di, Y = j - B + dj; if (X >= 0 && Y >= 0 && X < sw && Y < sh && fim.data[(Y * sw + X) * 4 + 3] && di * di + dj * dj <= B * B + 1) near = true; }
-      if (near && ((i ^ j) & 1)) bim.data.set([214, 52, 40, 150], (j * (sw + 2 * B) + i) * 4);
+      if (near && (((i / B | 0) ^ (j / B | 0)) & 1)) bim.data.set([214, 52, 40, 150], (j * (sw + 2 * B) + i) * 4);
     }
     bctx.putImageData(bim, 0, 0); bleed.style.opacity = 0;
     const T = 560, hit = .34;

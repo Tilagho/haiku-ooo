@@ -4,6 +4,8 @@ import { ScrollView } from './scroll-view.js';
 import { loadLibrary } from './scroll-engine2.js';
 import SPRITES from './sprites6.js';
 import { Inky } from './inky.js';
+import { SpeechScheduler, readMs } from './inky-mind.js';
+import { renderBubble, U as BU } from './pixel-bubble.js';
 import { clock } from './clock.js';
 import { copyText } from './share.js';
 import { mountScrollButton } from './scroll-button.js';
@@ -13,7 +15,7 @@ import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 
 const $ = s => document.querySelector(s);
 const store = createStore();
-const bubble = $('#bubble');
+const bubble = $('#bubble'), bcv = document.createElement('canvas'); bcv.className = 'bcv';
 const reduced = prefersReducedMotion();
 
 // ---------- helpers ----------
@@ -29,6 +31,7 @@ const anim = (el, k, sp, o) => reduced ? null : springAnimate(el, k, sp, o);
 const view = new ScrollView($('#scroll'), { seed: 31, lib: await loadLibrary(SPRITES) });   // decode the art once (async inflate)
 // tap a poem: no highlight (the scroll stays one painting); it is copied, with the site URL, and Inky says so
 view.onTapPoem = (rec, el, e) => rec && copyPoem(rec.post, e);
+import('./birds.js').then(m => m.mountBirds(view, { clock, reduced }));   // round 13 background birds (src/birds.js, background worker)
 async function writeClipboard(text) {
   try {   // (a permission prompt that never answers must not swallow the tap: give up after 700 ms and use the fallback)
     if (navigator.clipboard?.writeText && await Promise.race([navigator.clipboard.writeText(text).then(() => true), new Promise(r => setTimeout(() => r(false), 700))])) return true;
@@ -42,7 +45,7 @@ let lastCopied = '';
 async function copyPoem(post, e) {
   const text = copyText(post); lastCopied = text;
   const ok = await writeClipboard(text);
-  if (!composing() && inky.visible && inky.mode === 'roam') { inky.setMood(ok ? 'cheer' : 'worry'); inky.jump(.7); say(ok ? 'copied!' : 'could not copy', 1000); clock.wait(900).then(() => inky.mode === 'roam' && inky.setMood('happy')); }
+  if (!composing() && inky.visible && inky.mode === 'roam' && inky.mood !== 'splat') { inky.setMood(ok ? 'cheer' : 'worry'); inky.jump(.7); say(ok ? 'copied!' : 'could not copy', 1000); clock.wait(900).then(() => inky.mode === 'roam' && inky.setMood('happy')); }
   else floatNote(ok ? 'copied' : 'could not copy', e?.clientX ?? innerWidth / 2, e?.clientY ?? innerHeight / 2);
   return ok;
 }
@@ -61,25 +64,60 @@ async function loadAll() {
 }
 
 // ---------- Inky: the ink-drop mascot (canvas overlay) + his pixel speech bubble ----------
+// The bubble is drawn pixel by pixel (src/pixel-bubble.js, the compose bubble's style: rounded, stubby tail, set a
+// little away from him). One bubble at a time; it stays readMs(text) (2.5 s + 60 ms a character), then POPS.
 const inky = new Inky({ R: 7 });
-inky.placeAt(innerWidth * 0.18, innerHeight - 78); inky.floor = inky.pageFloor(); inky.grounded = true;
-let bubbleUntil = 0, bubbleBig = false, bubbleAnchor = null;
-function say(text, ms = 1800, big = false, anchor = null) {
-  bubbleAnchor = anchor;
-  bubble.textContent = text; bubble.hidden = false; bubble.classList.toggle('big', big); bubbleBig = big;
-  bubbleUntil = clock.now() + ms; placeBubble(); anim(bubble, [{ transform: 'scale(.2)' }, { transform: 'scale(1.15,.9)', offset: .4 }, { transform: 'scale(1)' }], SPRINGS.pop, { fill: 'none' });
+inky.placeAt(-80, innerHeight - 78); inky.entered = false; inky.floor = inky.pageFloor(); inky.fy = inky.floor; inky.grounded = true;
+let bubbleUntil = 0, bubbleAnchor = null, popping = false;
+const speech = new SpeechScheduler();
+function say(text, ms = readMs(String(text)), big = false, anchor = null) {
+  bubbleAnchor = anchor; popping = false; bubble.getAnimations?.().forEach(a => a.cancel());
+  bubble.classList.add('px'); bubble.innerHTML = ''; const t = document.createElement('span'); t.className = 'bt';
+  String(text).split('\n').forEach((l, i) => { if (i) t.appendChild(document.createElement('br')); t.appendChild(document.createTextNode(l)); });
+  bubble.append(bcv, t); bubble.hidden = false; bubble.classList.toggle('big', big);
+  bubble.style.width = bubble.style.height = '';
+  const r = t.getBoundingClientRect(); bubble._bw = Math.ceil(r.width / BU); bubble._bh = Math.ceil(r.height / BU); bubble._key = '';
+  bubble.style.width = bubble._bw * BU + 'px'; bubble.style.height = bubble._bh * BU + 'px';
+  bubbleUntil = clock.now() + ms; placeBubble();
+  if (!reduced) bubble.animate([{ transform: `translateY(${2 * BU}px) scale(.6)`, opacity: 0 }, { transform: `translateY(${-BU}px) scale(1.06)`, opacity: 1, offset: .5 }, { transform: 'none', opacity: 1 }], { duration: 220, easing: 'steps(3, end)' });
+}
+// it POPS: a quick swell, gone, and a ring of ink specks where it was
+function popBubble() {
+  if (bubble.hidden || popping) return; popping = true;
+  const r = bubble.getBoundingClientRect(), done = () => { bubble.hidden = true; popping = false; speech.bubbleEnded(clock.now()); };
+  if (reduced) return done();
+  inky.pop(r.left + r.width / 2, r.top + r.height / 2, r.width);
+  const a = bubble.animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(1.14)', opacity: 1, offset: .5 }, { transform: 'scale(1.3)', opacity: 0 }], { duration: 130, easing: 'steps(2, end)', fill: 'forwards' });
+  clock.wait(130).then(() => { done(); a.cancel(); });
 }
 function placeBubble() {
-  let p = inky.pos;
-  if (bubbleAnchor) { const r = bubbleAnchor.getBoundingClientRect(); p = { x: r.left + r.width * .7, top: r.top }; }
-  const w = bubble.offsetWidth, h = bubble.offsetHeight;
-  const left = Math.max(8, Math.min(innerWidth - w - 8, p.x - w + 26)), top = Math.max(8, p.top - h - 10);
-  bubble.style.transform = ''; bubble.style.left = left + 'px'; bubble.style.top = top + 'px';
-  bubble.style.setProperty('--tail', Math.max(14, Math.min(w - 20, p.x - left - 6)) + 'px');
+  const bw = bubble._bw, bh = bubble._bh, W = bw * BU, H = bh * BU, p = inky.pos;
+  let hx = p.x, hy = p.top + 6;
+  if (bubbleAnchor) { const r = bubbleAnchor.getBoundingClientRect(); hx = r.left + r.width * .7; hy = r.top; }
+  const right = hx < innerWidth / 2, GAP = 14;                                           // off to the roomier side, a little away
+  let left = right ? hx + 10 : hx - 10 - W, top = hy - H - GAP - 2 * BU;
+  left = Math.max(6, Math.min(innerWidth - W - 6, left)); top = Math.max(6, top);
+  left = Math.round(left / BU) * BU; top = Math.round(top / BU) * BU;
+  bubble.style.left = left + 'px'; bubble.style.top = top + 'px';
+  // stubby tail from the bottom edge toward his head, stopping short of him
+  const bx = Math.max(left + 4 * BU, Math.min(left + W - 4 * BU, right ? left + 5 * BU : left + W - 5 * BU)), by = top + H;
+  let dx = hx - bx, dy = hy - by; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+  const len = Math.max(2 * BU, Math.min(4 * BU, L - GAP)), tip = { x: Math.floor((bx + dx * len - left) / BU), y: Math.max(bh, Math.floor((by + dy * len - top) / BU)) };
+  const key = [bw, bh, tip.x, tip.y, bubble.classList.contains('big')].join();
+  if (key !== bubble._key) {
+    bubble._key = key; const r = renderBubble(bcv, { bw, bh, tip, round: true, red: bubble.classList.contains('big') });
+    Object.assign(bcv.style, { left: r.ox * BU + 'px', top: r.oy * BU + 'px', width: r.W * BU + 'px', height: r.H * BU + 'px' });
+  }
 }
 clock.onTick(() => {
-  if (bubble.hidden) return;
-  if (clock.now() > bubbleUntil || (!inky.visible && !bubbleAnchor)) { bubble.hidden = true; return; }
+  const now = clock.now();
+  // ambient speech: every 25-60 s, never while composing, one bubble at a time, a cooldown after any bubble
+  if (inky.entered && inky.mode === 'roam' && inky.visible && inky.mood !== 'splat') {
+    const line = speech.tick(now, { composing: composing(), busy: rolling, hidden: document.hidden, bubbleUp: !bubble.hidden });
+    if (line) say(line.text);
+  }
+  if (bubble.hidden || popping) return;
+  if (now > bubbleUntil || composing() || (!inky.visible && !bubbleAnchor)) { popBubble(); return; }
   placeBubble();
 });
 // ---------- the write button: tap -> both rolled ends wind in and meet in the middle -> then the compose flow ----------
@@ -112,17 +150,27 @@ async function stampDemo({ type = false } = {}) {
 }
 
 // ---------- boot ----------
-inky.onTap = () => { if (inky.mode === 'roam') { inky.setMood('happy'); say(['hehe!', 'that tickles', 'write a haiku?', '5-7-5!'][Math.floor(Math.random() * 4)], 1300); } };
+// taps on Inky: squish -> annoyed -> MAD -> SPLAT (src/inky-mind.js TapMeter); he only talks back some of the time
+const TAP_SAYS = { squish: ['hehe!', 'that tickles', null, null], annoyed: ['hey.', 'hm.', null], mad: ['STOP poking!', 'grr…', 'i am INK, not a button', null] };
+inky.onTap = kind => {
+  if (kind === 'splat') return popBubble();
+  const opts = TAP_SAYS[kind]; if (!opts) return;
+  const t = opts[Math.floor(Math.random() * opts.length)]; if (t && (bubble.hidden || kind === 'mad')) say(t, 1200);
+};
+inky.onPopUp = () => { if (bubble.hidden) say('…ow.', 1000); };
+inky.onDragStart = () => popBubble();                 // picked up: whatever he was saying pops
 const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl) : null;
 const norenEl = $('#noren'), noren = norenEl ? mountNoren(norenEl) : null;
 const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; } });
 // springy press: squash on touch, spring back on release
 const booted = loadAll();
+// he slips in from off-screen once the board is up
+booted.then(() => clock.wait(reduced ? 0 : 450)).then(() => { if (!composing()) inky.enter(); else inky.entered = true; });
 
 // test hooks for screenshots / e2e
 // Public hooks (see README, "Seal-stamp hook"): the compose flow calls HB.addPost(post) or the pieces directly.
 window.HB = { view, inky, clock, booted, fabArt, noren, compose, writeTapped, onWrite: null,
   rollUpButton: ms => fabArt?.rollUp(ms) ?? Promise.resolve(), unrollButton: ms => fabArt?.unroll(ms) ?? Promise.resolve(), copyText, copyPoem, lastCopied: () => lastCopied, stampDemo,
   typePoem: (el, o) => view.typePoem(el, o), stampSeal: (el, o) => view.stampSeal(el, o), addPost: addNewPost,
-  openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say,
+  openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say, speech, popBubble,
   isBusy: () => !!compose?.busy, fill: (lines, name) => compose.fill(lines, name), submit: () => compose.submit() };

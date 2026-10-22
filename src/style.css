@@ -126,5 +126,14 @@ main { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding
   box-shadow: 0 -4px 0 0 var(--ink), 0 4px 0 0 var(--ink), -4px 0 0 0 var(--ink), 4px 0 0 0 var(--ink), 6px 8px 0 0 var(--ink); }
 .bubble.big::before { background: var(--red); }
 .bubble[hidden], .seal[hidden] { display: none; }
+/* round 13: the board bubble is drawn pixel by pixel (src/pixel-bubble.js) like the compose one */
+.bubble.px { background: none; box-shadow: none; padding: 0; max-width: none; display: grid; place-items: center; transform-origin: 50% 100%; }
+.bubble.px::before, .bubble.px::after { content: none; }
+.bubble.px .bcv { position: absolute; z-index: -1; image-rendering: pixelated; pointer-events: none; }
+.bubble.px .bt { position: relative; display: block; padding: 7px 10px 6px; text-align: left; white-space: nowrap; line-height: 1.15; }
+.bubble.px.big .bt { color: var(--paper-hi); font-size: 32px; }
+.bubble.px[hidden] { display: none; }
+/* no zoom on iOS: no double-tap zoom anywhere (taps stay fast, repeated taps on Inky still count); pinch is blocked in src/no-zoom.js */
+html, body, button, a, input, textarea, [role="button"], .fab, .poem, .noren-head { touch-action: manipulation; }
 body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .inky-canvas, body.capture-clean .bubble { visibility: hidden; }
 

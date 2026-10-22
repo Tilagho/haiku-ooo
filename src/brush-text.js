@@ -3,7 +3,7 @@
 // Measuring is pure arithmetic on fixed advances, so layout is identical on every device.
 import FONTS from './brush-font.js';
 import KANJI from './kanji-glyphs.js';
-import { sealLayout } from './kanji.js';
+import { sealLayout, SEAL_GLYPHS } from './kanji.js';
 
 const decoded = new Map();
 function glyph(font, ch) {
@@ -50,33 +50,30 @@ export function drawLine(buf, text, x, y, f, rand, { color = [24, 22, 26], alpha
 }
 
 // Number seal: a real red hanko, perfectly straight (zero rotation), upright oval or square, with the post number
-// in KANJI numerals (src/kanji.js) carved out in cream: Misaki Gothic 8x8 glyphs, doubled for 1-2 characters.
-// A thin carved ring follows the rim, a few pixels are worn pale, and the edge has a couple of nicks.
+// in KANJI numerals carved out in cream: hand-made 5x5 block glyphs (src/kanji.js SEAL_GLYPHS) on a tiny art grid,
+// every art px a 3x3 block of font px (near-Minecraft chunky). Two reds (one lighter bevel row on top) + cream.
+// A 1 px red rim, a 1 px carved cream ring inside it, then the red field.
 const SEAL_RED = [214, 52, 40], SEAL_PAPER = [248, 240, 222];
-export function sealDims(n) { const L = sealLayout(n); return [L.W, L.H]; }
+export const SEAL_PX = 3;                                     // font px per seal art px: big blocky pixels (4-4.5 CSS px)
+export function sealDims(n) { const L = sealLayout(n); return [L.W * SEAL_PX, L.H * SEAL_PX]; }
 export function sealSize(n) { return sealDims(n)[0]; }
-export function drawSeal(buf, n, x, y, rand, { red = SEAL_RED, paper = SEAL_PAPER } = {}) {
-  const L = sealLayout(n), { W, H } = L;
-  const put = (px, py, c, a = 255) => { if (px < 0 || py < 0 || px >= buf.w || py >= buf.h) return; const i = (py * buf.w + px) * 4; buf.data[i] = c[0]; buf.data[i + 1] = c[1]; buf.data[i + 2] = c[2]; buf.data[i + 3] = a; };
-  // inside(i, j, k): pixel centre inside the shape shrunk by k px
+const SEAL_HI = [236, 92, 70];                                // the one lighter shade: a blocky bevel along the top of the rim
+export function drawSeal(buf, n, x, y, rand = Math.random, { red = SEAL_RED, paper = SEAL_PAPER, hi = SEAL_HI } = {}) {
+  const L = sealLayout(n), { W, H } = L, K = SEAL_PX;
+  // every art px is a K x K block of identical font px: hard-edged, nearest-neighbour, no anti-aliasing
+  const put = (px, py, c) => { for (let b = 0; b < K; b++) for (let d = 0; d < K; d++) { const X = x + px * K + d, Y = y + py * K + b; if (X < 0 || Y < 0 || X >= buf.w || Y >= buf.h) continue; const i = (Y * buf.w + X) * 4; buf.data[i] = c[0]; buf.data[i + 1] = c[1]; buf.data[i + 2] = c[2]; buf.data[i + 3] = 255; } };
+  // inside(i, j, k): pixel centre inside the shape shrunk by k px. The oval is a stepped pixel ellipse; the
+  // rectangle just has its four corner pixels knocked off.
   const inside = L.shape === 'oval'
     ? (i, j, k = 0) => (((i + .5) - W / 2) / (W / 2 - k)) ** 2 + (((j + .5) - H / 2) / (H / 2 - k)) ** 2 <= 1
-    : (i, j, k = 0) => { const r = 1.5, a = k, b = W - 1 - k, c = H - 1 - k; if (i < a || j < a || i > b || j > c) return false;
-        const cx = Math.min(Math.max(i, a + r - .5), b - r + .5), cy = Math.min(Math.max(j, a + r - .5), c - r + .5); return (i - cx) ** 2 + (j - cy) ** 2 <= r * r; };
-  const cut = new Uint8Array(W * H);
-  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) if (inside(i, j, 2) && !inside(i, j, 3)) cut[j * W + i] = 1;   // carved ring inside a 2 px rim
-  for (const c of L.cells) {
-    const g = KANJI[c.ch]; if (!g) continue;
-    for (let gy = 0; gy < 7; gy++) for (let gx = 0; gx < 7; gx++) if (g[gy][gx] === '1')
-      for (let a = 0; a < L.scale; a++) for (let b = 0; b < L.scale; b++) { const X = c.x + gx * L.scale + a, Y = c.y + gy * L.scale + b; if (X >= 0 && Y >= 0 && X < W && Y < H) cut[Y * W + X] = 1; }
-  }
-  const nicks = new Set([Math.floor(rand() * W), Math.floor(rand() * H) + 1000]);          // two tiny chips in the rim
+    : (i, j, k = 0) => { const a = k, b = W - 1 - k, c = H - 1 - k; if (i < a || j < a || i > b || j > c) return false; return !((i === a || i === b) && (j === a || j === c)); };
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
     if (!inside(i, j)) continue;
-    const edge = !inside(i, j, 1);   // nicks only bite the outermost pixel row
-    if (edge && ((j === 0 || j === H - 1) && nicks.has(i) || (i === 0 || i === W - 1) && nicks.has(j + 1000))) continue;
-    if (cut[j * W + i]) put(x + i, y + j, paper);
-    else put(x + i, y + j, red, rand() < 0.025 ? 175 : 255);
+    const ring = inside(i, j, 1) && !inside(i, j, 2);                     // the carved cream ring inside the 1 px rim
+    let carved = ring;
+    for (const c of L.cells) { const g = SEAL_GLYPHS[c.ch], gx = i - c.x, gy = j - c.y; if (g && gx >= 0 && gy >= 0 && gx < L.glyph && gy < L.glyph && g[gy][gx] === '#') carved = true; }
+    const top = !inside(i, j - 1) && inside(i, j, 1) === false;           // the rim's top edge: one lighter row
+    put(i, j, carved ? paper : top ? hi : red);
   }
 }
 
