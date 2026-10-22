@@ -80,16 +80,30 @@ export function windOffsets(PW, t, gust = 0, out = new Int8Array(PW), shade = nu
 // occasional gusts: smooth bumps, deterministic in t
 export function gustAt(t) { const T = 6.5, k = ((t % T) + T) % T; return k < 1.8 ? Math.sin(Math.PI * k / 1.8) ** 2 * (.6 + .4 * Math.abs(Math.sin(Math.floor(t / T) * 12.9898))) : 0; }
 
-// compose one frame: wind offsets for the paper columns, roll-up progress p (0 = open, 1 = rolled shut)
-export function renderScrollButton(art, out, { t = 0, p = 0, gust = gustAt(t) } = {}) {
+// the board's leaf-blower wind (noren.js sim.gust: + = page scrolled down = blows right, - = blows left, |b| <= ~1.3) moves
+// the WHOLE button like the noren: it leans downwind (top rows more than the base, whole art px), the upwind roll lifts,
+// the paper between them tilts with the rolls and its ripple grows and runs downwind. Room for that around the art:
+export const WIND_PAD_X = 6, WIND_PAD_Y = 3;
+export function blowShape(b, H) {                               // per output row: the lean (art px); per roll: the lift
+  const lean = new Int8Array(H + WIND_PAD_Y);
+  for (let y = 0; y < lean.length; y++) lean[y] = Math.round(b * (1 + 2.6 * (1 - y / (lean.length - 1))));
+  const up = Math.min(2, Math.round(Math.abs(b) * 1.8));
+  return { lean, liftL: b > 0 ? -up : 0, liftR: b < 0 ? -up : 0 };
+}
+// compose one frame: wind offsets for the paper columns, roll-up progress p (0 = open, 1 = rolled shut), blow (see above)
+export function renderScrollButton(art, out, { t = 0, p = 0, gust = gustAt(t), blow = 0 } = {}) {
   const { W, H, PW, PH, RH, paper, isPaper, roll, py } = art, d = out.data; d.fill(0);
-  const shade = new Float32Array(PW), off = windOffsets(PW, t, gust * (1 - p), new Int8Array(PW), shade);
-  for (let x = 0; x < PW; x++) off[x] = Math.round(off[x] * (1 - p));
+  const OW = out.width ?? W, OH = out.height ?? H, PX = (OW - W) >> 1, PY = OH - H;   // a padded buffer leaves room for the wind
+  const b = PX || PY ? blow * (1 - p) : 0, ab = Math.min(1.3, Math.abs(b)), sh0 = blowShape(b, H);
+  const shade = new Float32Array(PW), off = windOffsets(PW, t * (1 + ab * .9), (gust + ab * .9) * (1 - p), new Int8Array(PW), shade);
+  if (b < 0) { off.reverse(); shade.reverse(); for (let x = 0; x < PW; x++) shade[x] = -shade[x]; }   // the ripple runs downwind
+  for (let x = 0; x < PW; x++) off[x] = Math.round(off[x] * (1 - p) + sh0.liftL + (sh0.liftR - sh0.liftL) * x / (PW - 1));
   const rx0 = RW - OV + PW - OV, gMax = 2;                           // right roll's resting x; how much each roll fattens
   const pc = Math.min(1, Math.max(0, p)), grow = Math.round(pc * gMax);
   const travel = Math.round(pc * (rx0 - RW - 2 * gMax) / 2);          // both rolls travel inward the same distance
   const lx = travel, rx = rx0 - travel - grow;                        // left roll x / right roll x (it fattens leftward)
-  const put = (x, y, c, a = 255) => { if (x < 0 || y < 0 || x >= W || y >= H) return; const o = (y * W + x) * 4;
+  const lean = sh0.lean;
+  const put = (x, y, c, a = 255) => { y += PY; if (y < 0 || y >= OH) return; x += PX + (b ? lean[y] : 0); if (x < 0 || x >= OW) return; const o = (y * OW + x) * 4;
     if (a < 255 && d[o + 3]) return; d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = a; };
   const px0 = RW - OV;                                                // paper x on the canvas
   const drawPaper = shadow => {
@@ -109,30 +123,33 @@ export function renderScrollButton(art, out, { t = 0, p = 0, gust = gustAt(t) } 
       }
     }
   };
-  const drawRoll = (x0, extra, shadow) => {
+  const drawRoll = (x0, extra, shadow, lift = 0) => {
     for (let j = 0; j < RH; j++) for (let i = 0; i < RW + extra; i++) {
       const si = i < 5 ? i : i >= 5 + extra ? i - extra : 5, o = (j * RW + si) * 4; if (!roll.d[o + 3]) continue;
-      if (shadow) put(x0 + i + 2, j + 2, OUT, 80); else put(x0 + i, j, [roll.d[o], roll.d[o + 1], roll.d[o + 2]]);
+      if (shadow) put(x0 + i + 2, j + 2 - lift * .5 | 0, OUT, 80); else put(x0 + i, j + lift, [roll.d[o], roll.d[o + 1], roll.d[o + 2]]);
     }
   };
-  drawRoll(rx, 0, false); drawRoll(lx, grow, false); drawPaper(false);
-  drawRoll(lx, grow, false); drawRoll(rx, 0, false);                  // rolls sit over the paper ends
-  drawPaper(true); drawRoll(lx, grow, true); drawRoll(rx, 0, true);   // shadows only fill empty pixels
+  const L = sh0.liftL, R = sh0.liftR;                                 // the upwind roll lifts (and its shadow stays down)
+  drawRoll(rx, 0, false, R); drawRoll(lx, grow, false, L); drawPaper(false);
+  drawRoll(lx, grow, false, L); drawRoll(rx, 0, false, R);            // rolls sit over the paper ends
+  drawPaper(true); drawRoll(lx, grow, true, L); drawRoll(rx, 0, true, R);   // shadows only fill empty pixels
   return out;
 }
 
-export function mountScrollButton(button, { label = 'write a haiku' } = {}) {
+export function mountScrollButton(button, { label = 'write a haiku', wind = () => 0 } = {}) {
   const art = drawScrollButton(label), cv = document.createElement('canvas');
-  cv.width = art.W; cv.height = art.H; cv.className = 'fab-art';
-  Object.assign(cv.style, { width: art.W * SCALE + 'px', height: art.H * SCALE + 'px' });
-  const ctx = cv.getContext('2d'), img = ctx.createImageData(art.W, art.H);
+  const CW = art.W + 2 * WIND_PAD_X, CH = art.H + WIND_PAD_Y;        // padded for the wind; negative margins keep the button's box
+  cv.width = CW; cv.height = CH; cv.className = 'fab-art';
+  Object.assign(cv.style, { width: CW * SCALE + 'px', height: CH * SCALE + 'px', margin: `${-WIND_PAD_Y * SCALE}px ${-WIND_PAD_X * SCALE}px 0` });
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(CW, CH);
   const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const api = { canvas: cv, art, p: 0, t0: clock.now(), rolling: null, still: reduced };
+  const api = { canvas: cv, art, p: 0, t0: clock.now(), rolling: null, still: reduced, blow: 0 };
   let key = '';
   api.paint = (t = (clock.now() - api.t0) / 1000) => {
-    const tt = api.still ? 0 : t, k = (api.still ? 's' : (Math.round(tt * 30))) + ':' + api.p.toFixed(3);
+    const g = wind() || 0; api.blow = reduced ? g * .15 : g;          // reduced motion: only a mild lean, no ripple animation
+    const tt = api.still ? 0 : t, bq = Math.round(api.blow * 20) / 20, k = (api.still ? 's' : (Math.round(tt * 30))) + ':' + api.p.toFixed(3) + ':' + bq;
     if (k === key) return; key = k;
-    renderScrollButton(art, img, { t: tt, p: api.p, gust: api.still ? 0 : undefined }); ctx.putImageData(img, 0, 0);
+    renderScrollButton(art, img, { t: tt, p: api.p, gust: api.still ? 0 : undefined, blow: bq }); ctx.putImageData(img, 0, 0);
   };
   // roll the paper up into the right roll (resolves when shut) / unroll it again (springy)
   const tween = (to, ms, ease) => new Promise(res => {
@@ -145,6 +162,6 @@ export function mountScrollButton(button, { label = 'write a haiku' } = {}) {
   api.unroll = (ms = 700) => reduced ? (api.p = 0, api.paint(), Promise.resolve()) : tween(0, ms, k => { const s = 1 - k; return 1 - s * s * s + Math.sin(k * Math.PI) * .06 * (1 - k); });   // progress 0 -> 1 (ends fully open, p = 0)
   button.replaceChildren(cv); const sr = document.createElement('span'); sr.className = 'sr'; sr.textContent = label; button.append(sr);
   api.paint(0);
-  if (!reduced) clock.onTick(() => api.paint());
+  clock.onTick(() => api.paint());                                    // (reduced: repaints only when the lean changes, see key)
   return api;
 }

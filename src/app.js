@@ -8,6 +8,7 @@ import { SpeechScheduler, readMs } from './inky-mind.js';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { clock } from './clock.js';
 import { copyText } from './share.js';
+import { mountWind } from './wind.js';
 import { mountScrollButton } from './scroll-button.js';
 import { mountNoren } from './noren.js';
 import { mountCompose } from './compose.js';
@@ -31,6 +32,7 @@ const anim = (el, k, sp, o) => reduced ? null : springAnimate(el, k, sp, o);
 const view = new ScrollView($('#scroll'), { seed: 31, lib: await loadLibrary(SPRITES) });   // decode the art once (async inflate)
 // tap a poem: no highlight (the scroll stays one painting); it is copied, with the site URL, and Inky says so
 view.onTapPoem = (rec, el, e) => rec && copyPoem(rec.post, e);
+import('./mist.js').then(m => m.mountMist(view, { clock, reduced }));     // round 14 rolling sumi mist (src/mist.js): over the ink, under the birds + poems
 import('./birds.js').then(m => m.mountBirds(view, { clock, reduced }));   // round 13 background birds (src/birds.js, background worker)
 async function writeClipboard(text) {
   try {   // (a permission prompt that never answers must not swallow the tap: give up after 700 ms and use the fallback)
@@ -159,7 +161,8 @@ inky.onTap = kind => {
 };
 inky.onPopUp = () => { if (bubble.hidden) say('…ow.', 1000); };
 inky.onDragStart = () => popBubble();                 // picked up: whatever he was saying pops
-const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl) : null;
+const wind = mountWind({ view, reduced });            // the leaf-blower gust for the write button + the poem scrolls (src/wind.js)
+const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl, { wind: () => wind.at(.92) }) : null;
 const norenEl = $('#noren'), noren = norenEl ? mountNoren(norenEl) : null;
 const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; } });
 // springy press: squash on touch, spring back on release
@@ -169,7 +172,7 @@ booted.then(() => clock.wait(reduced ? 0 : 450)).then(() => { if (!composing()) 
 
 // test hooks for screenshots / e2e
 // Public hooks (see README, "Seal-stamp hook"): the compose flow calls HB.addPost(post) or the pieces directly.
-window.HB = { view, inky, clock, booted, fabArt, noren, compose, writeTapped, onWrite: null,
+window.HB = { view, inky, clock, booted, fabArt, noren, compose, wind, writeTapped, onWrite: null,
   rollUpButton: ms => fabArt?.rollUp(ms) ?? Promise.resolve(), unrollButton: ms => fabArt?.unroll(ms) ?? Promise.resolve(), copyText, copyPoem, lastCopied: () => lastCopied, stampDemo,
   typePoem: (el, o) => view.typePoem(el, o), stampSeal: (el, o) => view.stampSeal(el, o), addPost: addNewPost,
   openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say, speech, popBubble,

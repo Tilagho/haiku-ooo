@@ -10,12 +10,16 @@ import { springAnimate, springEasing, SPRINGS, JELLY } from './spring.js';
 import { RedInky } from './inky-red.js';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { InkField } from './ink-field.js';
-import { ScrollArt, drawWax, SP, RH } from './scroll-art.js';
+import { ScrollArt, SP, RH } from './scroll-art.js';
 
 const NAMES = ['five', 'seven', 'five'];
 const PH = ['five syllables', 'then seven', 'and five to end'];
 const NO_RUSH = ['no rush~', 'take your time.', 'no rush. the pond<br>can wait.', '…still here!<br>no rush', 'counting clouds.<br>no rush'];
-const ROWS_OPEN = 72, ROWS_KB = 40, ROWS_KB_MAX = 46, IDLE_MS = 9000;
+const ROWS_OPEN = 72, IDLE_MS = 9000;
+// keyboard up: a free band under the lower roller for red Inky (his body may overlap the roller, never the paper), and how
+// far the top roller may tuck up under the screen edge on a very short visible viewport before the type steps down a size
+const INKY_BAND = 30, ST_KB = 30, ST_MIN = 6, ST_TUCK = -54;
+const FOCUS_DELAY = 420;                                  // ms after the unroll has fully played before the caret lands on line 1
 const DENY_STAMPS = [{ src: 'assets/compose/stamp-kyakka.png', alt: '却下 (rejected)' }, { src: 'assets/compose/stamp-fuka.png', alt: '不可 (not allowed)' }];
 // at most 3 lines: anything past the 3rd joins the 3rd (a pasted 4-line poem does not vanish)
 export const clampLines = (v, max = 3) => { const p = v.replace(/\r\n?/g, '\n').split('\n'); return p.length <= max ? p.join('\n') : [...p.slice(0, max - 1), p.slice(max - 1).join(' ').replace(/[ \t]+/g, ' ')].join('\n'); };
@@ -64,7 +68,7 @@ let mctx = null;
 const DPR3 = typeof devicePixelRatio === 'number' && devicePixelRatio >= 2.5;
 // every row starts at the biggest size (48px = 3x the pixel font) and shrinks on its own, only as far as its own text needs.
 // (40px at DPR 3 is 7.5 device px per font px, so its blocks differ by 1 device px; worth it so a typical line gets > 37.33px)
-const FS_OPEN = DPR3 ? [48, 128 / 3, 40, 112 / 3, 32, 80 / 3, 64 / 3, 16] : [48, 40, 32, 24, 20, 16], FS_KB = DPR3 ? [32, 80 / 3, 64 / 3, 16] : [32, 24, 20, 16], FS_KB_SHORT = DPR3 ? [80 / 3, 64 / 3, 16] : [24, 20, 16];
+const FS_OPEN = DPR3 ? [48, 128 / 3, 40, 112 / 3, 32, 80 / 3, 64 / 3, 16] : [48, 40, 32, 24, 20, 16], FS_KB = DPR3 ? [32, 80 / 3, 64 / 3, 16] : [32, 24, 20, 16], FS_KB_SHORT = DPR3 ? [80 / 3, 64 / 3, 16] : [24, 20, 16], FS_KB_TINY = [16];
 const OVERHANG = 0;                                  // px a long line may run past its ruled guide (0: the torn edge nicks would eat it)
 function fitSize(texts, avail, sizes = FS_OPEN) {     // the biggest size every line fits at (32 = 2x the pixel font)
   mctx ||= document.createElement('canvas').getContext('2d');
@@ -96,32 +100,37 @@ export function mountCompose(deps) {
   const $ = s => root.querySelector(s), body = document.body, html = document.documentElement;
   const theme = document.querySelector('meta[name="theme-color"]'), theme0 = theme?.content;
   const field = new InkField({ z: 20 });
-  const inky = new RedInky({ R: 9, z: 60, bigEyes: true, fury: true });
+  const inky = new RedInky({ R: 7, z: 60, bigEyes: true, fury: true });   // R 7 = 78% of the round-13 size (9): he never sits on a stamp, a line or the sign
   const art = new ScrollArt($('#scv'), { maxRows: 92, seed: 8370, outline: 2 });   // 8370: the torn edges stay shallow beside the three writing rows (more room for big type)
   const bubble = document.createElement('div'); bubble.className = 'cbubble'; bubble.hidden = true; root.appendChild(bubble);
   const bcv = document.createElement('canvas'); bcv.className = 'bcv';
   const deny_ = $('#cdeny');
   // preload both stamps so the first slam never shows a blank
   DENY_STAMPS.forEach(s => { const i = new Image(); i.src = s.src; });
-  // the two corner stamps are twins: the same red wax seal (scroll-art drawWax, doubled to 22 px) with a cream glyph
-  // and a dark-red emboss shadow: a curved return arrow (back, lower left) and a checkmark (post, lower right)
-  // core icons (cream), stair-stepped; a 1 px crimson outline (the seal's rim colour) is grown round them, all centred
+  // the two corner stamps are twins: a round red wax seal with a cream glyph and a dark-red emboss shadow. They live ON the
+  // scroll's own pixel grid: one stamp pixel = one parchment pixel (SP = 6 css px), placed on whole grid cells,
+  // 11 x 11 cells open (66 px) and 9 x 9 with the keyboard up (54 px); the icons are drawn blocky at exactly that size
   const GLYPH = {
-    back: ['..#.......', '.##.......', '#########.', '##########', '.##.....##', '..#.....##', '........##', '.......##.', '..#######.', '..######..'],
-    check: ['.......###', '......###.', '##...###..', '###.###...', '.#####....', '..###.....', '...#......'],
+    11: { back: ['..#....', '.##....', '#######', '.##...#', '..#...#', '......#', '..####.'],
+          check: ['......#', '.....##', '#...##.', '##.##..', '.###...', '..#....'] },
+    9: { back: ['.#...', '#####', '.#..#', '....#', '..##.'], check: ['....#', '...##', '#.##.', '.##..'] },
   };
-  const RIM = '#60140e', CREAM = '#fff4e0';
-  function drawSeal(cv, kind) {
-    const w = document.createElement('canvas'); drawWax(w, { ready: true, n: 11, seed: 9 });
-    cv.width = cv.height = 22; const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false; ctx.drawImage(w, 0, 0, 22, 22);
-    const g = GLYPH[kind], gw = g[0].length, gh = g.length, ox = Math.round((22 - gw) / 2), oy = Math.round((22 - gh) / 2);
+  const WAX = { o: [96, 20, 14], d: [146, 32, 22], b: [214, 58, 40], l: [240, 116, 94] }, SHADOW = [96, 20, 14], CREAM = [255, 244, 224];
+  const KB_SEAL = 9, OPEN_SEAL = 11;
+  function drawSeal(cv, kind, n = body.classList.contains('kb') ? KB_SEAL : OPEN_SEAL) {
+    cv.width = cv.height = n; const ctx = cv.getContext('2d'), img = ctx.createImageData(n, n), D = img.data, c0 = (n - 1) / 2;
+    const g = GLYPH[n][kind], gw = g[0].length, gh = g.length, ox = Math.floor((n - gw) / 2), oy = Math.floor((n - gh) / 2);
     const on = (x, y) => g[y - oy]?.[x - ox] === '#';
-    for (let y = 0; y < 22; y++) for (let x = 0; x < 22; x++) {
-      if (on(x, y)) { ctx.fillStyle = CREAM; ctx.fillRect(x, y, 1, 1); continue; }
-      let near = false; for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) if (on(x + dx, y + dy)) { near = true; break; }
-      if (near) { ctx.fillStyle = RIM; ctx.fillRect(x, y, 1, 1); }
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const dx = x - c0, dy = y - c0, r = Math.hypot(dx, dy), lim = c0 + .45 - ((x * 7 + y * 3) % 11 === 0 ? .6 : 0);   // a round blob, 1-2 worn nicks
+      if (r > lim) continue;
+      let c = r > lim - 1 ? WAX.o : dx + dy < -c0 * .9 && r > lim - 2 ? WAX.l : dx + dy > c0 * .9 && r > lim - 2 ? WAX.d : WAX.b;
+      if (on(x, y)) c = CREAM; else if (on(x - 1, y - 1) && r <= lim - 1) c = SHADOW;     // emboss shadow, one grid cell down-right
+      const i = (y * n + x) * 4; D[i] = c[0]; D[i + 1] = c[1]; D[i + 2] = c[2]; D[i + 3] = 255;
     }
+    ctx.putImageData(img, 0, 0); cv.dataset.grid = n;
   }
+  const drawSeals = () => { drawSeal($('#arw'), 'back'); drawSeal($('#wax'), 'check'); };
   drawSeal($('#arw'), 'back'); drawSeal($('#wax'), 'check');
   // the ruled writing guides (and the sign underline) are painted INTO the scroll canvas, on its own 6 px art grid:
   // a very soft tan just darker than the parchment's darker checker, 1 solid row + a worn, broken second row,
@@ -163,24 +172,70 @@ export function mountCompose(deps) {
   clock.onTick(() => { $('#pw').style.height = Math.max(0, art.openCss - 6) + 'px'; });   // the DOM paper clip follows the canvas paper
 
   // ---------- the real keyboard: follow the visual viewport (its height AND its offset) ----------
+  // While the scroll unrolls the layout is FROZEN (decided once when the unroll starts, from the viewport at that moment):
+  // a keyboard that rises mid-animation (iOS raises it at the write tap, see prime()) is covered by the wash and only
+  // re-lays the scroll after the unroll + FOCUS_DELAY, never mid-animation.
   const VV = window.visualViewport;
-  let vvh = innerHeight, vvt = 0, kbUp = false;
+  let vvh = innerHeight, vvt = 0, kbUp = false, frozen = false, plan = null;
   function syncViewport() {
-    vvh = Math.round(VV ? VV.height : innerHeight); vvt = Math.round(VV ? VV.offsetTop : 0);
-    html.style.setProperty('--vvh', vvh + 'px'); html.style.setProperty('--vvt', vvt + 'px');
-    const was = kbUp; kbUp = body.classList.contains('composing') && vvh < innerHeight * .8; body.classList.toggle('kb', kbUp);
-    if (was !== kbUp) { fitPaper(); update(); }
+    vvt = Math.round(VV ? VV.offsetTop : 0); html.style.setProperty('--vvt', vvt + 'px');
+    if (frozen) return;
+    vvh = Math.round(VV ? VV.height : innerHeight); html.style.setProperty('--vvh', vvh + 'px');
+    const was = kbUp, wasPlan = plan && plan.rows + ':' + plan.st + ':' + plan.sizes[0];
+    kbUp = body.classList.contains('composing') && vvh < innerHeight * .8; body.classList.toggle('kb', kbUp);
+    plan = kbUp ? kbPlan() : null;
+    $('#cscroll').style.setProperty('--st', (plan ? plan.st : 34) + 'px');
+    if (was !== kbUp) drawSeals();
+    if (was !== kbUp || (plan && plan.rows + ':' + plan.st + ':' + plan.sizes[0]) !== wasPlan) { fitPaper(); update(); }
   }
   if (VV) { VV.addEventListener('resize', syncViewport); VV.addEventListener('scroll', syncViewport); }
   addEventListener('resize', syncViewport);
-  // keyboard up: as many rows as the visible height allows (rods + offsets ~150 px), never fewer than 40
-  const kbRows = () => Math.max(ROWS_KB, Math.min(ROWS_KB_MAX, Math.floor((vvh - 150) / SP)));
+  // keyboard up: the biggest type tier whose three rows + the stamp row + the rods + Inky's band fit the visible height
+  // (rows: 4 + 4 margins, per row 4 + baseline + rule + numerals; then a 60 px stamp row). Too short even for the 16 px
+  // tier: the top roller tucks up under the screen edge (st < 0) rather than the stamps running into the lines.
+  const linesBottom = fs => 24 + 3 * (43 + ASC * fs);         // (+8 px slack over the measured rows)
+  function kbPlan() {
+    let p = null;
+    for (const sizes of [FS_KB, FS_KB_SHORT, FS_KB_TINY]) {
+      const rows = Math.ceil((linesBottom(sizes[0]) + 68) / SP);    // + the 9-cell stamp row (54 px) and its gap
+      p = { rows, sizes, st: Math.min(ST_KB, vvh - ((2 + RH * 2) * SP + rows * SP + INKY_BAND)) };
+      if (p.st >= ST_MIN) return p;
+    }
+    p.st = Math.max(ST_TUCK, p.st); return p;
+  }
+  const kbRows = () => (plan || kbPlan()).rows;
   const rowsNow = () => kbUp ? kbRows() : ROWS_OPEN;
   let busyScroll = false;
   function fitPaper() {
     $('#cpaper').style.setProperty('--ph', rowsNow() * SP + 'px');
     if ((opened || unrolling) && !busyScroll) art.setTarget(rowsNow(), { k: 260, c: 24 });   // the keyboard rolls the scroll up a little
   }
+  // where the scroll's lower roller ends (css px, viewport coords) for the CURRENT layout target
+  const scrollBottom = () => vvt + $('#cscroll').offsetTop + (2 + RH * 2) * SP + rowsNow() * SP;   // layout box (not the unroll's transform)
+  const paperBottom = () => scrollBottom() - RH * SP;
+
+  // ---------- FULL BLACKOUT + LOCKED BOARD while composing ----------
+  // body position: fixed at -scrollY (iOS cannot scroll or rubber-band the board under the wash, the keyboard cannot push
+  // it up), a solid wash far bigger than the screen (above / below the visual viewport, behind Safari's translucent bars,
+  // the overscroll bounce and the safe areas) and the same dark on html/body. Closing restores the exact scroll position.
+  let lockY = null;
+  function lockScroll() {
+    if (lockY != null) return;
+    lockY = scrollY; html.classList.add('scroll-lock');
+    Object.assign(body.style, { position: 'fixed', top: -lockY + 'px', left: '0', right: '0', width: '100%' });
+  }
+  function unlockScroll(to = lockY) {
+    if (lockY == null) return;
+    lockY = null; Object.assign(body.style, { position: '', top: '', left: '', right: '', width: '' });
+    scrollTo({ top: to ?? 0, left: 0, behavior: 'instant' });
+    setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => html.classList.remove('scroll-lock'))), 60);   // the restore's scroll event is not a swipe (no gust, no Inky hop)
+  }
+  // nothing under the wash moves: a touchmove anywhere but inside the poem / sign fields is cancelled
+  document.addEventListener('touchmove', e => {
+    if (!body.classList.contains('composing')) return;
+    if (e.target?.closest?.('#cpoem, #cname') && e.touches.length === 1) return;
+    if (e.cancelable) e.preventDefault();
+  }, { passive: false });
 
   // ---------- the writing lines: ONE seamless 3-line textarea over three drawn rows ----------
   // iOS Safari puts ^ / v "jump between fields" arrows above the keyboard when a page has several fields, so the poem is a
@@ -275,7 +330,7 @@ export function mountCompose(deps) {
   }
   const safeWidth = () => rows[0].wr.clientWidth;
   function render(a, ok) {
-    const sizes = kbUp ? (kbRows() >= 44 ? FS_KB : FS_KB_SHORT) : FS_OPEN;
+    const sizes = kbUp ? (plan || kbPlan()).sizes : FS_OPEN;
     measureAsc();
     rowFs = pickSize(a.map((l, i) => l.text || PH[i]), sizes); fsMax = sizes[0]; fsNow = Math.min(...rowFs);
     linesEl.style.setProperty('--fsm', fsMax + 'px'); linesEl.style.setProperty('--fs', fsNow + 'px'); linesEl.style.setProperty('--asc', ASC);
@@ -311,18 +366,45 @@ export function mountCompose(deps) {
     lastStates = states;
   }
   // typing: Return = next line (never a 4th), paste splits into at most 3 lines, Backspace at a line start joins lines
-  let kdEnter = false;
+  let kdEnter = false, advanced = -1;
   function enter() {
-    const { li } = caretAt();
+    const { li, col } = caretAt();
+    if (advanced === li && col === 0 && !texts()[li]) { advanced = -1; return; }   // a Return right after an auto-advance: already there
+    advanced = -1;
     if (li < MAXL - 1) focusLine(li + 1); else submit();      // line 3: exactly like pressing the checkmark seal
+  }
+  // AUTO-ADVANCE: a line that has just hit its count (5 / 7) and is then ended by a space or punctuation, with the caret at
+  // the end of that line and the next line still empty, moves the caret to the next line (the space is dropped). Never
+  // mid-word (it waits for the word end), never past the target (a line that overshoots just overflows, numerals turn
+  // red), and line 3 stays put: complete = ready to post (the sign row shows; Return or the seal posts).
+  const WORD_END = /[\s.,;:!?…—–-]$/;
+  function autoAdvance(e) {
+    if (e.isComposing || !/^insert(Text|CompositionText|ReplacementText)$/.test(e.inputType || '')) return false;
+    if (ta.selectionStart !== ta.selectionEnd) return false;
+    const v = ta.value, s0 = ta.selectionStart, { li } = caretAt(), at = lineStart(v, li), nl = v.indexOf('\n', at), end = nl < 0 ? v.length : nl;
+    if (li >= MAXL - 1 || s0 !== end || !WORD_END.test(v.slice(at, s0))) return false;
+    const line = v.slice(at, end);
+    if (!line.trim() || (texts()[li + 1] ?? '').trim()) return false;
+    const res = countLine(line, PATTERN[li]);
+    if (!(res.ok && res.count === PATTERN[li])) return false;
+    const kept = line.replace(/\s+$/, '');                         // drop the space that ended the word
+    ta.value = v.slice(0, at) + kept + v.slice(end);
+    focusLine(li + 1, 0); advanced = li + 1;
+    return true;
   }
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); kdEnter = true; setTimeout(() => kdEnter = false, 0); enter(); } });
   ta.addEventListener('beforeinput', e => {
-    if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') { e.preventDefault(); if (!kdEnter) enter(); }
+    if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') { e.preventDefault(); if (!kdEnter) enter(); return; }
+    // "pond, " — the comma already finished the line and moved on; the space typed after it must not start the next line
+    if (advanced >= 0 && e.inputType === 'insertText' && /^\s+$/.test(e.data || '')) {
+      const { li, col } = caretAt(); if (advanced === li && col === 0 && !texts()[li]) e.preventDefault();
+    }
   });
-  ta.addEventListener('input', () => {
+  ta.addEventListener('input', e => {
     const v = ta.value, c = clampLines(v);
     if (c !== v) { const pos = ta.selectionStart; ta.value = c; setCaret(Math.min(pos, c.length)); }
+    if (!autoAdvance(e) && !/^delete/.test(e.inputType || '')) { if (advanced >= 0 && caretAt().col > 0) advanced = -1; }
+    if (/^delete/.test(e.inputType || '')) advanced = -1;
     if (denied) clearDenied(); poke(); update();
   });
   ta.addEventListener('paste', e => {
@@ -384,8 +466,14 @@ export function mountCompose(deps) {
   deps.fab?.addEventListener('click', prime, true);   // capture: runs inside the same tap, before app.js starts the roll-up
   function poke() { lastInput = clock.now(); if (inky.mood === 'bored') { inky.setMood('happy'); inky.wobble(.5); bubble.hidden = true; } }
 
-  // Inky parks LOWER-LEFT (room to travel right to the stamp and the seal); above the keyboard when it is up
-  const dock = () => { const l = Math.max(0, innerWidth / 2 - 230); return kbUp ? { x: l + 50, foot: vvt + vvh - 10 } : { x: l + 62, foot: vvt + vvh - 36 }; };
+  // Inky parks LOWER-LEFT, standing in front of the lower roller with his feet in the free band under it (kbPlan keeps
+  // that band): his body may cover the wooden roller but never the paper, so never a stamp, a writing line or the sign
+  const INKY_H = () => Math.ceil(inky.R * 2.6 * 4) + 2;          // css px from his foot to the top of his head
+  const dock = () => {
+    const l = Math.max(0, innerWidth / 2 - 230), vb = vvt + vvh, sb = scrollBottom(), pb = paperBottom();
+    const foot = Math.min(vb - 4, Math.max(pb + INKY_H(), kbUp ? sb + 6 : vb - 36));
+    return { x: l + (kbUp ? 56 : 62), foot };
+  };
 
   // ---------- bubble: drawn pixel by pixel, always points back at Inky ----------
   let bubbleUntil = 0;
@@ -440,25 +528,30 @@ export function mountCompose(deps) {
   let homeInky = null;
   async function open() {
     if (opened || body.classList.contains('composing')) return;
-    body.classList.add('composing'); html.classList.add('composing'); busy = true; rejects = hintAt = 0; denied = false; denyMsg = ''; body.classList.remove('is-denied');
+    lockScroll(); body.classList.add('composing'); html.classList.add('composing'); busy = true; rejects = hintAt = 0; denied = false; denyMsg = ''; body.classList.remove('is-denied');
     if (theme) theme.content = '#1a181c';
     syncViewport();
     ta.value = ''; ta.scrollLeft = 0; nameIn.value = ''; if (document.activeElement !== nameIn) closeName(); fitName(); $('#cpost').classList.remove('stamped');
     lastStates = ['empty', 'empty', 'empty']; idleN = 0; update(); fitPaper();
     const fab = deps.fab?.getBoundingClientRect() ?? { left: innerWidth / 2, width: 0, top: innerHeight - 60 }, fx = fab.left + fab.width / 2;
-    const bi = deps.inky; homeInky = { x: bi.pos.x, foot: bi.floorCss?.() ?? bi.pos.foot };   // his float line, even if he was mid-throw bi.setMood('cheer'); bi.mode = 'still';
+    const bi = deps.inky; homeInky = { x: bi.pos.x, foot: bi.floorCss?.() ?? bi.pos.foot };   // his float line, even if he was mid-throw
+    bi.setMood('cheer'); bi.mode = 'still';
     deps.hideBoardBubble?.();
     await bi.hopTo(fx, fab.top + 8, .26, 12);
     bi.visible = false;
     const fl = field.flood(fx, { speed: 1.8 });
     fabAnim([{ transform: 'translateX(-50%) scale(1)' }, { transform: 'translateX(-50%) scale(1.25,.7)', offset: .3 }, { transform: 'translateX(-50%) translateY(140px) scale(.8,1.2)' }], { duration: 360, easing: 'ease-in', fill: 'forwards' });
     await fl;
+    body.classList.add('washed'); html.classList.add('washed');   // the flood has filled the screen: now a solid wash far past every edge
     await unroll();
-    busy = false; opened = true; body.classList.add('opened'); lastInput = clock.now(); syncViewport(); fitPaper(); update();
+    await clock.wait(FOCUS_DELAY);              // the unroll has fully played; a short breath before the caret
+    frozen = false; syncViewport(); fitPaper(); update();
+    busy = false; opened = true; body.classList.add('opened'); lastInput = clock.now();
     focusLine(0, 0); dropPrimer();               // focus hand-off: primer (focused during the tap) -> line 1, the keyboard stays up
   }
   async function unroll() {
-    const sc = $('#cscroll'); sc.hidden = false; art.jump(0);
+    const sc = $('#cscroll'); syncViewport(); frozen = true; fitPaper();   // the layout is decided now and held until the unroll is over
+    sc.hidden = false; art.jump(0);
     anim(sc, [{ transform: 'translateX(-50%) translateY(-140px) scale(.92,1.1)' }, { transform: 'translateX(-50%) translateY(0) scale(1)' }], { stiffness: 340, damping: 17 });
     await clock.wait(240);
     busyScroll = true; unrolling = true;
@@ -466,8 +559,7 @@ export function mountCompose(deps) {
     await clock.wait(380);
     const d = dock(); inky.visible = true; inky.setMood('cheer'); inky.look = -1;
     await inky.whip([[innerWidth + 90, vvt + vvh * .56], [innerWidth * .62, vvt + vvh * .74], [innerWidth * .36, vvt + vvh * .9], [innerWidth * .48, vvt + vvh * .8], [innerWidth * .26, vvt + vvh * .76], [d.x, d.foot]], .95, { splash: 10 });
-    await done; busyScroll = false;
-    fitPaper(); unrolling = false;                 // the keyboard may have risen mid-unroll: settle to the compact height
+    await done; busyScroll = false; unrolling = false;
     inky.mode = 'coach'; inky.dock = dock; inky.setMood('happy'); inky.look = 1;
     say('hi! I\'m counting.<br>give me 5-7-5', 2400);
   }
@@ -478,13 +570,15 @@ export function mountCompose(deps) {
     const b = sc.animate([{ transform: 'translateX(-50%)' }, { transform: 'translateX(-50%) translateY(10px) scale(1.06,.85)', offset: .3 }, { transform: 'translateX(-50%) translateY(-260px) scale(.9,1.15)' }], { duration: 420, easing: 'cubic-bezier(.5,0,.8,.5)', fill: 'forwards' });
     await clock.wait(420); sc.hidden = true; b.cancel(); busyScroll = false;
   }
+  let unlockTo;                                     // undefined: back to where the board was; a number: there instead (a new post: the top)
   async function drainHome() {
     const bi = deps.inky; bi.mode = 'still'; bi.R = 7; bi.visible = false;
     const hx = homeInky?.x ?? innerWidth * .2, hf = homeInky?.foot ?? innerHeight - 78;
     bi.placeAt(hx, hf); bi.floor = bi.fy; bi.grounded = true; bi.setMood('happy');
     const bp = bi.pos, dur = 1.3;
     const s = field.suck(bp.x, bp.y, { dur, endR: 6 });
-    body.classList.remove('composing', 'ready', 'is-denied', 'opened', 'kb'); html.classList.remove('composing');
+    body.classList.remove('composing', 'ready', 'is-denied', 'opened', 'kb', 'washed'); html.classList.remove('composing', 'washed'); frozen = false; plan = null; kbUp = false;
+    unlockScroll(unlockTo); unlockTo = undefined; drawSeals();
     if (theme) theme.content = theme0;
     clock.wait(dur * 930).then(() => { bi.visible = true; bi.s = .5; bi.sv = 0; bi.wobble(1.4); });
     await s;
@@ -594,7 +688,7 @@ export function mountCompose(deps) {
 
   // ---------- the poem lands on the board: the black drains into Inky, the poem types in, its seal stamps on ----------
   async function installPost(post) {
-    scrollTo(0, 0);                                         // newest is on top: be there before the black lifts
+    unlockTo = 0;                                           // newest is on top: be there before the black lifts
     homeInky = { x: innerWidth * .2, foot: innerHeight - 78 };
     const drained = drainHome();
     await clock.wait(700);

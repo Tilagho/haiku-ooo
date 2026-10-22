@@ -11,17 +11,24 @@ html.composing, html.composing body { overflow: hidden; overscroll-behavior: non
 .ink-field { position: fixed; left: 0; top: 0; pointer-events: none; image-rendering: pixelated; }
 #cveil { position: fixed; inset: 0; z-index: 22; display: none; }
 body.composing #cveil { display: block; }
+/* FULL BLACKOUT once the flood has filled the screen: a solid wash far past every edge of the screen (above and below the
+   visual viewport, behind Safari's translucent toolbars / keyboard bar, the overscroll bounce, the safe areas), and the
+   same ink on html + body so nothing of the board can ever show around it. The board itself is locked (compose.js). */
+body.composing.washed #cveil { top: -60vh; bottom: -60vh; left: -30vw; right: -30vw; background: var(--ink, #1a181c); }
+html.composing.washed, html.composing.washed body { background: #1a181c !important; }
+
 /* the stage follows the VISUAL viewport, so a real on-screen keyboard never covers the lines or Inky */
 #cstage { position: fixed; left: 0; right: 0; top: var(--vvt, 0px); height: var(--vvh, 100%); z-index: 30; pointer-events: none; }
 body.composing #cstage { pointer-events: auto; }
 
 /* ---------- back (cancel): big ink-blot arrow ON the scroll, lower left, paired with the wax seal ---------- */
-#compose .back { position: absolute; left: 54px; top: calc(var(--ph) - 82px); display: flex; align-items: center; gap: 10px; }
+/* both corner stamps sit on whole cells of the scroll's 6 px pixel grid (54 = 9 cells in, 78 / 66 = 13 / 11 cells up) */
+#compose .back { position: absolute; left: 54px; top: calc(var(--ph) - 78px); display: flex; align-items: center; gap: 10px; }
 #compose .back .blot { position: relative; width: 66px; height: 66px; }
 #compose .back .blot canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
-#compose .back:active .blot { transform: translateY(3px) scale(1.06, .92); }
-body.kb #compose .back { top: calc(var(--ph) - 56px); left: 56px; }
-body.kb #compose .back .blot { width: 48px; height: 48px; }
+#compose .back:active .blot { transform: translateY(6px); }   /* pressed: one whole grid cell down (stays on the scroll grid) */
+body.kb #compose .back { top: calc(var(--ph) - 66px); left: 54px; }
+body.kb #compose .back .blot { width: 54px; height: 54px; }
 
 /* ---------- the worn scroll (pixel canvas) ---------- */
 .cscroll { position: absolute; left: 50%; top: var(--st, 34px); transform: translateX(-50%); }
@@ -67,7 +74,7 @@ body.kb .cscroll { --st: 30px; }
 #compose .crule { position: absolute; left: 0; right: 0; top: calc(4px + var(--fsm, 48px) * var(--asc, .78) + 3px); height: 12px; pointer-events: none; }   /* right under the baseline */
 #compose .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }   /* status for screen readers only: nothing on the scroll */
 /* sign (optional): max 12 characters; blank = no author */
-#compose .sign { display: none; margin: 22px 0 0 12px; align-items: center; gap: 8px; flex-wrap: nowrap; }
+#compose .sign { display: none; margin: 12px 0 0 12px; align-items: center; gap: 8px; flex-wrap: nowrap; }
 body.ready #compose .sign { display: flex; }
 #compose .sign label { font: 400 20px/1 var(--ui); color: var(--ink); text-shadow: 1px 0 0 currentColor, 0 1px 0 currentColor, 1px 1px 0 currentColor; letter-spacing: 1px; }
 #compose .sign .nm { position: relative; width: 150px; }
@@ -85,20 +92,20 @@ body.ready #compose .sign { display: flex; }
   text-shadow: 1px 0 0 currentColor, 0 1px 0 currentColor, 1px 1px 0 currentColor; letter-spacing: 1px; }
 #compose .sign .nm:not(.has) .nmm { display: none; }
 /* the wax seal = post button, lower right of the scroll */
-#compose .cpost { position: absolute; right: 54px; top: calc(var(--ph) - 82px); display: flex; align-items: center; gap: 10px; }
+#compose .cpost { position: absolute; right: 54px; top: calc(var(--ph) - 78px); display: flex; align-items: center; gap: 10px; }
 #compose .cpost .wax { position: relative; width: 66px; height: 66px; display: grid; place-items: center; }
 #compose .cpost .wax canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
-#compose .cpost:active .wax { transform: translateY(3px) scale(1.06, .92); }
+#compose .cpost:active .wax { transform: translateY(6px); }
 body.ready #compose .cpost .wax { animation: chop 1.1s steps(8) infinite; }
 body.ready #compose .cpost.stamped .wax { animation: none; }
-@keyframes chop { 0%, 60%, 100% { transform: translateY(0) scale(1); } 20% { transform: translateY(-9px) scale(.94,1.06); } 40% { transform: translateY(0) scale(1.1,.9); } }
+@keyframes chop { 0%, 60%, 100% { transform: translateY(0); } 20% { transform: translateY(-12px); } 40% { transform: translateY(0); } }   /* hops by whole 6 px grid cells */
 /* keyboard up: compact, so lines, tallies, name and Inky all stay above it */
 body.kb #compose .paper { padding-top: 8px; }
 body.kb #compose .ln { margin-top: 4px; }
-body.kb #compose .sign { position: absolute; margin: 0; left: 108px; right: 106px; top: calc(var(--ph) - 50px); justify-content: center; gap: 6px; }
+body.kb #compose .sign { position: absolute; margin: 0; left: 114px; right: 114px; top: calc(var(--ph) - 58px); justify-content: center; gap: 6px; }
 body.kb #compose .sign .nm { width: 150px; }
-body.kb #compose .cpost { top: calc(var(--ph) - 56px); right: 56px; }
-body.kb #compose .cpost .wax { width: 48px; height: 48px; }
+body.kb #compose .cpost { top: calc(var(--ph) - 66px); right: 54px; }
+body.kb #compose .cpost .wax { width: 54px; height: 54px; }
 
 /* ---------- the big tilted hanko: 却下 (rejected) / 不可 (not allowed), alternating; worn ink pressed INTO the paper ---------- */
 #compose .deny { position: fixed; z-index: 66; left: 0; top: 0; width: 330px; margin-left: -165px; display: flex; flex-direction: column; align-items: center; gap: 10px;

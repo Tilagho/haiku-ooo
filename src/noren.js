@@ -609,6 +609,7 @@ export function mountNoren(host, { reduced = typeof matchMedia !== 'undefined' &
   {
     let sy = null, st = 0;
     const onScroll = e => {
+      if (document.documentElement.classList.contains('scroll-lock')) { sy = null; return; }   // compose locking / restoring the board is not a swipe
       const el = e.target === document || e.target === window ? document.scrollingElement || document.documentElement : e.target;
       if (!el || el.scrollTop == null) return; const y = el.scrollTop, t = performance.now();
       if (sy != null && el === onScroll.el) { const dt = Math.max(8, t - st) / 1000, v = (y - sy) / dt; N.gustIn = Math.abs(v) > Math.abs(N.gustIn || 0) * .6 ? v : N.gustIn * .6 + v * .4; }

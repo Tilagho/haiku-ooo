@@ -24,6 +24,8 @@ import { TapMeter } from './inky-mind.js';
 const P = 4;                                         // css px per ink pixel
 const INK = [26, 24, 28], WASH = [74, 70, 82], TRAIL = [120, 116, 124], PAPER = [255, 250, 240], RED = [214, 52, 40], SOFT = [150, 146, 156], GOLD = [226, 167, 46], BLUE = [120, 170, 230];
 const G = 260;                                       // gravity, ink px / s^2
+// a 2-D squash: compress offset (x, y) by a along unit normal n, bulge it by .6a across n (a < 0: stretch along n)
+export const aniso = (x, y, nx, ny, a) => { const dn = x * nx + y * ny, tx = x - nx * dn, ty = y - ny * dn; return [nx * dn * (1 - a) + tx * (1 + a * .6), ny * dn * (1 - a) + ty * (1 + a * .6)]; };
 export const FLOAT_GAP = 34;                         // css px between his foot and the write button's top (>= 24 under any squash)
 export const DRAG_START = 8;                         // css px of movement before a press becomes a drag
 const NR = 10;                                       // rim balls
@@ -46,6 +48,7 @@ export class Inky {
     this.side = -1; this.puff = 0; this.splatT = 0; this.entered = false; this.perf = { n: 0, ms: 0, max: 0 };
     this.meter = new TapMeter({ rand });
     this.drag = null; this.dizzy = 0; this.dizzyT = 0; this.bounces = 0;
+    this.imp = { nx: 0, ny: 1, s: 0, sv: 0 }; this.mom = 0; this.stick = 0; this.stickV = 0;   // round 14 fluid body: impact-normal squash, wall splat, velocity stretch
     // his own hit box: the only element that takes his gestures (the canvas itself never blocks the page)
     this.hit = document.createElement('div'); this.hit.className = 'inky-hit'; this.hit.setAttribute('aria-hidden', 'true');
     Object.assign(this.hit.style, { position: 'fixed', left: '0', top: '0', width: '0', height: '0', zIndex: '61', touchAction: 'none', display: 'none', webkitTapHighlightColor: 'transparent', userSelect: 'none', webkitUserSelect: 'none' });
@@ -58,7 +61,7 @@ export class Inky {
     this.hit.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
     this.hit.addEventListener('contextmenu', e => e.preventDefault());
     this.resize(); addEventListener('resize', () => this.resize());
-    let lastY = scrollY; addEventListener('scroll', () => { const d = scrollY - lastY; lastY = scrollY; this.onScroll(d); }, { passive: true });
+    let lastY = scrollY; addEventListener('scroll', () => { const d = scrollY - lastY; lastY = scrollY; if (!document.documentElement.classList.contains('scroll-lock')) this.onScroll(d); }, { passive: true });
     clock.onTick(dt => { if (typeof document !== 'undefined' && document.hidden) return; const t0 = performance.now(); this.step(dt); this.track(performance.now() - t0); });
   }
   track(ms) { const p = this.perf; p.n++; p.ms += ms; p.max = Math.max(p.max, ms); }
@@ -193,6 +196,14 @@ export class Inky {
     }
     this.onTap?.(r.kind, r.taps); return r;
   }
+  // an impact: squash along the normal (nx, ny points INTO the surface), how hard = 0..~.6
+  squashOn(nx, ny, a) { const I = this.imp; if (a < I.s - .05) return; I.nx = nx; I.ny = ny; I.s = Math.max(I.s, a * (this.reduced ? .5 : 1)); I.sv = 0; }
+  hitWall(side, v, flying) {
+    if (v < 35) return;
+    this.squashOn(side, 0, Math.min(.6, v / 480));
+    if (v > 70 && this.visible) this.splat(Math.min(6, Math.round(v / 70)), v / 320, INK, this.x + side * this.R * .9, this.fy - this.R);
+    if (flying && v > 130 && !this.reduced) { this.stick = .07 + Math.min(.11, v / 3600); this.stickV = this.vx; this.vx = 0; }   // stuck flat for a beat
+  }
   splatDown() {
     this.splatT = this.reduced ? 1.1 : 1.7; this.sRest = .8; this.s = .9; this.sv = 0; this.puff = 0; this.targetX = null; this.vx = 0;
     this.setMood('splat'); this.splat(this.reduced ? 5 : 14, 1.3); this.wobble(1.6);
@@ -265,14 +276,21 @@ export class Inky {
       const d = this.drag, k = this.reduced ? 420 : 150, c = this.reduced ? 40 : 13;
       this.vx += ((d.tx - this.x) * k - this.vx * c) * dt; this.vy += ((d.ty - this.fy) * k - this.vy * c) * dt;
       this.x += this.vx * dt; this.fy += this.vy * dt;
+      if (this.x < R || this.x > this.cw - R) { const side = this.x < R ? -1 : 1; this.hitWall(side, Math.abs(this.vx), false); this.vx = 0; }   // dragged into the screen edge: he squashes on it
+      { const pen = d.tx < R ? R - d.tx : d.tx > this.cw - R ? d.tx - (this.cw - R) : 0; if (pen > .5) this.squashOn(d.tx < R ? -1 : 1, 0, Math.min(.55, pen / R * .9)); }   // pressed into it: stays flat
       this.x = Math.max(R, Math.min(this.cw - R, this.x)); this.fy = Math.max(R * 2.4, Math.min(this.ch - 1, this.fy));
     } else if (!this.grounded && this.floor != null) {             // body ballistics (hops, throws)
+      if (this.stick > 0) {                                        // SPLATTED flat on the wall: hangs there a beat, sliding a little
+        this.stick -= dt; this.imp.sv = 0; this.vy = Math.min(this.vy, 40); this.vx = 0;
+        if (this.stick <= 0) { this.vx = this.stickV; this.imp.sv = -9; this.wobble(1.1); }   // ...then springs off, jiggling
+      }
       this.vy += G * dt; this.x += this.vx * dt; this.fy += this.vy * dt;
-      if (this.x < R || this.x > this.cw - R) { this.x = Math.max(R, Math.min(this.cw - R, this.x)); this.vx *= -.45; this.wobble(.5); }   // off the screen sides
+      if (this.x < R || this.x > this.cw - R) { const side = this.x < R ? -1 : 1, v = Math.abs(this.vx); this.x = Math.max(R, Math.min(this.cw - R, this.x)); this.vx *= -.45; this.wobble(.5); this.hitWall(side, v, true); }   // off the screen sides
       if (this.fy < R * 2.4 && this.vy < 0) { this.fy = R * 2.4; this.vy *= -.3; }
       if (this.fy >= this.floor && this.vy > 0) {
         const impact = this.vy; this.fy = this.floor;
-        this.s = Math.min(.6, impact / 240); this.sv = 0; if (impact > 70) this.splat(Math.round(impact / 25), impact / 160);
+        this.s = Math.min(.45, impact / 300); this.sv = 0; if (impact > 70) this.splat(Math.round(impact / 25), impact / 160);
+        this.squashOn(0, 1, Math.min(.42, impact / 420));                          // flattens along the floor normal too
         if (impact > 70 && this.bounces < 1 && !this.reduced) { this.bounces++; this.vy = -impact * .28; this.vx *= .5; this.wobble(.8); }   // plop + one small bounce
         else { this.vy = 0; this.vx = 0; this.grounded = true; this.bounces = 0; }
         this.onLand?.(impact);
@@ -287,7 +305,13 @@ export class Inky {
     // squash spring (+ splat rest) + breathing + stretch along the motion
     this.sv += (-320 * (this.s - this.sRest) - 11 * this.sv) * dt; this.s += this.sv * dt;
     const breathe = this.grounded && this.splatT <= 0 ? Math.sin(this.t * 3.1) * (this.reduced ? .02 : .04) : 0;
-    const stretch = this.grounded ? 0 : Math.max(-.25, Math.min(this.mode === 'drag' ? .45 : .3, (this.mode === 'drag' ? Math.abs(this.vy) - Math.abs(this.vx) * .6 : -this.vy) / 300));
+    const stretch = 0;                                          // (round 14: the stretch now runs along his velocity, below)
+    // MOMENTUM: while dragged / flying, the stretch builds up with speed (not instantly) and points along his velocity
+    const spd = Math.hypot(this.vx, this.vy), moving = this.mode === 'drag' || (!this.grounded && this.stick <= 0);
+    this.mom += ((moving ? Math.min(1, spd / 300) : 0) - this.mom) * Math.min(1, dt * (this.mode === 'drag' ? 3.2 : 7));
+    if (spd > 4) { this.ux = this.vx / spd; this.uy = this.vy / spd; }
+    // the impact squash: a spring along the hit's normal (under-damped: it overshoots into a stretch = the jiggle)
+    { const I = this.imp; if (this.stick > 0) I.sv = 0; else { I.sv += (-300 * I.s - 7.5 * I.sv) * dt; I.s = Math.max(-.35, Math.min(.62, I.s + I.sv * dt)); } }   // held flat while stuck
     const run = this.grounded ? Math.min(.32, Math.abs(this.vx) / 260) : 0;            // long and low when sliding fast
     const puff = this.puff * .14;
     this.sx = 1 + this.s + breathe - stretch * .6 + run + puff; this.sy = Math.max(.18, 1 - this.s - breathe + stretch - run * .55 + puff);
@@ -295,10 +319,13 @@ export class Inky {
     if (this.dizzyT > 0) this.dizzyT = Math.max(0, this.dizzyT - dt);
     if (this.mood === 'cheer' || this.spin > 0) this.spin = Math.max(0, this.spin - dt);
     // rim balls lag behind the body (the gooey wobble)
-    const sx = this.sx, sy = this.sy, lag = this.reduced ? .012 : .03;
+    const sx = this.sx, sy = this.sy, held = this.mode === 'drag', lag = this.reduced ? .012 : held ? .055 : .03, damp = held && !this.reduced ? 6.5 : 9;
+    const k = this.mom * (this.reduced ? .12 : .62), I = this.imp, ia = this.reduced ? I.s * .4 : I.s;
     for (const r of this.rim) {
-      const tx = Math.cos(r.a) * R * .55 * sx, ty = Math.sin(r.a) * R * .55 * sy;
-      r.vx += ((tx - r.ox) * 220 - r.vx * 9 - axc * lag) * dt; r.vy += ((ty - r.oy) * 220 - r.vy * 9 - ayc * lag) * dt;
+      let tx = Math.cos(r.a) * R * .55 * sx, ty = Math.sin(r.a) * R * .55 * sy;
+      [tx, ty] = aniso(tx, ty, this.ux ?? 0, this.uy ?? 1, -k);          // stretched along his velocity
+      [tx, ty] = aniso(tx, ty, I.nx, I.ny, ia);                          // squashed along the impact normal
+      r.vx += ((tx - r.ox) * 220 - r.vx * damp - axc * lag) * dt; r.vy += ((ty - r.oy) * 220 - r.vy * damp - ayc * lag) * dt;
       r.ox += r.vx * dt; r.oy += r.vy * dt;
     }
     // eyes
@@ -359,9 +386,16 @@ export class Inky {
     const cx = this.x + (this.shiver > 0 ? Math.sin(this.t * 70) * .8 : 0), cy = this.fy - R * .92 * this.sy + bob;
     const showBody = this.visible && this.bodyAlpha > 0;
     if (showBody) {
-      balls.push([cx, cy, R * .62]);
+      // squashed on a wall / the floor: the core shrinks and slides toward the contact, the rim balls are held at the
+      // contact line, so he goes FLAT against it (a splat) and springs back round as the squash spring releases
+      const I = this.imp, sq = Math.max(0, I.s), ccx = cx + I.nx * sq * R * .38, ccy = cy + I.ny * sq * R * .22;
+      const wl = R * .82, flat = sq > .04;
+      balls.push([ccx, ccy, R * .62 * (1 - sq * .3)]);
+      if (flat) { const tx = -I.ny, ty = I.nx; balls.push([ccx + tx * R * .42 * sq, ccy + ty * R * .42 * sq, R * .4], [ccx - tx * R * .42 * sq, ccy - ty * R * .42 * sq, R * .4]); }
       const sp = this.spin > 0 ? this.spin * 14 : 0;
-      for (const r of this.rim) { const c = Math.cos(sp), s = Math.sin(sp); balls.push([cx + r.ox * c - r.oy * s, cy + r.ox * s + r.oy * c, R * .42]); }
+      for (const r of this.rim) { const c = Math.cos(sp), s = Math.sin(sp); let bx = cx + r.ox * c - r.oy * s, by = cy + r.ox * s + r.oy * c;
+        if (flat) { if (I.nx < -.5) bx = Math.max(bx, wl * .5); if (I.nx > .5) bx = Math.min(bx, cw - wl * .5); if (I.ny > .5) by = Math.min(by, this.fy - R * .3); }
+        balls.push([bx, by, R * .42]); }
       // the pointed top of the drop, trailing behind his motion like wet ink
       if (this.splatT <= 0) { const lean = Math.max(-2.2, Math.min(2.2, -this.vx / 34)); balls.push([cx + lean * .5, cy - R * .7 * this.sy, R * .4], [cx + lean, cy - R * 1.12 * this.sy, R * .24], [cx + lean * 1.5, cy - R * 1.42 * this.sy, R * .12]); }
     }
