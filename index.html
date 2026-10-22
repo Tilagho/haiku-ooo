@@ -2,62 +2,32 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#1a181c">
-<title>haiku board · only 5-7-5 may pass</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-visual">
+<meta name="theme-color" content="#f4ecda">
+<title>Haiku.ooo · only 5-7-5 may pass</title>
 <meta name="description" content="A public scroll where you can only post if it's a haiku.">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="src/style.css">
+<link rel="stylesheet" href="src/compose.css">
 </head>
 <body>
 
-<header class="statusbar">
-  <span class="sb-left"><b>俳句</b> BOARD</span>
-  <span class="sb-time" id="clock">--:--</span>
-  <span class="sb-right"><span id="count">0</span> haiku <i class="batt"><i></i></i></span>
-</header>
-
 <main id="page">
-  <section class="hero">
-    <h1 class="title"><span>HAIKU</span><span>BOARD</span></h1>
-    <p class="jp">俳句の掲示板</p>
-    <p class="rule"><b class="chip c1">5</b><b class="chip c2">7</b><b class="chip c3">5</b> <span>only haiku may pass</span></p>
-    <p class="small">One long public scroll. Three lines, five-seven-five syllables, or the brush won't let go.</p>
-  </section>
+  <header class="noren-head" id="noren">
+    <h1 class="sr">Haiku.ooo</h1>
+    <p class="jp" lang="ja">俳句の掲示板</p>
+  </header>
 
   <div id="scroll" class="scroll" aria-label="the haiku scroll, newest first"></div>
-  <footer class="scroll-end" id="scrollEnd">
-    <div id="endMascot"></div>
-    <p>the beginning of the scroll</p>
-    <p class="small">sample posts are placeholders · yours are saved on this device</p>
-    <p class="small credit">type: ChiKareGo2 &amp; FindersKeepers by Giles Booth (CC BY)</p>
-  </footer>
+  <section class="scroll-foot" aria-label="the rule">
+    <p class="rule"><b class="chip c1">5</b><b class="chip c2">7</b><b class="chip c3">5</b></p>
+  </section>
+  <footer class="credit"><p>type: ChiKareGo2 &amp; FindersKeepers by Giles Booth (CC BY)</p></footer>
 </main>
 
-<button id="fab" class="fab" aria-haspopup="dialog"><span class="fab-brush">筆</span><span>write a haiku</span></button>
-
-<div id="scrim" class="scrim" hidden></div>
-<section id="sheet" class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
-  <div class="handle"></div>
-  <div class="sheet-head">
-    <button class="x" id="closeSheet" aria-label="close">✕</button>
-    <div>
-      <h2 id="sheetTitle">write a haiku</h2>
-      <p class="sub">five-seven-five, Inky is counting</p>
-    </div>
-    <div id="inkyDock" class="inky-dock" aria-hidden="true"></div>
-  </div>
-  <form id="compose" autocomplete="off">
-    <div class="rows" id="rows"></div>
-    <p class="msg" id="msg">count your syllables. the meter keeps time.</p>
-    <button type="submit" class="post-btn" id="postBtn" aria-disabled="true">
-      <span class="pb-label">post to the scroll</span>
-    </button>
-  </form>
-  <div id="seal" class="seal" hidden><img src="assets/seal-kyakka.png" alt="却下 — rejected"></div>
-</section>
+<button id="fab" class="fab" aria-haspopup="dialog" aria-label="write a haiku"><span class="sr">write a haiku</span></button>
 
 <div id="bubble" class="bubble" hidden></div>
 
