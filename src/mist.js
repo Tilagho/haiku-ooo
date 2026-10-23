@@ -30,11 +30,11 @@ export const PAPER = [244, 236, 218], MIST_TINT = [243, 235, 217], MIST_SHADE = 
 // per bank, each its own speed), leaves off the other, then there is a GAP of empty travel before its next pass.
 // It fades in over the entry edge and out over the exit edge (MIST_EDGE art px) as well as feathering by its own soft sides.
 export const MIST_SPEED = 1;      // clock seconds -> mist seconds (the drift is now set per bank by MIST_CROSS_S)
-export const MIST_CROSS_S = [12, 20], MIST_EDGE = 12;
-export const MIST_A0 = .08, MIST_A1 = .86, MIST_SHADE_A = .3;   // opacity at the fringe .. the core; the underside
+export const MIST_CROSS_S = [12, 20], MIST_EDGE = 24;
+export const MIST_A0 = .05, MIST_A1 = .6, MIST_SHADE_A = .3;   // round 14.5: the core .86 -> .6 (thinner, lighter: the art shows through)   // opacity at the fringe .. the core; the underside
 // the opacity of a lit mist pixel at density d (0..MIST_MAX): eased so the fringe fades into the paper
 export const mistAlpha = d => { const q = Math.max(0, Math.min(1, d / MIST_MAX)); return MIST_A0 + (MIST_A1 - MIST_A0) * q * q * (3 - 2 * q); };
-export const MIST_MAX = .85, MIST_EVERY = 95, MIST_HZ = 16;
+export const MIST_MAX = .85, MIST_EVERY = 40, MIST_HZ = 16;
 const hash2 = (x, y, s) => { let h = (x * 374761393 + y * 668265263 + s * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 function vnoise(x, y, s = 0) {
   const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi, u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
@@ -51,49 +51,81 @@ export function mistBanks(H, seed = 31) {
   for (let k = 0; (k + .5) * MIST_EVERY < H + MIST_EVERY; k++) {
     const r = i => hash2(k, i, seed), kind = r(1) < .4 ? 'fog' : r(1) < .75 ? 'cumulus' : 'streak';
     const y = (k + .5) * MIST_EVERY + (r(2) - .5) * MIST_EVERY * .5;
-    const hh = kind === 'fog' ? 70 + r(3) * 50 : kind === 'cumulus' ? 62 + r(3) * 45 : 6 + r(3) * 5;
+    const hh = kind === 'fog' ? 40 + r(3) * 30 : kind === 'cumulus' ? 36 + r(3) * 28 : 18 + r(3) * 10;   // round 14.5: thin bands (14.4: 70-120 / 62-107)
     out.push(bank(k, kind, y, hh, (k * 97 + seed) % 1000, r(4), r(5), r(6), r(7), kind === 'streak' ? 1.25 : 1, r(13) < .5 ? 1 : -1));
-    if (kind === 'streak' && r(6) < .6) out.push(bank(k, kind, y + 14 + r(7) * 10, 3 + r(8) * 3, (k * 131 + seed) % 1000, r(9), r(10), r(11), r(12), 1.5, r(14) < .5 ? 1 : -1));   // a second wisp, a touch faster
+    if (kind === 'streak' && r(6) < .6) out.push(bank(k, kind, y + 22 + r(7) * 14, 7 + r(8) * 5, (k * 131 + seed) % 1000, r(9), r(10), r(11), r(12), 1.5, r(14) < .5 ? 1 : -1));   // a second wisp, a touch faster
   }
   return out;
 }
 function bank(k, kind, y, hh, s, ra, rb, rc, rd, fast, dir) {
-  const wb = kind === 'fog' ? 120 + ra * 45 : kind === 'cumulus' ? 100 + ra * 40 : 50 + ra * 30;
+  const wb = kind === 'fog' ? 62 + ra * 28 : kind === 'cumulus' ? 50 + ra * 24 : 34 + ra * 20;   // half-width in art px: round 14.5 narrower (14.4: 120-165 / 100-140)
   const cross = MIST_CROSS_S[0] + rb * (MIST_CROSS_S[1] - MIST_CROSS_S[0]), v = AW / cross * fast;       // crosses the width in `cross` s (a wisp a bit quicker)
   const gap = MIST_GAP[0] + rc * (MIST_GAP[1] - MIST_GAP[0]), P = AW + 2 * wb + gap;
   return { k, kind, y, hh, wb, v, dir, gap, P, ph: rd * P, s };
 }
-export const MIST_GAP = [0, 30];   // art px of empty travel between one pass and the next
+export const MIST_GAP = [10, 160];   // art px of empty travel between one pass and the next
 // the bank's centre in art px at time t: from off one edge to off the other (-wb .. AW + wb, or back), then the gap, then round again; it
 // moves in ONE direction (dir) always, and only jumps back to its entry edge after it has left and rested
 export const mistBankX = (B, t) => { const q = ((B.ph + B.v * t) % B.P + B.P) % B.P; return B.dir > 0 ? q - B.wb : AW + B.wb - q; };
 // A bank's SHAPE (its own texture, in its own frame, moving with it) is noise evaluated once per bank, lazily, on a coarse grid
-// (GS art px x GSY units) and interpolated: the per-frame work is then a lookup + the bank's lobe, not fbm per cell (round 14.4b: this is what
-// keeps 15+ overlapping banks at ~1 ms instead of ~10). Everything that is smooth (the vertical profile, the thresholded noise) is baked in.
+// (GS art px x GSY units) and interpolated: the per-frame work is then a lookup, not fbm per cell. Round 14.5: TWO baked grids per bank
+// (two noise seeds) crossfaded slowly, so every bank visibly churns / morphs as it travels ("alive") at the cost of one more lookup.
+// Every edge of the shape is baked in and fades smoothly to 0 inside the grid box: no clipped rectangle (the old 14.4 offenders were
+// the flat super-gaussian lobe with near-straight sides, the cumulus "underside" cut at the bank's centre line, and the thin wisp,
+// which was a ruler-straight 1-3 px line); the bank's centre line also waves (a slow warp), so no band runs dead straight.
 const GS = 4, GSY = 12;
-function baseDensity(B, x0, y) {            // 0..MIST_MAX: the bank's texture at offset x0 (art px from its centre), height y (units), without the pass-by lobe
-  const dy = (y - B.y) / B.hh;
-  if (B.kind === 'fog') { const prof = Math.exp(-dy * dy), n = fbm(x0 * .03, y * .014, B.s); return prof * sstep(.1, .5, n) * MIST_MAX; }
-  if (B.kind === 'streak') { const prof = Math.exp(-dy * dy * 1.4), n = fbm(x0 * .016, B.s * .1, B.s); return prof * sstep(.28, .7, n) * MIST_MAX * .9; }
-  const w = (fbm(x0 * .03, y * .03, B.s + 3) - .5) * 14, n = fbm((x0 + w) * .034, y * .036, B.s);   // cumulus: billowing
-  const prof = Math.exp(-dy * dy * 1.3); return sstep(0, 1, (n * 1.8 * prof - .22) * 1.15) * MIST_MAX;
+function baseDensity(B, x0, y, v) {         // 0..MIST_MAX: the bank's texture at offset x0 (art px from its centre), height y (units); v = 0 / 1 picks the noise seed
+  const sd = B.s + v * 101, u = x0 / B.wb;
+  const warp = (fbm(x0 * .02, B.s * .37, sd + 9) - .5) * (B.kind === 'streak' ? 3.4 : 1.5) * B.hh;                        // the centre line waves: never straight
+  const dy = (y - B.y - warp) / B.hh;
+  const lobe = Math.exp(-1.7 * Math.pow(u + (fbm(x0 * .05, B.s * .21, sd + 21) - .5) * .5, 2));     // soft all round, with a ragged edge: the ends are noise, not a cut
+  if (B.kind === 'fog') { const prof = Math.exp(-dy * dy * 1.3), n = fbm(x0 * .035, y * .016, sd); return prof * sstep(.16, .48, n) * MIST_MAX * lobe; }
+  if (B.kind === 'streak') { const prof = Math.exp(-dy * dy * 1.1), n = fbm(x0 * .09, y * .07, sd); return prof * sstep(.4, .7, n) * MIST_MAX * .9 * lobe; }   // a wisp: broken puffs along a wavy line
+  const w = (fbm(x0 * .03, y * .03, sd + 3) - .5) * 14, n = fbm((x0 + w) * .04, y * .04, sd);   // cumulus: billowing
+  const prof = Math.exp(-dy * dy * 1.4); return sstep(0, 1, (n * 1.9 * prof - .12) * 1.25) * MIST_MAX * lobe;
 }
 export function bankGrid(B) {
   if (B.g) return B.g;
-  const gw = Math.ceil(2 * B.wb * 1.7 / GS) + 2, gh = Math.ceil(2 * B.hh * 2.4 / GSY) + 2, d = new Float32Array(gw * gh), gx0 = Math.floor(gw / 2), gy0 = Math.floor(gh / 2);
-  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) d[j * gw + i] = baseDensity(B, (i - gx0) * GS, B.y + (j - gy0) * GSY);
-  return (B.g = { gw, gh, d, gx0, gy0 });
+  const gw = Math.ceil(2 * B.wb * 1.7 / GS) + 2, gh = Math.ceil(2 * B.hh * 3.2 / GSY) + 2, gx0 = Math.floor(gw / 2), gy0 = Math.floor(gh / 2), d = new Float32Array(gw * gh), d2 = new Float32Array(gw * gh);
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) { const x0 = (i - gx0) * GS, y = B.y + (j - gy0) * GSY; d[j * gw + i] = baseDensity(B, x0, y, 0); d2[j * gw + i] = baseDensity(B, x0, y, 1); }
+  return (B.g = { gw, gh, d, d2, gx0, gy0 });
 }
-const sampleGrid = (G, x0, y, B) => {      // bilinear
+const sampleGrid = (G, x0, y, B, w) => {      // bilinear, both grids crossfaded by w (0..1)
   const fx = x0 / GS + G.gx0, fy = (y - B.y) / GSY + G.gy0; if (fx < 0 || fy < 0 || fx >= G.gw - 1 || fy >= G.gh - 1) return 0;
-  const i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, o = j * G.gw + i, d = G.d;
-  return d[o] * (1 - u) * (1 - v) + d[o + 1] * u * (1 - v) + d[o + G.gw] * (1 - u) * v + d[o + G.gw + 1] * u * v;
+  const i = fx | 0, j = fy | 0, u = fx - i, v = fy - j, o = j * G.gw + i, k = G.gw, a = (1 - u) * (1 - v), b = u * (1 - v), c = (1 - u) * v, e = u * v, d = G.d, d2 = G.d2;
+  return (d[o] * a + d[o + 1] * b + d[o + k] * c + d[o + k + 1] * e) * (1 - w) + (d2[o] * a + d2[o + 1] * b + d2[o + k] * c + d2[o + k + 1] * e) * w;
 };
-const passEnv = (B, x, cx) => { const u = (x - cx) / B.wb; return u > 1.7 || u < -1.7 ? 0 : Math.exp(-1.25 * u * u * u * u) * sstep(0, MIST_EDGE, x) * sstep(0, MIST_EDGE, AW - x); };   // flat core, soft sides; fades in over the entry edge, out over the exit edge
+export const mistMorph = (B, t) => .5 + .5 * Math.sin(t * .4 + B.s * .7);            // 0..1: which of the two baked textures shows
+const passEnv = (B, x) => sstep(0, MIST_EDGE, x) * sstep(0, MIST_EDGE, AW - x);      // fades in over the entry edge, out over the exit edge (the bank's own sides are baked into its grid)
 // density 0..MIST_MAX of bank B at art px (x, py-units y) and time t (s)
 export function mistDensity(B, x, y, t) {
-  const cx = mistBankX(B, t), e = passEnv(B, x, cx); if (e <= 0 || Math.abs(y - B.y) > B.hh * 2.4) return 0;
-  return e * sampleGrid(bankGrid(B), x - cx, y, B);
+  const cx = mistBankX(B, t), e = passEnv(B, x); if (e <= 0 || Math.abs(y - B.y) > B.hh * 3.2) return 0;
+  return e * sampleGrid(bankGrid(B), x - cx, y, B, mistMorph(B, t));
+}
+
+// paint every bank into the RGBA buffer D (AW x Hc art px) for the window `win` (scroll units) at time t. Pure: the tests render with it too.
+const lobeBuf = new Float32Array(AW + 2);
+export function paintMist(D, Hc, win, banks, t, maxBuild = 2) {
+  D.fill(0); let built = 0;
+  for (const B of banks) {
+    const top = B.y + B.hh * 3.2, bot = B.y - B.hh * 3.2; if (top < win.lo || bot > win.hi) continue;
+    const r0 = Math.max(0, Math.floor((win.hi - top) / PX) & ~1), r1 = Math.min(Hc - 1, Math.ceil((win.hi - bot) / PX));
+    const cxb = mistBankX(B, t), xa = Math.max(0, Math.floor(cxb - B.wb * 1.7) & ~1), xb = Math.min(AW, Math.ceil(cxb + B.wb * 1.7)); if (xb <= 0 || xa >= AW) continue;   // off screen this pass: free
+    if (!B.g && built >= maxBuild) continue; const G = bankGrid(B); if (!G.fresh) { G.fresh = 1; built++; }   // build at most 2 grids a frame (a bank a frame late is invisible: it enters from off screen)
+    const LE = lobeBuf, mw = mistMorph(B, t); for (let x = xa; x < xb; x++) LE[x] = passEnv(B, x + .5);
+    for (let r = r0; r <= r1; r += 2) {
+      const y = win.hi - (r + 1) * PX;
+      for (let x = xa; x < xb; x += 2) {
+        const le = LE[x + 1]; if (le < .03) continue;
+        const d = le * sampleGrid(G, x + 1 - cxb, y, B, mw); if (d < .03) continue;
+        for (let j = 0; j < 2 && r + j < Hc; j++) for (let i = 0; i < 2; i++) {
+          const px = x + i, py = r + j, th = BAYER[(py & 3) * 4 + (px & 3)], o = (py * AW + px) * 4;
+          if (d > th && D[o + 3] === 0) { const a = mistAlpha(d); D[o] = MIST_TINT[0]; D[o + 1] = MIST_TINT[1]; D[o + 2] = MIST_TINT[2]; D[o + 3] = Math.max(1, Math.round(a * 255)); }   // (round 14.5: the cumulus underside shade is gone: its cut ran along the bank's centre line)
+        }
+      }
+    }
+  }
+  return built;
 }
 
 export function mountMist(view, { clock, reduced = false } = {}) {
@@ -105,7 +137,7 @@ export function mountMist(view, { clock, reduced = false } = {}) {
   Object.assign(cv.style, { position: 'absolute', left: '0', width: SCROLL_W + 'px', imageRendering: 'pixelated', pointerEvents: 'none', zIndex: '20' });   // over the ink chunks (0), under birds (50) and poems (100)
   view.layer.append(cv);
   const g = cv.getContext('2d'); cv.width = AW;
-  let win = null, img = null, acc = 1, t = 0, key = '', built = 0; const lobeBuf = new Float32Array(AW + 2);
+  let win = null, img = null, acc = 1, t = 0, key = '';
   const viewWin = () => { const r = view.host.getBoundingClientRect(), s = view.host.clientWidth / SCROLL_W || 1, H = view.composer.height; return { lo: H - (innerHeight - r.top) / s, hi: H + r.top / s, H }; };
   const place = v => {
     const m = 180, lo = Math.floor((v.lo - m) / PX) * PX, hi = Math.ceil((v.hi + m) / PX) * PX;
@@ -113,29 +145,9 @@ export function mountMist(view, { clock, reduced = false } = {}) {
     Object.assign(cv.style, { bottom: lo + 'px', height: (hi - lo) + 'px' });
   };
   const draw = () => {
-    const t0 = performance.now(), D = img.data, Hc = cv.height; D.fill(0); built = 0;
+    const t0 = performance.now();
     if (ctl.banks.length * MIST_EVERY < view.composer.height || !ctl.banks.length) ctl.banks = mistBanks(view.composer.height);
-    for (const B of ctl.banks) {
-      const top = B.y + B.hh * 2.4, bot = B.y - B.hh * 2.4; if (top < win.lo || bot > win.hi) continue;
-      const r0 = Math.max(0, Math.floor((win.hi - top) / PX) & ~1), r1 = Math.min(Hc - 1, Math.ceil((win.hi - bot) / PX));
-      const cxb = mistBankX(B, t), xa = Math.max(0, Math.floor(cxb - B.wb * 1.7) & ~1), xb = Math.min(AW, Math.ceil(cxb + B.wb * 1.7)); if (xb <= 0 || xa >= AW) continue;   // off screen this pass: free
-      if (!B.g && built >= 2) continue; const G = bankGrid(B); if (!G.fresh) { G.fresh = 1; built++; }   // build at most 2 grids a frame (a bank a frame late is invisible: it enters from off screen)
-      const LE = lobeBuf; for (let x = xa; x < xb; x++) LE[x] = passEnv(B, x + .5, cxb);
-      for (let r = r0; r <= r1; r += 2) {
-        const y = win.hi - (r + 1) * PX;
-        for (let x = xa; x < xb; x += 2) {
-          const le = LE[x + 1]; if (le < .03) continue;
-          const d = le * sampleGrid(G, x + 1 - cxb, y, B); if (d < .03) continue;
-          for (let j = 0; j < 2 && r + j < Hc; j++) for (let i = 0; i < 2; i++) {
-            const px = x + i, py = r + j, th = BAYER[(py & 3) * 4 + (px & 3)], o = (py * AW + px) * 4;
-            let c = null, a = 0;
-            if (d > th) { c = MIST_TINT; a = mistAlpha(d); }
-            else if (B.kind === 'cumulus' && d > th * .55 && y < B.y && th > .6) { c = MIST_SHADE; a = MIST_SHADE_A * mistAlpha(d) / MIST_A1; }   // the faint underside of a billow
-            if (c && D[o + 3] === 0) { D[o] = c[0]; D[o + 1] = c[1]; D[o + 2] = c[2]; D[o + 3] = Math.max(1, Math.round(a * 255)); }
-          }
-        }
-      }
-    }
+    paintMist(img.data, cv.height, win, ctl.banks, t);
     g.putImageData(img, 0, 0); ctl.draws++; ctl.ms = performance.now() - t0;
   };
   ctl.draw = () => { const v = viewWin(); if (!win || v.lo < win.lo + 30 || v.hi > win.hi - 30) place(v); draw(); };

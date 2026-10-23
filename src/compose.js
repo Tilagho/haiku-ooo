@@ -15,7 +15,13 @@ import { ScrollArt, SP, RH } from './scroll-art.js';
 const NAMES = ['five', 'seven', 'five'];
 const PH = ['five syllables', 'then seven', 'and five to end'];
 const NO_RUSH = ['no rush~', 'take your time.', 'no rush. the pond<br>can wait.', '…still here!<br>no rush', 'counting clouds.<br>no rush'];
-const ROWS_OPEN = 72, IDLE_MS = 9000;
+const ROWS_OPEN = 72;
+// round 14.5: red Inky's speech. Root cause of "cycles way too fast" on the phone: round 14.4's auto-flow added a 350 ms `const IDLE_MS`
+// inside mountCompose that SHADOWED this module's 9000 ms one, so the idle "no rush" comment fired 0.35-0.56 s after every pause and
+// was replaced again before it could be read. Now: idle comments are 12-20 s apart (IDLE_FIRST then IDLE_GAP, vs. 9 s / 14 s before and
+// 0.35 s by the shadowing bug), every bubble HOLDS long enough to read (bubbleHold), and nothing replaces a bubble before its hold is over (chat()).
+export const IDLE_FIRST = 12000, IDLE_GAP = [12000, 20000], HOLD_MIN = 2800, HOLD_PER_CHAR = 65, HOLD_EXTRA = 1000, TAP_MIN_UP = 1500, FADE_IN = 240, FADE_OUT = 360;
+export const bubbleHold = text => Math.max(HOLD_MIN, HOLD_EXTRA + String(text).replace(/<br>/g, ' ').replace(/<[^>]*>/g, '').length * HOLD_PER_CHAR);   // fully visible ms: reading time + ~1 s
 // ROUND 14.1 - ONE STABLE LAYOUT on touch devices (phones: an on-screen keyboard): the compact layout is sized for the
 // keyboard-UP case once per session (the real keyboard height if it is up, else an estimate, KB_EST) and kept identical
 // when the keyboard goes down (just more dark space below): no reflow, no font jump. Red Inky stands in his own band
@@ -388,11 +394,11 @@ export function mountCompose(deps) {
     const over = states.findIndex((s, i) => s === 'over' && lastStates[i] !== 'over');
     const nowOk = ok && !lastStates.every(s => s === 'ok');
     if (nowOk) {
-      inky.setMood('cheer'); inky.spin = .7; inky.jump(1.25); inky.sparkle(18); say('five-seven-five!', 1300);
-      clock.wait(1350).then(() => { if (allOk && !busy && opened) { inky.setMood('think'); inky.look = 1; say('sign it?', 3600); } });
+      inky.setMood('cheer'); inky.spin = .7; inky.jump(1.25); inky.sparkle(18); chat('event', () => 'five-seven-five!');
+      clock.wait(1350).then(() => { if (allOk && !busy && opened) { inky.setMood('think'); inky.look = 1; chat('event', () => 'sign it?', 3600); } });
     }
     else if (over >= 0) { inky.setMood('worry'); inky.wobble(.6); }          // no words: the red numerals show the over-count
-    else if (hit >= 0) { inky.setMood('cheer'); inky.jump(.95); inky.sparkle(10); say(`line ${hit + 1}: ${NAMES[hit]}! nice`, 1600); clock.wait(1000).then(() => !busy && inky.mood === 'cheer' && !allOk && inky.setMood('happy')); }
+    else if (hit >= 0) { inky.setMood('cheer'); inky.jump(.95); inky.sparkle(10); chat('event', () => `line ${hit + 1}: ${NAMES[hit]}! nice`); clock.wait(1000).then(() => !busy && inky.mood === 'cheer' && !allOk && inky.setMood('happy')); }
     else if (states.includes('over')) { if (inky.mood !== 'worry') inky.setMood('worry'); }
     else if (inky.mood === 'worry' || inky.mood === 'bored') inky.setMood('happy');
     lastStates = states;
@@ -414,7 +420,7 @@ export function mountCompose(deps) {
   //     line and the caret follows them (the long line in Tiago's screenshot: "ah this is much" | "better but now ...")
   // Line 3 never flows (complete = ready to post: the sign row shows; Return or the seal posts). A paste of one long line is
   // re-flowed the same way across the three lines. Keeps the one textarea focused throughout (no blur, no keyboard flicker).
-  const WORD_END = /[\s.,;:!?…—–-]$/, IDLE_MS = 350, minSum = r => Math.min(...r.possible);
+  const WORD_END = /[\s.,;:!?…—–-]$/, FLOW_IDLE_MS = 350, minSum = r => Math.min(...r.possible);
   // split a line at the word boundary that fits the target: { keep, spill } (spill '' = nothing to move)
   function fitLine(line, target) {
     const res = countLine(line, target); if (!res.words.length || minSum(res) <= target) return { keep: line, spill: '' };
@@ -457,7 +463,7 @@ export function mountCompose(deps) {
     return L.slice(0, MAXL - 1).concat(L.length > MAXL - 1 ? [L.slice(MAXL - 1).join(' ')] : []).join('\n');
   }
   let idleTok = 0;
-  const scheduleIdle = () => { const tok = ++idleTok; clock.wait(IDLE_MS).then(() => { if (tok === idleTok && opened && !busy && document.activeElement === ta && autoFlow(null, true)) { poke(); update(); } }); };
+  const scheduleIdle = () => { const tok = ++idleTok; clock.wait(FLOW_IDLE_MS).then(() => { if (tok === idleTok && opened && !busy && document.activeElement === ta && autoFlow(null, true)) { poke(); update(); } }); };
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); kdEnter = true; setTimeout(() => kdEnter = false, 0); enter(); } });
   ta.addEventListener('beforeinput', e => {
     if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') { e.preventDefault(); if (!kdEnter) enter(); return; }
@@ -556,7 +562,7 @@ export function mountCompose(deps) {
   }
   function dropPrimer() { clearTimeout(primerT); if (primer?.isConnected) { if (document.activeElement === primer) primer.blur(); primer.remove(); } }
   deps.fab?.addEventListener('click', prime, true);   // capture: runs inside the same tap, before app.js starts the roll-up
-  function poke() { lastInput = clock.now(); if (inky.mood === 'bored') { inky.setMood('happy'); inky.wobble(.5); bubble.hidden = true; } }
+  function poke() { lastInput = clock.now(); if (inky.mood === 'bored') { inky.setMood('happy'); inky.wobble(.5); bubbleUntil = Math.min(bubbleUntil, Math.max(clock.now(), bubbleFrom + TAP_MIN_UP)); } }   // the comment finishes its minimum, then fades: typing never snaps it away
 
   // Inky parks LOWER-LEFT, standing in front of the lower roller with his feet in the free band under it (kbPlan keeps
   // that band): his body may cover the wooden roller but never the paper, so never a stamp, a writing line or the sign
@@ -585,7 +591,7 @@ export function mountCompose(deps) {
     else if (bugTaps >= 3) inky.setMood('shout');
     else inky.setMood(bugTaps === 2 ? 'worry' : 'think');
     if (tapBubble) { tapBubble = false; }
-    say(bugTaps >= 5 && bugLast !== 'ok ok!' ? (bugBag = bugBag.filter(t => t !== 'ok ok!'), bugLast = 'ok ok!') : nextBug(), 1100);
+    chat('tap', () => bugTaps >= 5 && bugLast !== 'ok ok!' ? (bugBag = bugBag.filter(t => t !== 'ok ok!'), bugLast = 'ok ok!') : nextBug());   // gated: replaces a bubble only after >= 1.5 s up; the face and squish still react to every tap
     const mine = now; clock.wait(bugTaps >= 5 ? 1800 : 1300).then(() => { if (bugAt === mine && opened && !busy && !denied && ['angry', 'shout', 'worry', 'think'].includes(inky.mood)) { inky.setMood('happy'); inky.shiver = 0; } });
   }
   clock.onTick(() => {                             // the tap target follows him (only while he is coaching)
@@ -597,23 +603,42 @@ export function mountCompose(deps) {
   });
 
   // ---------- bubble: drawn pixel by pixel, always points back at Inky ----------
-  let bubbleUntil = 0;
-  function say(text, ms = 1800, big = false) {
+  let bubbleUntil = 0, bubbleFrom = -1e9, pending = null, idleAt = 0, bubbleOpacity = '';
+  const bubbleLog = [];   // measured by the tests / captures: every bubble shown (when, text, hold ms)
+  function say(text, ms = 1800, big = false) {   // raw: shows now (state changes: open / post / deny). Idle chatter and taps go through chat()
     if (text !== 'tap to write') tapBubble = false;
     bubble.innerHTML = `<span class="bt">${text}</span>`; bubble.prepend(bcv); bubble.hidden = false; bubble.classList.toggle('big', big);
     bubble.style.width = bubble.style.height = '';
     const t = bubble.querySelector('.bt').getBoundingClientRect();
     bubble._bw = Math.ceil(t.width / BU); bubble._bh = Math.ceil(t.height / BU); bubble._key = '';
     bubble.style.width = bubble._bw * BU + 'px'; bubble.style.height = bubble._bh * BU + 'px';
-    bubbleUntil = clock.now() + ms; placeBubble();
-    bubble.animate([{ transform: `translateY(${2 * BU}px)`, opacity: 0 }, { transform: `translateY(${-BU}px)`, opacity: 1, offset: .5 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 200, easing: 'steps(3, end)' });
+    bubbleFrom = clock.now(); bubbleUntil = bubbleFrom + ms; bubble.style.opacity = '0'; bubbleOpacity = '0'; placeBubble();
+    bubbleLog.push({ text: text.replace(/<br>/g, ' '), at: bubbleFrom, hold: ms });
+  }
+  // Gated speech. kind 'tap' = the user bugged him (immediate, but it may only replace a bubble that has been up >= TAP_MIN_UP, else it waits for
+  // that moment; rapid taps keep ONE pending line, so they can never machine-gun); 'event' (line done, sign it?) waits for the current bubble's
+  // whole hold; 'idle' is dropped if anything is up or pending. `make` returns the text only when it is actually shown (keeps the no-repeat order).
+  function chat(kind, make, hold) {
+    const up = !bubble.hidden && clock.now() < bubbleUntil;
+    if (!up && !pending) { const t = make(); if (t) say(t, hold ?? bubbleHold(t)); return true; }
+    if (kind === 'idle') return false;
+    pending = { kind, make, hold }; return false;
+  }
+  function pump() {
+    if (!pending) return; const now = clock.now(), up = !bubble.hidden && now < bubbleUntil;
+    if (up && !(pending.kind === 'tap' && now - bubbleFrom >= TAP_MIN_UP)) return;
+    const p = pending; pending = null; const t = p.make(); if (t) say(t, p.hold ?? bubbleHold(t));
   }
   clock.onTick(() => {
-    if (opened && !busy && !denied && body.classList.contains('composing') && !allOk && !body.classList.contains('await-tap') && clock.now() - lastInput > IDLE_MS * (idleN ? 1.6 : 1)) {
-      inky.setMood('bored'); inky.tapping = true; say(NO_RUSH[idleN % NO_RUSH.length], 3200); idleN++; lastInput = clock.now();
+    const now = clock.now();
+    if (opened && !busy && !denied && body.classList.contains('composing') && !allOk && !body.classList.contains('await-tap') && now - lastInput > IDLE_FIRST && now >= idleAt) {
+      if (chat('idle', () => NO_RUSH[idleN++ % NO_RUSH.length])) { inky.setMood('bored'); inky.tapping = true; idleAt = now + IDLE_GAP[0] + Math.random() * (IDLE_GAP[1] - IDLE_GAP[0]); }
     }
+    pump();
     if (bubble.hidden) return;
-    if (clock.now() > bubbleUntil || !inky.visible) { bubble.hidden = true; return; }
+    if (now > bubbleUntil + FADE_OUT || !inky.visible) { bubble.hidden = true; return; }
+    const o = Math.min(1, (now - bubbleFrom) / FADE_IN, 1 - Math.max(0, now - bubbleUntil) / FADE_OUT).toFixed(2);   // a gentle fade in, the hold, a gentle fade out
+    if (o !== bubbleOpacity) { bubbleOpacity = o; bubble.style.opacity = o; }
     placeBubble();
   });
   function placeBubble() {
@@ -684,7 +709,7 @@ export function mountCompose(deps) {
     await inky.whip([[innerWidth + 90, vvt + vvh * .56], [innerWidth * .62, vvt + vvh * .74], [innerWidth * .36, vvt + vvh * .9], [innerWidth * .48, vvt + vvh * .8], [innerWidth * .26, vvt + vvh * .76], [d.x, d.foot]], .95, { splash: 10 });
     await done; busyScroll = false; unrolling = false;
     inky.mode = 'coach'; inky.dock = dock; inky.setMood('happy'); inky.look = 1;
-    say('hi! I\'m counting.<br>give me 5-7-5', 2400);
+    say('hi! I\'m counting.<br>give me 5-7-5', bubbleHold('hi! I\'m counting. give me 5-7-5'));
   }
   async function rollUp() {
     body.classList.remove('opened');
@@ -805,7 +830,7 @@ export function mountCompose(deps) {
     const f = deny_.animate([{ opacity: 1, transform: `rotate(${rot}deg) scale(1)` }, { opacity: 0, transform: `rotate(${rot}deg) scale(1.08)` }], { duration: 520, easing: 'steps(6)', fill: 'forwards' });
     await clock.wait(540); f.cancel(); deny_.hidden = true;
     inky.mode = 'coach'; inky.dock = dock; busy = false; lastInput = clock.now();
-    say(hint ? hint : reason ? 'hmm. change a word?' : 'try again!', hint ? 2600 : 1800);
+    { const m = hint ? hint : reason ? 'hmm. change a word?' : 'try again!'; say(m, bubbleHold(m)); }
     clock.wait(1800).then(() => { if (inky.mood === 'angry' && !busy) inky.setMood('worry'); });
   }
 
@@ -833,7 +858,7 @@ export function mountCompose(deps) {
   $('#cpost').addEventListener('pointerdown', e => e.preventDefault());
   update();
   return {
-    open, cancel, submit, update, inputs, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
+    open, cancel, submit, update, inputs, bubbleLog, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
     get opened() { return opened; }, get busy() { return busy; }, get denied() { return denied; }, get kbUp() { return kbUp; }, get ruleSpecs() { return ruleSpecs; },
     fill(lines, name) { if (denied) clearDenied(); ta.value = clampLines(lines.map(l => String(l).replace(/\n/g, ' ')).join('\n')); if (name != null) { nameIn.value = cleanName(name); fitName(); } update(); },
   };

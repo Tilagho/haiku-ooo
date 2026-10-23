@@ -39,20 +39,17 @@ main { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding
 }
 
 /* ---------- noren header (src/noren.js): one little flag per character of haiku.ooo, with a hidden egg ---------- */
-.noren-head { position: relative; margin: 0 -14px; height: 150px; }
+.noren-head { --nh: calc(min(390px, 100vw) * 36 / 130); position: relative; margin: 0 -14px; padding: calc(var(--nh) + 8px) 0 14px; }   /* round 14.5: the © / credits row and the Japanese name flow under the curtains (the row may wrap) */
 .noren-cv { position: absolute; left: 50%; top: 0; width: min(390px, 100%); aspect-ratio: 130 / 36; transform: translateX(-50%); z-index: 2;
   image-rendering: pixelated; touch-action: pan-y; cursor: grab; -webkit-tap-highlight-color: transparent; user-select: none; }
 /* the Japanese name sits just under the hems */
-.noren-head .jp { position: absolute; left: 0; right: 0; top: 116px; margin: 0; z-index: 1; text-align: center;
+.noren-head .jp { position: relative; margin: 4px 0 0; z-index: 1; text-align: center;
   font: 400 18px/1 var(--text); letter-spacing: 6px; color: #4a4550; }
 .rule { margin: 0; font: 400 16px var(--ui); display: flex; gap: 6px; justify-content: center; align-items: center; }
 .chip { display: inline-grid; place-items: center; width: 26px; height: 26px; color: var(--paper-hi); font: 400 16px var(--ui); background: var(--ink);
   box-shadow: 0 -3px 0 0 var(--ink), 0 3px 0 0 var(--ink), -3px 0 0 0 var(--ink), 3px 0 0 0 var(--ink); animation: bob 1.6s steps(2) infinite; }
 .chip.c1 { background: var(--blue); } .chip.c2 { background: var(--red); animation-delay: .2s; } .chip.c3 { background: var(--gold); animation-delay: .4s; }
 .scroll-foot { padding: 26px 0 10px; }
-/* CC BY attribution (required): small and quiet, under the 5-7-5 blocks */
-.credit { padding: 6px 0 4px; text-align: center; }
-.credit p { display: inline-block; margin: 0; padding: 2px 6px; font: 400 16px/1.2 var(--small); color: #8a8590; background: rgba(244,236,218,.85); }
 .small { font: 400 16px/1.25 var(--small); color: #4a4550; margin: 6px auto 0; max-width: 320px; }
 @keyframes bob { 50% { transform: translateY(-3px); } }
 
@@ -137,3 +134,27 @@ main { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding
 html, body, button, a, input, textarea, [role="button"], .fab, .poem, .noren-head { touch-action: manipulation; }
 body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .inky-canvas, body.capture-clean .bubble { visibility: hidden; }
 
+
+/* ---------- round 14.5: the © line + credits (src/credits.js). Under the noren curtains, above the Japanese name. ---------- */
+.cr-row { position: relative; z-index: 3; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 6px; min-height: 36px; padding: 0 4px; }
+.cr-line { margin: 0; font: 400 20px/1 var(--small); word-spacing: 3px; color: #6b6670; white-space: nowrap; }
+.cr-btn { display: inline-flex; align-items: center; gap: 6px; min-width: 44px; min-height: 44px; margin: -4px 0; padding: 0 6px; border: 0; background: none; cursor: pointer; font: 400 20px/1 var(--small); color: #2a2830; -webkit-tap-highlight-color: transparent; }
+.cr-btn canvas { width: 33px; height: 30px; image-rendering: pixelated; }
+.cr-btn:active { transform: translateY(3px); }
+#credits { position: fixed; inset: 0; z-index: 120; --dim: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+#credits[hidden] { display: none; }
+#credits::before { content: ''; position: absolute; inset: -60vh -30vw; background: rgba(26,24,28,.66); opacity: var(--dim); }
+.cr-stage { position: absolute; left: 0; right: 0; }
+.cr-scroll { position: relative; margin: 0 auto; }
+.cr-art { position: absolute; left: 0; top: 0; image-rendering: pixelated; }
+.cr-paper { position: absolute; overflow: hidden; }
+.cr-in { position: relative; display: flex; flex-direction: column; color: var(--ink); }
+.cr-title { margin: 2px 0 6px; font: 400 48px/1 var(--small); text-align: center; color: var(--ink); }
+.cr-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 2px 8px; font: 400 32px/1.12 var(--small); scrollbar-width: none; touch-action: pan-y; }   /* round 14.5: the (c) line's face (FindersKeepers), 2x (its next pixel-exact size) */
+.cr-list::-webkit-scrollbar { display: none; }
+.cr-list section { margin: 0 0 18px; }
+.cr-list h3 { margin: 0 0 6px; font: 400 32px/1.1 var(--small); color: #4a4550; border-bottom: 3px dotted rgba(98,72,46,.5); padding-bottom: 2px; }
+.cr-list p { margin: 0 0 10px; overflow-wrap: anywhere; }
+.cr-close { flex: none; margin: 0; padding: 8px 0 6px; text-align: center; font: 400 32px/1.1 var(--small); color: #4a4550; border-top: 3px dotted rgba(98,72,46,.55); }
+.cr-poof { position: absolute; image-rendering: pixelated; pointer-events: none; display: none; }
+@media (prefers-reduced-motion: reduce) { .cr-btn:active { transform: none; } }

@@ -61,12 +61,12 @@ function vnoise(seed, x) { const i = Math.floor(x), f = x - i, h = k => (hash(se
 // round 14.2: a tap near a flying bird STARTLES its flight: it flaps ~2.5x faster and flies away ~2.6x faster, the boost held
 // ~1.3 s then easing back down over ~1.2 s (SCARE_S in all); same direction, same pair / trio / skein grouping, same count.
 // ROUND 14.4: twice as hard again: flies ~4.7x (was 2.6x) and flaps ~4.6x (was 2.5x) the calm rate, held ~1.7 s, then eased out over ~1.3 s.
-// And each startling tap has a 1-in-5 (KO_P) chance to KNOCK OUT the one bird nearest the tap: it tumbles dazed (quarter turns, pixel
+// And each startling tap has a 9-in-10 (KO_P, round 14.5; was 1-in-5) chance to KNOCK OUT the one bird nearest the tap: it tumbles dazed (quarter turns, pixel
 // style, wings held) and falls off the bottom of the screen in a small grey puff + a drifting feather, while the rest of its flight
 // startles and flies off. ?birdko=1 forces it, ?birdko=0 turns it off (tests / captures). A knocked-out bird still counts in its
 // flight, so the 12-bird cap and the spawn rhythm are untouched; it is only dropped from the sky once it has fallen out of view.
 export const SCARE_S = 3.0, SCARE_HOLD = 1.7, SCARE_SPEED = 3.7, SCARE_FLAP = 3.6, SCARE_R = 72;   // r in screen px (forgiving for a finger)
-export const KO_P = .2, KO_G = 560, KO_SPIN = 9;   // chance per startling tap; fall (units/s^2); quarter turns per second
+export const KO_P = .9, KO_G = 560, KO_SPIN = 9;   // chance per startling tap (round 14.5: .9, was .2: "almost every time", a small chance it just flies off); fall (units/s^2); quarter turns per second
 export const rollKnock = (rand = Math.random, p = KO_P) => p >= 1 ? true : p <= 0 ? false : rand() < p;
 export const koP = q => q === '1' ? 1 : q === '0' ? 0 : KO_P;   // r in screen px (forgiving for a finger)
 export class Flock {
@@ -239,7 +239,7 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
       if (hit) { F.startle(); n++; }
     }
     ctl.lastKO = false;
-    if (near && rollKnock(ctl.rand, ctl.ko) && nF.knock(near)) {   // 1 in 5: the bird nearest the tap is knocked out of the sky
+    if (near && rollKnock(ctl.rand, ctl.ko) && nF.knock(near)) {   // 9 in 10 (KO_P): the bird nearest the tap is knocked out of the sky
       ctl.lastKO = true; ctl.knocked++;
       const R = nF.R, gray = ['rgb(150,146,152)', 'rgb(196,192,196)', 'rgb(96,92,100)', 'rgb(224,220,222)'];
       for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + R(), v = 38 + R() * 30; ctl.fx.push({ k: 'puff', x: near.x, y: near.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: .45 + R() * .2, c: gray[i % 4] }); }
