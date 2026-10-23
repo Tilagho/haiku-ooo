@@ -27,10 +27,22 @@ export const bubbleHold = text => Math.max(HOLD_MIN, HOLD_EXTRA + String(text).r
 // when the keyboard goes down (just more dark space below): no reflow, no font jump. Red Inky stands in his own band
 // fully UNDER the lower roller (INKY_GAP below it), never over a stamp, the roller or the paper. When the visible height
 // is short, the top roller tucks up under the screen edge (st down to ST_MIN) before the type steps down a size.
-const ST_KB = 30, ST_MIN = -62, ST_TUCK = -66, INKY_GAP = 4;   // round 14.4: the top roller tucks 8 css px further (the 2 px crimson outline on Inky costs 8 px of height)
+const ST_KB = 30, ST_MIN = -62, ST_TUCK = -66, INKY_GAP = 2;
+// ROUND 14.11 - the compact write page sits BELOW the status bar: the stage used to be laid out from the very top of the visual viewport, so the
+// top roller (st 30 -> tucked up to -66 css) ended up under iOS's status bar (fixed layers are clipped to the content area: the roller and the
+// paper's first lines were cut off), while the plan - sized once for an ESTIMATED keyboard height and only ever re-planned when too TALL - left Inky
+// 20-60 px above the real bottom. Now: the free height is [status bar + margin, visible bottom - a few px], tried in this order before the top may
+// hide anything: (1) tight gaps (stamp row 60, little slack, Inky's band 2 px), (2) Inky stands in front of the lower roller (he may, like on the
+// desktop layout, never over the paper) by up to ROLLER_OVER css px, (3) the type steps down one fine step at a time, never below TEXT_FLOOR (tier
+// index), (4) only then the top roller tucks up again.
+const STATUS_MIN = 20, TOP_M = 20, TOP_OK = 14, BOT_GAP = 6, ROLLER_OVER = 44, TEXT_FLOOR = 2, STAMP_ROW = 60, LINES_SLACK = 12, ST_CAP = 40;   // round 14.4: the top roller tucks 8 css px further (the 2 px crimson outline on Inky costs 8 px of height)
 // the visible height with the keyboard up, before it is up: the screen height minus a keyboard + its ^ v ✓ bar + the
 // status bar (iPhone 390x844: ~454 css px, the 375x667 SE: ~357, 430x932: ~503)
-const KB_VIS = () => { const sh = (typeof screen !== 'undefined' && screen.height) || innerHeight; return sh - Math.round(sh * .45) - 10; };
+// round 14.11: the estimate is now ~51% of the screen height (iPhone 390x844: ~430, the measured 415-440 range; 14.10 guessed 454, which was too
+// tall, so the first real keyboard re-planned and the page jumped), and the last REAL keyboard-up height of this screen is remembered (kbSeen) so the next sessions plan with it
+const KB_KEY = () => 'hb-kbvis:' + innerWidth + 'x' + ((typeof screen !== 'undefined' && screen.height) || innerHeight);
+const kbSeen = v => { try { v == null ? localStorage.getItem(KB_KEY()) : localStorage.setItem(KB_KEY(), String(Math.round(v))); } catch {} return v == null ? (+localStorage?.getItem?.(KB_KEY()) || 0) : v; };
+const KB_VIS = () => { const sh = (typeof screen !== 'undefined' && screen.height) || innerHeight; return kbSeen() || Math.round(sh * .51); };
 // keyboard timing: 'late' (default) = no keyboard during the animation, 'tap to write' after it; 'early' = round 14 (primer at the tap)
 const KB_MODE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('kb') === 'early' ? 'early' : 'late';
 const DBG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('kbdbg'); let dbgEl = null;   // ?kbdbg=1: a tiny readout of the visible height / planned type size
@@ -216,8 +228,8 @@ export function mountCompose(deps) {
     kbUp = composing && vvh < innerHeight * .8;                    // the real on-screen keyboard
     const kb = composing && (compact || kbUp); body.classList.toggle('kb', kb); KERN = kb ? 1 : 0;
     if (!kb) plan = null;
-    else if (!plan) plan = kbPlan(kbUp ? vvh : Math.min(vvh, KB_VIS()));  // decided once: the keyboard-up layout, kept when it goes down
-    else if (kbUp && plan.st + plan.body > vvh + .5) plan = kbPlan(vvh);   // the real keyboard is taller than planned: re-plan (rare)
+    else if (!plan) { plan = kbPlan(kbUp ? vvh : Math.min(vvh, KB_VIS())); plan.real = kbUp; }  // decided once: the keyboard-up layout, kept when it goes down
+    else if (kbUp && (!plan.real || plan.h - vvh > 6)) { plan = kbPlan(vvh); plan.real = true; kbSeen(vvh); }   // round 14.11: the first REAL keyboard re-plans (the estimate was a guess, taller or shorter), later only a SHORTER visible height does (the layout stays put when a suggestion bar comes and goes)   // round 14.11: the real visible height differs from the estimate (taller OR shorter): re-plan once, to the real one
     $('#cscroll').style.setProperty('--st', (plan ? plan.st : 34) + 'px');
     if (DBG) { dbgEl ||= Object.assign(document.body.appendChild(document.createElement('div')), { id: 'kbdbg' }); Object.assign(dbgEl.style, { position: 'fixed', left: '2px', top: '2px', zIndex: 99999, font: '10px monospace', color: '#0f0', background: 'rgba(0,0,0,.7)', padding: '2px 4px', pointerEvents: 'none' });
       dbgEl.textContent = `vvh ${Math.round(vvh)} ih ${innerHeight} sh ${screen.height} kbUp ${kbUp} fs ${plan ? plan.sizes[0].toFixed(1) : '-'} st ${plan ? Math.round(plan.st) : '-'} body ${plan ? Math.round(plan.body) : '-'}`; }   // ?kbdbg=1: what the real phone reports
@@ -229,15 +241,20 @@ export function mountCompose(deps) {
   // keyboard-up layout: the biggest type tier whose three rows + the stamp row + the rollers + Inky's band under them fit
   // the height h (compact rows: 4 top, per row 4 + baseline + rule + numerals tucked close (34 + asc*fs), 2 between; then a
   // 68 px stamp row). The top roller may tuck up under the screen edge (st >= ST_MIN) before the type steps down a tier.
-  const linesBottom = fs => 16 + 3 * (34 + ASC * fs);         // (+8 px slack over the measured rows)
+  const linesBottom = fs => LINES_SLACK + 3 * (34 + ASC * fs);         // (4 padding + 3 x 2 margins + the measured rows, + 2 px)
+  const topSafe = () => Math.max(field?.topInset || 0, STATUS_MIN);       // the status bar / safe-area top, in stage px
   function kbPlan(h = vvh) {
-    let p = null;
-    for (const sizes of FS_TIERS) {
-      const rows = Math.ceil((linesBottom(sizes[0]) + 68) / SP), body = (2 + RH * 2) * SP + rows * SP + INKY_H() + INKY_GAP + 2;
-      p = { rows, sizes, body, h, st: Math.min(ST_KB, h - body) };
-      if (p.st >= ST_MIN) return p;
+    const T = topSafe(); let p = null;
+    for (let ti = 0; ti < FS_TIERS.length; ti++) {
+      const sizes = FS_TIERS[ti];
+      const rows = Math.ceil((linesBottom(sizes[0]) + STAMP_ROW) / SP), body0 = (2 + RH * 2) * SP + rows * SP + INKY_H() + INKY_GAP + 2;
+      const room = h - BOT_GAP - body0;                                                  // the top that puts Inky's feet BOT_GAP above the bottom
+      const ovl = Math.max(0, Math.min(ROLLER_OVER, T + TOP_M - room));                   // he steps in front of the lower roller only as far as the comfortable top margin needs
+      p = { rows, sizes, body: body0 - ovl, ovl, h, T, st: Math.min(T + ST_CAP, room + ovl) };
+      if (p.st >= T + TOP_OK) return p;                                                   // the whole top roller is visible, with a margin
+      if (ti >= TEXT_FLOOR) break;
     }
-    p.st = Math.max(ST_TUCK, p.st); return p;
+    p.st = Math.max(ST_TUCK, p.st); return p;                                             // last resort: the old tuck
   }
   const isKb = () => body.classList.contains('kb');
   const kbRows = () => (plan || kbPlan()).rows;
@@ -603,7 +620,7 @@ export function mountCompose(deps) {
   // that band): his body may cover the wooden roller but never the paper, so never a stamp, a writing line or the sign
   const dock = () => {
     const l = Math.max(0, innerWidth / 2 - 230), vb = vvt + vvh, sb = scrollBottom(), pb = paperBottom();
-    if (isKb()) return { x: l + 46, foot: Math.min(vb - 2, sb + INKY_H() + INKY_GAP) };   // round 14.1: his own band, fully under the roller
+    if (isKb()) { const pv = vvt + (plan ? plan.h : vvh); return { x: l + 46, foot: Math.min(pv - BOT_GAP, vb - BOT_GAP) }; }   // round 14.11: his feet sit BOT_GAP above the (planned) visible bottom, next to the keyboard; the plan left room above him
     const foot = Math.min(vb - 4, Math.max(pb + INKY_H(), vb - 36));
     return { x: l + 62, foot };
   };
@@ -692,8 +709,9 @@ export function mountCompose(deps) {
     if (right && left + W > innerWidth - 4) { right = false; left = el - GAP - W; }
     if (!right && left < 4) { right = true; left = er + GAP; }
     const scrollBot = $('#cscroll').hidden ? -1 : $('#scv').getBoundingClientRect().top + (2 + RH * 2) * SP + art.openCss;
-    const minTop = m.cy > scrollBot && scrollBot > 0 ? scrollBot + 6 : vvt + 6;
-    let top = Math.max(minTop, Math.min(vvt + vvh - H - 6, m.y - H / 2 - BU * 2));
+    const minTop = m.cy > scrollBot && scrollBot > 0 ? scrollBot + 6 : vvt + (isKb() ? topSafe() : 0) + 6;   // round 14.11: never under the status bar
+    const Hv = Math.max(H, bubble.getBoundingClientRect().height || 0);   // round 14.11: the bubble's real box (its frame is taller than the drawn H): it must end above the visible bottom, next to Inky near the keyboard
+    let top = Math.min(vvt + vvh - Hv - 4, Math.max(minTop, m.y - H / 2 - BU * 2));   // (the visible bottom wins over 'below the scroll': he now stands close to it)
     left = right ? Math.ceil(left / BU) * BU : Math.floor(left / BU) * BU; top = Math.round(top / BU) * BU;
     bubble.style.left = left + 'px'; bubble.style.top = top + 'px';
     const bx = right ? left : left + W, by = Math.max(top + 3 * BU, Math.min(top + H - 3 * BU, m.y));
@@ -903,7 +921,7 @@ export function mountCompose(deps) {
   $('#cpost').addEventListener('pointerdown', e => e.preventDefault());
   update();
   return {
-    open, cancel, submit, get inkBg() { return html.classList.contains('inkbg'); }, update, inputs, bubbleLog, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
+    open, cancel, submit, say: (t, hold) => say(t, hold), get inkBg() { return html.classList.contains('inkbg'); }, update, inputs, bubbleLog, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
     get opened() { return opened; }, get busy() { return busy; }, get denied() { return denied; }, get kbUp() { return kbUp; }, get ruleSpecs() { return ruleSpecs; },
     fill(lines, name) { if (denied) clearDenied(); ta.value = clampLines(lines.map(l => String(l).replace(/\n/g, ' ')).join('\n')); if (name != null) { nameIn.value = cleanName(name); fitName(); } update(); },
   };

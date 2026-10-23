@@ -42,7 +42,7 @@ body.composing #cstage { pointer-events: auto; }
 #compose .back .blot { position: relative; width: 66px; height: 66px; }
 #compose .back .blot canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
 #compose .back:active .blot { transform: translateY(6px); }   /* pressed: one whole grid cell down (stays on the scroll grid) */
-body.kb #compose .back { top: calc(var(--ph) - 66px); left: 54px; }
+body.kb #compose .back { top: calc(var(--ph) - 60px); left: 54px; }
 body.kb #compose .back .blot { width: 54px; height: 54px; }
 
 /* ---------- the worn scroll (pixel canvas) ---------- */
@@ -125,9 +125,9 @@ body.kb #compose .field .mirror .nums { top: calc(var(--fsr, 48px) * var(--asc, 
 body.kb #compose .paper { padding-right: 14px; }   /* round 14.4: the torn right edge clips the width (compose.js fits per row), the rest is for the type */
 body.kb #compose .field .mirror { letter-spacing: calc(var(--fsr, 48px) / -16); }          /* one font px tighter (compose.js KERN) */
 body.kb #compose #cpoem { letter-spacing: calc(max(16px, var(--fs, 32px)) / -16); }
-body.kb #compose .sign { position: absolute; margin: 0; left: 114px; right: 114px; top: calc(var(--ph) - 58px); justify-content: center; gap: 6px; }
+body.kb #compose .sign { position: absolute; margin: 0; left: 114px; right: 114px; top: calc(var(--ph) - 54px); justify-content: center; gap: 6px; }
 body.kb #compose .sign .nm { width: 162px; }
-body.kb #compose .cpost { top: calc(var(--ph) - 66px); right: 54px; }
+body.kb #compose .cpost { top: calc(var(--ph) - 60px); right: 54px; }
 body.kb #compose .cpost .wax { width: 54px; height: 54px; }
 
 /* ---------- the big tilted hanko: 却下 (rejected) / 不可 (not allowed), alternating; worn ink pressed INTO the paper ---------- */
