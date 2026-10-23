@@ -10,12 +10,14 @@ const P = 4, INK = [26, 24, 28], WASH = [62, 58, 70];
 // visualViewport jump (+-100px, keyboard away). It never shrinks. The simulation (wave, iris, drips) still runs in VIEWPORT cells
 // (so the look and timing are unchanged); only the render maps them onto the bigger canvas (mx, my cells of margin).
 export const MARGIN = .6;
+const FRONT = [5, 2.6, 1.1], FRONT_MOUND = 7;      // wave amplitudes in 4 px cells (broad swell, lobe, ripple); how much the surface lags away from the geyser
 
 export class InkField {
   constructor({ z = 20 } = {}) {
     this.cv = document.createElement('canvas'); this.cv.className = 'ink-field'; this.cv.style.zIndex = z; this.cv.setAttribute('aria-hidden', 'true');
     document.body.appendChild(this.cv); this.ctx = this.cv.getContext('2d');
-    this.state = 'off'; this.drops = [];
+    this.state = 'off'; this.drops = []; this.cover = { top: 0, bottom: 0 };
+    this.probe = document.createElement('div'); this.probe.setAttribute('aria-hidden', 'true'); this.probe.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px)'; document.body.appendChild(this.probe);
     this.resize(); addEventListener('resize', () => this.resize()); globalThis.visualViewport?.addEventListener('resize', () => this.resize());
     clock.onTick(dt => this.step(dt));
   }
@@ -37,7 +39,8 @@ export class InkField {
     this.resize(); const vch = this.vch;
     const n = this.vcw + 1, h = new Float32Array(n).fill(vch + 4), v = new Float32Array(n), ix = Math.round(xcss / P);
     for (let i = 0; i < n; i++) v[i] = -330 * Math.exp(-(((i - ix) / 6) ** 2));
-    this.F = { h, v, level: vch + 4, rate: 0, speed };
+    const ph = [Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28];
+    this.F = { h, v, level: vch + 4, rate: 0, speed, ph, t: 0, ix, off: new Float32Array(n) };      // round 14.10: off[] = the front's own shape (see FRONT)
     for (let k = 0; k < 34; k++) { const a = -Math.PI / 2 + (Math.random() - .5) * 1.4, sp = 90 + Math.random() * 170; this.drops.push({ x: ix + (Math.random() - .5) * 6, y: vch - 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 1.2 + Math.random() * 2.4 }); }
     this.state = 'flood';
     return new Promise(res => this.onFull = res);
@@ -52,14 +55,32 @@ export class InkField {
     this.state = 'suck';
     return new Promise(res => this.S.res = res);
   }
-  off() { this.state = 'off'; this.F = this.S = null; this.drops = []; this.dirty = true; }
-  rOf(th) { const S = this.S, a = (1 - S.t / S.dur); return S.R * (1 + a * (.09 * Math.sin(5 * th + S.ph[0] + S.t * 4) + .06 * Math.sin(3 * th - S.ph[1] - S.t * 6) + .04 * Math.sin(9 * th + S.ph[2]))); }
+  // round 14.10: how much of the screen's TOP and BOTTOM edge row the black covers right now (0..1) - compose.js paints the page background behind iOS's
+  // status bar / toolbar (which the canvas cannot reach) ink only for the edge the black has actually reached, so no flat black bar ever leads the front.
+  get topInset() { return this.topInsetOverride ?? (this.probe?.offsetHeight || 0); }      // the status bar's height (env(safe-area-inset-top)): the top 'edge' is the first row below it
+  edgeCover() {
+    const n = this.vcw, vh = this.vch, ty = this.topInset / P;
+    if (this.state === 'full') return { top: 1, bottom: 1 };
+    if ((this.state === 'flood' || this.state === 'suck') && this.img) {                    // read the two edge rows off the canvas just rendered: exact, drips / balls / rim included
+      const D32 = new Uint32Array(this.img.data.buffer), INK32 = ((255 << 24) | (INK[2] << 16) | (INK[1] << 8) | INK[0]) >>> 0, cw = this.cw;
+      const row = vy => { const y = vy + this.my; if (y < 0 || y >= this.ch) return 0; let c = 0; for (let x = 0; x < n; x++) if (D32[y * cw + this.mx + x] === INK32) c++; return c / n; };
+      return { top: row(Math.max(0, Math.ceil(ty))), bottom: row(Math.floor(vh - .5)) };
+    }
+    return { top: 0, bottom: 0 };
+  }
+  off() { this.state = 'off'; this.F = this.S = null; this.drops = []; this.dirty = true; this.cover = { top: 0, bottom: 0 }; }
+  rOf(th) { const S = this.S, a = (1 - S.t / S.dur); return S.R * (1 + a * (.09 * Math.sin(5 * th + S.ph[0] + S.t * 4) + .06 * Math.sin(3 * th - S.ph[1] - S.t * 6) + .04 * Math.sin(9 * th + S.ph[2]) + .035 * Math.sin(17 * th + S.ph[0] * 1.7 - S.t * 3))); }
   step(dt) {
     if (this.state === 'flood') {
       const F = this.F, n = F.h.length;
-      F.rate += 420 * dt * F.speed; F.level -= F.rate * dt;
+      F.rate += 420 * dt * F.speed; F.level -= F.rate * dt; F.t += dt;
+      // round 14.10 FRONT: the surface used to chase ONE flat level, so after the geyser the front was a straight horizontal line sweeping up the screen.
+      // Now every column chases its own target = level + off[i], off = three travelling waves (a broad swell, a lobe, a ripple) + the geyser's own mound
+      // (it leads near the button), so the visible front is wavy / pixel-stepped from the very first frame to the last (it still ends fully covering the top).
+      const ix = F.ix, W = F.off, k = F.t;
+      for (let i = 0; i < n; i++) W[i] = FRONT[0] * Math.sin(i * .075 + F.ph[0] + k * 2.1) + FRONT[1] * Math.sin(i * .19 - F.ph[1] - k * 3.3) + FRONT[2] * Math.sin(i * .41 + F.ph[2] + k * 4.7) + FRONT[0] * 1.4 + FRONT_MOUND * Math.min(1, Math.abs(i - ix) / 30);
       for (let sub = 0, h2 = dt / 3; sub < 3; sub++) {
-        for (let i = 0; i < n; i++) { const l = F.h[i - 1] ?? F.h[i], rr = F.h[i + 1] ?? F.h[i]; F.v[i] += ((l + rr - 2 * F.h[i]) * 900 + (F.level - F.h[i]) * 60 - F.v[i] * 2.4) * h2; }
+        for (let i = 0; i < n; i++) { const l = F.h[i - 1] ?? F.h[i], rr = F.h[i + 1] ?? F.h[i]; F.v[i] += ((l + rr - 2 * F.h[i]) * 900 + (F.level + W[i] - F.h[i]) * 60 - F.v[i] * 2.4) * h2; }
         for (let i = 0; i < n; i++) F.h[i] += F.v[i] * h2;
       }
       for (const d of this.drops) { d.vy += 260 * dt; d.x += d.vx * dt; d.y += d.vy * dt; }
@@ -83,7 +104,7 @@ export class InkField {
       if (u >= 1 && !S.drips.length) { const r = S.res; this.off(); r(); }
       else if (u >= 1) S.t = S.dur;
     }
-    this.render(); this.drawn = this.state;                                       // (the test reads this: the state the canvas actually shows)
+    this.render(); this.drawn = this.state; this.cover = this.edgeCover();                                       // (the test reads this: the state the canvas actually shows)
   }
   render() {                                                                    // (this.refRender = true: the plain per-pixel maths everywhere, for the test that proves the fast paths identical)
     const { cw, ch, img, ctx, mx, my } = this;

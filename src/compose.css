@@ -15,14 +15,15 @@ body.composing #cveil { display: block; }
    visual viewport, behind Safari's translucent toolbars / keyboard bar, the overscroll bounce, the safe areas), and the
    same ink on html + body so nothing of the board can ever show around it. The board itself is locked (compose.js). */
 body.composing.washed #cveil { inset: calc(-80vmax - env(safe-area-inset-top, 0px)) calc(-80vmax - env(safe-area-inset-right, 0px)) calc(-80vmax - env(safe-area-inset-bottom, 0px)) calc(-80vmax - env(safe-area-inset-left, 0px)); min-height: 100lvh; background: var(--ink, #1a181c); }       /* round 14.8: past every edge by 80% of the larger screen side: no vh / dvh / innerHeight */
-html.composing.washed, html.composing.washed body { background: #1a181c !important; }
-/* round 14.8: html itself is ink for the whole compose life (the flood, the compose, the drain home): the overscroll bounce,
-   the safe areas and the strip behind Safari's bars can never show paper. (body keeps its own paper, so the board looks the same.) */
-html.composing, html.draining { background: #1a181c; }
-/* round 14.9: html.inkbg (set at the tap, cleared INK_MARGIN ms after the exit iris) - the page behind iOS 26's status bar / floating toolbar is ink all through.
-   body has NO background of its own then (a position: fixed body with a cream background-colour is exactly what Safari paints its bars from); the cream
-   paper is only a background IMAGE (opaque tile, no colour) on a fixed html::before at z -1, offset by --paper-y so the speckle sits where body's did. */
-html.inkbg { background: #1a181c !important; }
+/* round 14.10: the PAGE background (what iOS 26 paints behind the status bar / floating toolbar, beyond what any canvas can reach) goes ink only for the
+   edge the black has actually covered (compose.js syncBands: .ink-t / .ink-b from InkField.edgeCover()), never at the tap and never as a flat bar ahead of the
+   organic front. 14.8 / 14.9 forced html ink for the whole compose life (html.composing / .draining / .inkbg at the tap): a straight black bar before the flood. */
+html.inkbg { --bt: #f4ecda; --bb: #f4ecda; background-color: var(--bt); background-image: linear-gradient(var(--bb), var(--bb)); background-repeat: no-repeat;
+  background-size: 100% 100vmax; background-position: 0 calc(var(--sy, 0px) + 50vh); }       /* top colour = the page, bottom colour = a layer from mid-screen down, past the bottom edge */
+html.inkbg.ink-t { --bt: #1a181c; }
+html.inkbg.ink-b { --bb: #1a181c; }
+/* body has NO background of its own while the page background is driven (a position: fixed body with a cream background-colour is what Safari samples for its bars);
+   the cream paper is only a background IMAGE (opaque tile, no colour) on a fixed html::before at z -1, offset by --paper-y so the speckle sits where body's did. */
 html.inkbg body { background: transparent !important; }
 html.inkbg::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: url(../assets/paper.png) repeat 0 var(--paper-y, 0px) / 192px; image-rendering: pixelated; }
 html.inkbg.washed::before { display: none; }

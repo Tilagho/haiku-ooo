@@ -267,18 +267,26 @@ export function mountCompose(deps) {
     scrollTo({ top: to ?? 0, left: 0, behavior: 'instant' });
     setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => html.classList.remove('scroll-lock'))), 60);   // the restore's scroll event is not a swipe (no gust, no Inky hop)
   }
-  // ---------- round 14.9: the page's own background is ink for the WHOLE transition ----------
-  // Tiago's iOS 26 Safari paints its status-bar / floating-toolbar areas from the PAGE (the root / body background and the colour of the fixed
-  // layers at the screen edges), never from our oversize canvases (those are clipped to the content area). In 14.8 the body kept its cream paper
-  // (body position: fixed while locked) until the flood was full and got it back the moment the drain began, so the bars showed cream both ways.
-  // Now html gets class .inkbg at the TAP (same frame, before any animation, theme colour too), the cream paper lives only as a background IMAGE on a
-  // fixed html::before layer (no cream background-colour anywhere at the edges), and only 520 ms after the exit iris is done and the board is fully
-  // visible does the cream come back, so a bar colour fade happens at rest, not mid-animation.
-  const INK_MARGIN = 520;
-  let inkTok = 0;
-  const paperY = () => html.style.setProperty('--paper-y', (lockY != null ? -lockY : -scrollY) + 'px');   // the texture stays where the body's own paper was
-  function inkOn() { inkTok++; html.classList.add('inkbg'); paperY(); if (theme) theme.content = '#1a181c'; }
-  function inkOffLater(ms = INK_MARGIN) { const tok = ++inkTok; return clock.wait(ms).then(() => { if (tok !== inkTok) return; html.classList.remove('inkbg'); html.style.removeProperty('--paper-y'); if (theme) theme.content = theme0; }); }
+  // ---------- round 14.10: the page background behind iOS's bars follows the ink FRONT ----------
+  // iOS 26 Safari paints its status-bar / floating-toolbar areas from the PAGE (html / body background), which no canvas can reach (fixed layers are clipped
+  // to the content area). 14.8 left them cream under the black; 14.9 made them ink at the TAP, so a flat black bar sat at the bottom before the flood even began.
+  // Now each edge goes ink only once the black has really covered it (>= 55% of that edge row; back to cream below 45%), straight from InkField.edgeCover():
+  //   open:  the bottom bar turns ink as the front clears the bottom edge (the first frames of the flood), the top bar as the front reaches the top;
+  //   exit:  each bar turns cream as the receding iris lets go of that edge; the page is plain cream again the moment the black is gone (no margin needed).
+  // html.inkbg = the driven-background structure (body transparent, cream paper as an image-only fixed layer); .ink-t / .ink-b = which bar is ink.
+  let bandT = false, bandB = false;
+  const sy = () => html.style.setProperty('--sy', scrollY + 'px');
+  const paperY = () => { html.style.setProperty('--paper-y', (lockY != null ? -lockY : -scrollY) + 'px'); sy(); };   // the texture stays where the body's own paper was
+  function syncBands() {
+    const c = field.cover || { top: 0, bottom: 0 };
+    const t = bandT ? c.top > .45 : c.top >= .55, b = bandB ? c.bottom > .45 : c.bottom >= .55;
+    if (t === bandT && b === bandB) return;
+    bandT = t; bandB = b; paperY();
+    html.classList.toggle('inkbg', t || b); html.classList.toggle('ink-t', t); html.classList.toggle('ink-b', b);
+    if (!(t || b)) { html.style.removeProperty('--paper-y'); html.style.removeProperty('--sy'); }
+    if (theme) theme.content = t ? '#1a181c' : theme0;
+  }
+  clock.onTick(syncBands);
   addEventListener('scroll', () => { if (html.classList.contains('inkbg')) paperY(); }, { passive: true });
   // nothing under the wash moves: a touchmove anywhere but inside the poem / sign fields is cancelled
   document.addEventListener('touchmove', e => {
@@ -712,7 +720,6 @@ export function mountCompose(deps) {
     if (opened || body.classList.contains('composing')) return;
     resetSpeech();                                                   // 14.8: no bubble, queue or timer of an earlier session survives into this open
     lockScroll(); body.classList.add('composing'); html.classList.add('composing'); busy = true; rejects = hintAt = 0; denied = false; denyMsg = ''; body.classList.remove('is-denied');
-    inkOn();
     syncViewport();
     ta.value = ''; ta.scrollLeft = 0; nameIn.value = ''; if (document.activeElement !== nameIn) closeName(); fitName(); $('#cpost').classList.remove('stamped');
     lastStates = ['empty', 'empty', 'empty']; idleN = 0; update(); fitPaper();
@@ -767,7 +774,7 @@ export function mountCompose(deps) {
     unlockScroll(unlockTo); unlockTo = undefined; paperY(); drawSeals();
     clock.wait(dur * 930).then(() => { bi.visible = true; bi.s = .5; bi.sv = 0; bi.wobble(1.4); });
     await s;
-    html.classList.remove('draining'); inkOffLater();   // 14.9: html / body / theme stay ink until the board has been fully visible for INK_MARGIN ms
+    html.classList.remove('draining'); syncBands();   // 14.10: the bars follow the front (compose-field edgeCover), there is nothing to wait for
   }
   function restoreBoard() {
     const bi = deps.inky, je = springEasing(SPRINGS.drop);
@@ -896,7 +903,7 @@ export function mountCompose(deps) {
   $('#cpost').addEventListener('pointerdown', e => e.preventDefault());
   update();
   return {
-    open, cancel, submit, prepare: inkOn, release: () => inkOffLater(), get inkBg() { return html.classList.contains('inkbg'); }, update, inputs, bubbleLog, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
+    open, cancel, submit, get inkBg() { return html.classList.contains('inkbg'); }, update, inputs, bubbleLog, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
     get opened() { return opened; }, get busy() { return busy; }, get denied() { return denied; }, get kbUp() { return kbUp; }, get ruleSpecs() { return ruleSpecs; },
     fill(lines, name) { if (denied) clearDenied(); ta.value = clampLines(lines.map(l => String(l).replace(/\n/g, ' ')).join('\n')); if (name != null) { nameIn.value = cleanName(name); fitName(); } update(); },
   };
