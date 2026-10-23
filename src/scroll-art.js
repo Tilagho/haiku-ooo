@@ -19,14 +19,14 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 export class ScrollArt {
-  constructor(canvas, { maxRows = 92, seed = 575, outline = 0, ribbon = true } = {}) {   // ribbon: false = paper only, no red bow (the credits scroll, round 14.6)   // outline: extra px of black rim round paper + rods (c4: 2)
-    this.ribbon = ribbon; this.outline = outline; this.cv = canvas; this.ctx = canvas.getContext('2d'); this.maxRows = maxRows; this.seed = seed;
+  constructor(canvas, { maxRows = 92, seed = 575, outline = 0, ribbon = true, bare = false, strip = false } = {}) {   // round 14.9: bare = the frame only (rods + the two pinned paper-meets-rod lines, no paper); strip = a tall paper-only strip (no rods) that the credits list carries along as it scrolls   // ribbon: false = paper only, no red bow (the credits scroll, round 14.6)   // outline: extra px of black rim round paper + rods (c4: 2)
+    this.ribbon = ribbon; this.bare = bare; this.strip = strip; this.outline = outline; this.cv = canvas; this.ctx = canvas.getContext('2d'); this.maxRows = maxRows; this.seed = seed;
     this.open = 0; this.vel = 0; this.target = 0; this.k = 140; this.c = 15; this.mode = 'spring'; this.phase = 0; this.t = 0; this.flut = 0;
-    this.resize(); clock.onTick(dt => this.step(dt));
+    this.resize(); if (!strip) clock.onTick(dt => this.step(dt));
   }
   resize() {
     this.W = Math.max(40, Math.min(76, Math.floor(Math.min(innerWidth, 456) / SP)));
-    this.H = RH * 2 + this.maxRows + 14;
+    this.H = this.strip ? this.maxRows : RH * 2 + this.maxRows + 14;
     this.cv.width = this.W; this.cv.height = this.H;
     this.cv.style.width = this.W * SP + 'px'; this.cv.style.height = this.H * SP + 'px';
     this.img = this.ctx.createImageData(this.W, this.H); this.gen(); this.draw();
@@ -35,12 +35,12 @@ export class ScrollArt {
   get openCss() { return this.open * SP; }
   // ---------- parchment generation (deterministic) ----------
   gen() {
-    const W = this.W, H = this.maxRows, R = rng(this.seed), x0 = 3, x1 = W - 4;   // paper spans x0..x1 inclusive (round 14.6: one cell wider each side, the knobs are gone)
+    const W = this.W, H = this.maxRows, R = rng(this.seed), x0 = 3, x1 = W - 4, SC = Math.max(1, H / 92);   // SC: a long strip gets proportionally more nicks, stains and rings (a normal sheet: unchanged)   // paper spans x0..x1 inclusive (round 14.6: one cell wider each side, the knobs are gone)
     this.px0 = x0; this.px1 = x1;
     const edge = () => {                                   // torn edge: chunky random walk + a few V nicks
       const e = new Int8Array(H); let v = 1, run = 0;
       for (let y = 0; y < H; y++) { if (run-- <= 0) { v = Math.max(0, Math.min(3, v + (R() < .5 ? -1 : 1) * (R() < .7 ? 1 : 2))); run = 1 + Math.floor(R() * 5); } e[y] = v; }
-      for (let k = 0; k < 3; k++) { const y = 6 + Math.floor(R() * (H - 12)), d = 4 + Math.floor(R() * 2); [d - 2, d, d - 1, d - 3].forEach((dd, i) => { if (y + i < H) e[y + i] = Math.max(e[y + i], dd); }); }
+      for (let k = 0, nk = Math.round(3 * SC); k < nk; k++) { const y = 6 + Math.floor(R() * (H - 12)), d = 4 + Math.floor(R() * 2); [d - 2, d, d - 1, d - 3].forEach((dd, i) => { if (y + i < H) e[y + i] = Math.max(e[y + i], dd); }); }
       return e;
     };
     this.L = edge(); this.Rt = edge();
@@ -49,8 +49,8 @@ export class ScrollArt {
     const sm = t => t * t * (3 - 2 * t);
     const noise = (x, y) => { const gx = x / G, gy = y / G, ix = Math.floor(gx), iy = Math.floor(gy), fx = sm(gx - ix), fy = sm(gy - iy), g = (i, j) => grid[(j % gh) * gw + (i % gw)];
       return (g(ix, iy) * (1 - fx) + g(ix + 1, iy) * fx) * (1 - fy) + (g(ix, iy + 1) * (1 - fx) + g(ix + 1, iy + 1) * fx) * fy; };
-    const blots = Array.from({ length: 7 }, () => ({ x: x0 + R() * (x1 - x0), y: R() * H, r: 3 + R() * 7, a: .1 + R() * .16 }));
-    const rings = Array.from({ length: 2 }, () => ({ x: x0 + 6 + R() * (x1 - x0 - 12), y: 10 + R() * (H - 20), r: 3.5 + R() * 2.5 }));
+    const blots = Array.from({ length: Math.round(7 * SC) }, () => ({ x: x0 + R() * (x1 - x0), y: R() * H, r: 3 + R() * 7, a: .1 + R() * .16 }));
+    const rings = Array.from({ length: Math.round(2 * SC) }, () => ({ x: x0 + 6 + R() * (x1 - x0 - 12), y: 10 + R() * (H - 20), r: 3.5 + R() * 2.5 }));
     const tone = new Float32Array(W * H);
     for (let y = 0; y < H; y++) for (let x = x0; x <= x1; x++) {
       const dl = x - (x0 + this.L[y]), dr = (x1 - this.Rt[y]) - x, d = Math.min(dl, dr);
@@ -83,15 +83,17 @@ export class ScrollArt {
   }
   // ---------- drawing ----------
   draw() {
+    if (this.strip) return this.drawStrip();
     const { W, H, img } = this, D = img.data; D.fill(0);
     const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= W || y >= H) return; const i = (y * W + x) * 4; D[i] = c[0]; D[i + 1] = c[1]; D[i + 2] = c[2]; D[i + 3] = 255; };
     const o = Math.round(this.open), top = 2, py0 = top + RH, by = top + RH + o;
     // paper rows
     for (let y = 0; y < o; y++) {
+      if (this.bare && y !== 0 && y !== o - 1) continue;                  // bare frame: only the two ink lines where the paper meets each rod stay pinned
       const fromBot = o - y, f = fromBot <= 8 ? this.flut * (1 - (fromBot - 1) / 8) : 0;
       const sh = Math.round(f * Math.sin(this.t * 19 + y * .8));
       const jl = fromBot <= 4 && this.flut > .3 ? Math.round(Math.sin(this.t * 31 + y * 2.1) * this.flut * .7) : 0;
-      const l = this.px0 + this.L[y] + Math.max(0, jl), r = this.px1 - this.Rt[y] - Math.max(0, -jl);
+      const l = this.bare ? this.px0 + 3 : this.px0 + this.L[y] + Math.max(0, jl), r = this.bare ? this.px1 - 3 : this.px1 - this.Rt[y] - Math.max(0, -jl);
       for (let x = l; x <= r; x++) {
         let t = this.tone[y * W + x] ?? .3;
         if (fromBot <= 2) t += .28 / fromBot;                               // curl shadow just above the bottom rod
@@ -102,6 +104,7 @@ export class ScrollArt {
         else { const v = Math.max(0, Math.min(5, t * 5)), b = Math.floor(v); c = LEVELS[Math.min(5, b + ((v - b) > BAYER[(y & 3) * 4 + (x & 3)] ? 1 : 0))]; }
         put(x + sh, py0 + y, c);
       }
+      if (this.bare) continue;
       // loose fibres past the tear
       if ((y * 7 + this.seed) % 11 === 0) put(l - 1 + sh, py0 + y, C.p3);
       if ((y * 5 + this.seed) % 13 === 0) put(r + 1 + sh, py0 + y, C.p3);
@@ -118,6 +121,29 @@ export class ScrollArt {
     if (this.ribbon) this.drawRibbon(by);                                  // the blowing red bow goes on last, over the rim
     this.ctx.putImageData(img, 0, 0);
     this._put = put;
+  }
+  // round 14.9: the paper that travels with the credits text: torn edges, stains, speckle and the dark rim, all of it paper rows only (tone as the sheet's own)
+  drawStrip() {
+    const { W, H, img } = this, D = img.data; D.fill(0);
+    const put = (x, y, c) => { if (x < 0 || y < 0 || x >= W || y >= H) return; const i = (y * W + x) * 4; D[i] = c[0]; D[i + 1] = c[1]; D[i + 2] = c[2]; D[i + 3] = 255; };
+    for (let y = 0; y < H; y++) {
+      const l = this.px0 + this.L[y], r = this.px1 - this.Rt[y];
+      for (let x = l; x <= r; x++) {
+        let c;
+        if (x === l || x === r) c = this.outline ? C.ink : (this.L[y] >= 4 && x === l) || (this.Rt[y] >= 4 && x === r) ? C.dark : C.edge;
+        else if (this.outline && (x === l + 1 || x === r - 1)) c = (this.L[y] >= 4 && x === l + 1) || (this.Rt[y] >= 4 && x === r - 1) ? C.dark : C.edge;
+        else { const v = Math.max(0, Math.min(5, (this.tone[y * W + x] ?? .3) * 5)), b = Math.floor(v); c = LEVELS[Math.min(5, b + ((v - b) > BAYER[(y & 3) * 4 + (x & 3)] ? 1 : 0))]; }
+        put(x, y, c);
+      }
+      if ((y * 7 + this.seed) % 11 === 0) put(l - 1, y, C.p3);
+      if ((y * 5 + this.seed) % 13 === 0) put(r + 1, y, C.p3);
+    }
+    if (this.outline) for (let k = 0; k < this.outline - 1; k++) {
+      const A = new Uint8Array(W * H); for (let i = 0; i < W * H; i++) A[i] = D[i * 4 + 3];
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { if (A[y * W + x]) continue;
+        if ((x > 0 && A[y * W + x - 1]) || (x < W - 1 && A[y * W + x + 1]) || (y > 0 && A[(y - 1) * W + x]) || (y < H - 1 && A[(y + 1) * W + x])) put(x, y, OL); }
+    }
+    this.ctx.putImageData(img, 0, 0);
   }
   // round 14.6: just paper unfurled. The roll is a thick roll of PARCHMENT in the write button's tan (src/scroll-button.js: dark outline,
   // TAN_HI highlight, TAN belly, TAN_LO shade, a spiral at each end), rounded at the ends and as wide as the sheet: NO dowel stubs, NO

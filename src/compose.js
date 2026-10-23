@@ -267,6 +267,19 @@ export function mountCompose(deps) {
     scrollTo({ top: to ?? 0, left: 0, behavior: 'instant' });
     setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => html.classList.remove('scroll-lock'))), 60);   // the restore's scroll event is not a swipe (no gust, no Inky hop)
   }
+  // ---------- round 14.9: the page's own background is ink for the WHOLE transition ----------
+  // Tiago's iOS 26 Safari paints its status-bar / floating-toolbar areas from the PAGE (the root / body background and the colour of the fixed
+  // layers at the screen edges), never from our oversize canvases (those are clipped to the content area). In 14.8 the body kept its cream paper
+  // (body position: fixed while locked) until the flood was full and got it back the moment the drain began, so the bars showed cream both ways.
+  // Now html gets class .inkbg at the TAP (same frame, before any animation, theme colour too), the cream paper lives only as a background IMAGE on a
+  // fixed html::before layer (no cream background-colour anywhere at the edges), and only 520 ms after the exit iris is done and the board is fully
+  // visible does the cream come back, so a bar colour fade happens at rest, not mid-animation.
+  const INK_MARGIN = 520;
+  let inkTok = 0;
+  const paperY = () => html.style.setProperty('--paper-y', (lockY != null ? -lockY : -scrollY) + 'px');   // the texture stays where the body's own paper was
+  function inkOn() { inkTok++; html.classList.add('inkbg'); paperY(); if (theme) theme.content = '#1a181c'; }
+  function inkOffLater(ms = INK_MARGIN) { const tok = ++inkTok; return clock.wait(ms).then(() => { if (tok !== inkTok) return; html.classList.remove('inkbg'); html.style.removeProperty('--paper-y'); if (theme) theme.content = theme0; }); }
+  addEventListener('scroll', () => { if (html.classList.contains('inkbg')) paperY(); }, { passive: true });
   // nothing under the wash moves: a touchmove anywhere but inside the poem / sign fields is cancelled
   document.addEventListener('touchmove', e => {
     if (!body.classList.contains('composing')) return;
@@ -366,11 +379,25 @@ export function mountCompose(deps) {
       return sizes[sizes.length - 1];
     });
   }
+  // the ghost size: the biggest open tier at which the widest ghost line fits the text column - from the column's width alone (not the torn edge, the
+  // scroll's unroll or the keyboard), so it never changes between states; GHOST_FS is exported for the unit test
+  // pure arithmetic from the art (never a DOM measurement: the scroll is hidden / clipped / mid-unroll for the first second): the text column is the sheet
+  // (art.W px of SP css px) minus 62 px of paper margin, it starts 48 px in, and the worst torn edge anywhere on the sheet is art.Rt's maximum
+  const GHOST_LEFT = 48, GHOST_INSET = 62;
+  let ghostKey = '', ghostFs = FS_OPEN[0];
+  function ghostSize() {
+    const wr0 = art.W * SP - GHOST_INSET, rt = Math.max(...art.Rt), avail = Math.min(wr0, (art.px1 - rt - 1) * SP - GHOST_LEFT), key = avail + '|' + wr0;
+    if (key !== ghostKey) { ghostKey = key; ghostFs = fitSize(PH, avail, FS_OPEN); }
+    return ghostFs;
+  }
   const safeWidth = () => rows[0].wr.clientWidth;
   function render(a, ok) {
     const sizes = isKb() ? (plan || kbPlan()).sizes : FS_OPEN;
     measureAsc();
-    rowFs = pickSize(a.map((l, i) => l.text || PH[i]), sizes); fsMax = sizes[0]; fsNow = Math.min(...rowFs);
+    // round 14.9: the grey ghost lines are ONE fixed size on all three rows, in every state (they were fit one by one against the torn edge
+    // that is measured while the scroll unrolls, so 'and five to end' came out smaller than 'five syllables' and the sizes moved). A typed line still fits itself.
+    const ghost = ghostSize();
+    rowFs = pickSize(a.map((l, i) => l.text || PH[i]), sizes).map((f, i) => a[i].text ? f : ghost); fsMax = sizes[0]; fsNow = Math.min(...rowFs);
     linesEl.style.setProperty('--fsm', fsMax + 'px'); linesEl.style.setProperty('--fs', fsNow + 'px'); linesEl.style.setProperty('--asc', ASC);
     rows.forEach((r, i) => r.el.style.setProperty('--fsr', rowFs[i] + 'px'));
     layoutField();
@@ -685,7 +712,7 @@ export function mountCompose(deps) {
     if (opened || body.classList.contains('composing')) return;
     resetSpeech();                                                   // 14.8: no bubble, queue or timer of an earlier session survives into this open
     lockScroll(); body.classList.add('composing'); html.classList.add('composing'); busy = true; rejects = hintAt = 0; denied = false; denyMsg = ''; body.classList.remove('is-denied');
-    if (theme) theme.content = '#1a181c';
+    inkOn();
     syncViewport();
     ta.value = ''; ta.scrollLeft = 0; nameIn.value = ''; if (document.activeElement !== nameIn) closeName(); fitName(); $('#cpost').classList.remove('stamped');
     lastStates = ['empty', 'empty', 'empty']; idleN = 0; update(); fitPaper();
@@ -737,10 +764,10 @@ export function mountCompose(deps) {
     html.classList.add('draining');                    // html stays ink (and the theme colour) until the iris has gone
     inky.drops = []; inky.puddles = []; inky.sparks = [];   // no stray red bits left over on the black
     body.classList.remove('composing', 'ready', 'is-denied', 'opened', 'kb', 'washed', 'await-tap'); html.classList.remove('composing', 'washed'); frozen = false; plan = null; kbUp = false;
-    unlockScroll(unlockTo); unlockTo = undefined; drawSeals();
+    unlockScroll(unlockTo); unlockTo = undefined; paperY(); drawSeals();
     clock.wait(dur * 930).then(() => { bi.visible = true; bi.s = .5; bi.sv = 0; bi.wobble(1.4); });
     await s;
-    html.classList.remove('draining'); if (theme) theme.content = theme0;
+    html.classList.remove('draining'); inkOffLater();   // 14.9: html / body / theme stay ink until the board has been fully visible for INK_MARGIN ms
   }
   function restoreBoard() {
     const bi = deps.inky, je = springEasing(SPRINGS.drop);
@@ -869,7 +896,7 @@ export function mountCompose(deps) {
   $('#cpost').addEventListener('pointerdown', e => e.preventDefault());
   update();
   return {
-    open, cancel, submit, update, inputs, bubbleLog, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
+    open, cancel, submit, prepare: inkOn, release: () => inkOffLater(), get inkBg() { return html.classList.contains('inkbg'); }, update, inputs, bubbleLog, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
     get opened() { return opened; }, get busy() { return busy; }, get denied() { return denied; }, get kbUp() { return kbUp; }, get ruleSpecs() { return ruleSpecs; },
     fill(lines, name) { if (denied) clearDenied(); ta.value = clampLines(lines.map(l => String(l).replace(/\n/g, ' ')).join('\n')); if (name != null) { nameIn.value = cleanName(name); fitName(); } update(); },
   };

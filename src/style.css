@@ -156,6 +156,8 @@ body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .ink
 .cr-stage { position: absolute; left: 0; right: 0; }
 .cr-scroll { position: relative; margin: 0 auto; }
 .cr-art { position: absolute; left: 0; top: 0; image-rendering: pixelated; }
+.cr-win { position: absolute; overflow: hidden; pointer-events: none; }   /* round 14.9: the clip window of the paper that scrolls with the text */
+.cr-deco { position: absolute; left: 0; top: 0; image-rendering: pixelated; will-change: transform; }
 .cr-paper { position: absolute; overflow: hidden; }
 .cr-in { position: relative; display: flex; flex-direction: column; color: var(--ink); }
 .cr-title { text-shadow: 4px 0 0 currentColor; margin: 0 0 12px; font: 400 64px/1 var(--small);   /* round 14.8: 2x the 32px body (4 css px per font pixel, whole device px at 3x), the stroke scaled 2px -> 4px */ text-align: center; color: var(--ink); }

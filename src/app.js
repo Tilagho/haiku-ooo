@@ -130,9 +130,11 @@ let rolling = false;
 const composing = () => !!compose?.opened || !!compose?.busy || document.body.classList.contains('composing');
 async function writeTapped() {
   if (composing() || rolling) return; rolling = true;
+  compose?.prepare?.();                      // round 14.9: the page background + theme colour go ink in THIS frame, long before the black expands (iOS bars)
   try { await fabArt?.rollUp(); } finally { rolling = false; }
   window.dispatchEvent(new CustomEvent('haiku:write'));
   await (window.HB?.onWrite || openCompose)();
+  if (!composing()) compose?.release?.();
 }
 const openCompose = () => compose?.open();
 $('#fab')?.addEventListener('click', writeTapped);
