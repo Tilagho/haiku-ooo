@@ -1,7 +1,7 @@
 // Round 14.5: the © line + the credits scroll.
 //
 // A small '© 2026 Tiago Ramirez all rights reserved' line sits under the noren curtains (above the Japanese name) in the pixel UI
-// face, sumi grey, with a tappable 'credits' label (a little pixel-art scroll icon, drawn here, no emoji font). Tapping credits
+// face, sumi grey, with a tappable 'credits' label (round 14.6: just the word, no icon). Tapping credits
 // unrolls a SECOND copy of the write scroll (src/scroll-art.js: the same sprite, 6 px pixel grid, spring unroll) over a dimmed,
 // locked board and lists EVERY credit (the CC BY type credit, formerly the page footer, lives ONLY here now). The list scrolls
 // inside the paper if it is longer than the scroll; the last line reads 'tap anywhere to close'. A tap anywhere (not a drag of the
@@ -27,20 +27,6 @@ export const CREDITS = [
 ];
 export const CLOSE_LINE = 'tap anywhere to close';
 
-// ---- the tiny pixel scroll icon (9x8 art px + a 1 px ink outline; sumi / parchment / wood, no red) ----
-const ICON = ['.WWWWWWW.', '.PPPPPPP.', '.PKKKKKP.', '.PPPPPPP.', '.PKKKKPP.', '.PPPPPPP.', '.PKKKPPP.', '.WWWWWWW.'];
-const IC = { W: [158, 110, 70], P: [244, 234, 210], K: [74, 69, 80] }, OUT = [26, 24, 28];
-export function drawIcon(cv) {
-  const w = ICON[0].length + 2, h = ICON.length + 2; cv.width = w; cv.height = h; const g = cv.getContext('2d'), im = g.createImageData(w, h), D = im.data;
-  const has = (x, y) => x >= 0 && y >= 0 && x < w - 2 && y < h - 2 && ICON[y][x] !== '.';
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = (y * w + x) * 4, ch = has(x - 1, y - 1) ? ICON[y - 1][x - 1] : '.';
-    if (ch !== '.') { const c = IC[ch]; D[i] = c[0]; D[i + 1] = c[1]; D[i + 2] = c[2]; D[i + 3] = 255; }
-    else if (has(x - 2, y - 1) || has(x, y - 1) || has(x - 1, y - 2) || has(x - 1, y)) { D[i] = OUT[0]; D[i + 1] = OUT[1]; D[i + 2] = OUT[2]; D[i + 3] = 255; }
-  }
-  g.putImageData(im, 0, 0);
-}
-
 // the egg's poof (src/noren.js drawPoof) at three spots along the closed scroll: chunky grayscale puffs, a flash, a few dark flecks
 const PAL = { W: [250, 246, 236], g: [214, 208, 196], G: [150, 144, 150], D: [92, 88, 98], K: [26, 24, 28] };
 export const POOF_T = .5;
@@ -59,7 +45,6 @@ export function drawPoofInto(D, w, h, cx, cy, q) {
 export function mountCredits({ clock: clk = clock, reduced = false, root = document } = {}) {
   const body = document.body, html = document.documentElement;
   const btn = root.querySelector('#credits-btn'); if (!btn) return null;
-  const icon = btn.querySelector('canvas'); if (icon) drawIcon(icon);
   const ov = document.createElement('div'); ov.id = 'credits'; ov.hidden = true; ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'credits');
   ov.innerHTML = `<div class="cr-stage"><div class="cr-scroll"><canvas class="cr-art"></canvas><div class="cr-paper"><div class="cr-in"><h2 class="cr-title">credits</h2><div class="cr-list"></div><p class="cr-close"></p></div></div></div><canvas class="cr-poof"></canvas></div>`;
   document.body.appendChild(ov);
@@ -80,7 +65,7 @@ export function mountCredits({ clock: clk = clock, reduced = false, root = docum
 
   const layout = () => {   // the scroll as tall as the screen allows (rows of paper), centred
     const avail = innerHeight - 28, rr = Math.max(34, Math.min(80, Math.floor((avail - (2 + RH * 2 + 8) * SP) / SP)));
-    if (!art) art = new ScrollArt($('.cr-art'), { maxRows: rr, seed: 4410, outline: 2 }); else if (rr !== art.maxRows) { art.maxRows = rr; art.resize(); }
+    if (!art) art = new ScrollArt($('.cr-art'), { maxRows: rr, seed: 4410, outline: 2, ribbon: false }); else if (rr !== art.maxRows) { art.maxRows = rr; art.resize(); }
     rows = rr; const W = art.cssWidth, H = art.H * SP;
     Object.assign(scr.style, { width: W + 'px', height: (2 + RH * 2 + rr + 8) * SP + 'px' });
     stage.style.top = Math.max(8, Math.round((innerHeight - (2 + RH * 2 + rr + 8) * SP) / 2)) + 'px';

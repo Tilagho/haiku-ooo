@@ -12,13 +12,15 @@ const C = {
   woodL: [184, 128, 80], wood: [128, 82, 50], woodD: [72, 44, 26], red: [214, 58, 40], redD: [146, 32, 22], redL: [240, 116, 94],
 };
 const OL = [8, 7, 10];
+const T = { hi: [240, 214, 178], mid: [214, 176, 136], lo: [176, 134, 98] };   // the write button's TAN_HI / TAN / TAN_LO (scroll-button.js)
+const ROLL_X0 = 1;                       // the roll runs from art px 1 to W-2: a one-cell (6 css px) margin from the screen edge
 const LEVELS = [C.hi, C.p1, C.p2, C.p3, C.p4, C.edge];
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + .5) / 16);
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
 
 export class ScrollArt {
-  constructor(canvas, { maxRows = 92, seed = 575, outline = 0 } = {}) {   // outline: extra px of black rim round paper + rods (c4: 2)
-    this.outline = outline; this.cv = canvas; this.ctx = canvas.getContext('2d'); this.maxRows = maxRows; this.seed = seed;
+  constructor(canvas, { maxRows = 92, seed = 575, outline = 0, ribbon = true } = {}) {   // ribbon: false = paper only, no red bow (the credits scroll, round 14.6)   // outline: extra px of black rim round paper + rods (c4: 2)
+    this.ribbon = ribbon; this.outline = outline; this.cv = canvas; this.ctx = canvas.getContext('2d'); this.maxRows = maxRows; this.seed = seed;
     this.open = 0; this.vel = 0; this.target = 0; this.k = 140; this.c = 15; this.mode = 'spring'; this.phase = 0; this.t = 0; this.flut = 0;
     this.resize(); clock.onTick(dt => this.step(dt));
   }
@@ -33,7 +35,7 @@ export class ScrollArt {
   get openCss() { return this.open * SP; }
   // ---------- parchment generation (deterministic) ----------
   gen() {
-    const W = this.W, H = this.maxRows, R = rng(this.seed), x0 = 4, x1 = W - 5;   // paper spans x0..x1 inclusive
+    const W = this.W, H = this.maxRows, R = rng(this.seed), x0 = 3, x1 = W - 4;   // paper spans x0..x1 inclusive (round 14.6: one cell wider each side, the knobs are gone)
     this.px0 = x0; this.px1 = x1;
     const edge = () => {                                   // torn edge: chunky random walk + a few V nicks
       const e = new Int8Array(H); let v = 1, run = 0;
@@ -77,7 +79,7 @@ export class ScrollArt {
     this.flut = Math.max(this.flut * Math.exp(-dt * 5), Math.min(1.6, Math.abs(sp) / 45));
     if (this.settle && Math.abs(this.open - this.target) < .25 && Math.abs(this.vel) < 1.5) { this.open = this.target; this.vel = 0; const s = this.settle; this.settle = null; s(); }
     if (Math.abs(sp) > .01 || this.flut > .02 || this.dirty !== false) { this.draw(); this.dirty = this.flut > .02; }
-    else if (Math.floor(this.t * 3) !== this.lastT) { this.lastT = Math.floor(this.t * 3); this.draw(); }   // slow ribbon sway
+    else if (this.ribbon && Math.floor(this.t * 3) !== this.lastT) { this.lastT = Math.floor(this.t * 3); this.draw(); }   // slow ribbon sway
   }
   // ---------- drawing ----------
   draw() {
@@ -113,31 +115,30 @@ export class ScrollArt {
           if ((x > 0 && A[y * W + x - 1]) || (x < W - 1 && A[y * W + x + 1]) || (y > 0 && A[(y - 1) * W + x]) || (y < H - 1 && A[(y + 1) * W + x])) put(x, y, OL); }
       }
     }
-    this.drawRibbon(by);                                  // the blowing red bow goes on last, over the rim
+    if (this.ribbon) this.drawRibbon(by);                                  // the blowing red bow goes on last, over the rim
     this.ctx.putImageData(img, 0, 0);
     this._put = put;
   }
+  // round 14.6: just paper unfurled. The roll is a thick roll of PARCHMENT in the write button's tan (src/scroll-button.js: dark outline,
+  // TAN_HI highlight, TAN belly, TAN_LO shade, a spiral at each end), rounded at the ends and as wide as the sheet: NO dowel stubs, NO
+  // dark wooden end knobs (they used to stick out 6 px beyond each end).
   drawRod(y0, phase, bottom = false) {
     const { W } = this, D = this.img.data;
     const put = (x, y, c) => { if (x < 0 || y < 0 || x >= W || y >= this.H) return; const i = (y * W + x) * 4; D[i] = c[0]; D[i + 1] = c[1]; D[i + 2] = c[2]; D[i + 3] = 255; };
-    // a thick roll of parchment: outline, bright top, shaded belly
-    const rows = [C.ink, C.p1, C.hi, C.hi, C.p2, C.p3, C.p4, C.ink], cx0 = 5, cx1 = W - 6;
+    const rows = [C.ink, T.hi, T.hi, T.mid, T.mid, T.lo, T.lo, C.ink], cx0 = ROLL_X0, cx1 = W - 1 - ROLL_X0;
     for (let j = 0; j < RH; j++) for (let x = cx0; x <= cx1; x++) {
+      if ((x === cx0 || x === cx1) && (j === 0 || j === RH - 1)) continue;                  // rounded caps
       let c = rows[j];
-      if (j > 0 && j < RH - 1 && ((x - j * 2 + Math.round(phase)) % 10 + 10) % 10 === 0) c = j < 4 ? C.p3 : C.edge;   // wrap marks turn as it rolls
-      if (j === 3 && ((x + y0) & 3) === 0) c = C.p1;
-      if (j === 5 && ((x + y0) & 3) === 2) c = C.p4;
+      if (x === cx0 || x === cx1) c = C.ink;                                                 // the end outline
+      else if (j > 0 && j < RH - 1 && ((x - j * 2 + Math.round(phase)) % 10 + 10) % 10 === 0) c = j < 4 ? T.mid : T.lo;   // wrap marks turn as it rolls
+      else if (j === 3 && ((x + y0) & 3) === 0) c = T.hi;
+      else if (j === 5 && ((x + y0) & 3) === 2) c = T.mid;
       put(x, y0 + j, c);
     }
-    for (let j = 1; j < RH - 1; j++) { put(cx0, y0 + j, j === 4 ? C.dark : C.p4); put(cx1, y0 + j, j === 4 ? C.dark : C.p4); }   // spiral ends
-    // dowel stubs + chunky wooden end caps (4 wide, 12 tall)
-    for (const x of [cx0 - 1, cx1 + 1]) for (let j = 2; j < RH - 2; j++) put(x, y0 + j, j === 2 ? C.wood : C.woodD);
-    // chunky rounded wooden knobs (5 wide, 12 tall), lit from the top-left
-    const KN = ['.####.', '#hhwwd', '#hwwwd', '#hwwwd', '#wwwwd', '#wwwdd', '#wwwdd', '#wwddd', '#wwddd', '#wdddd', '#ddddo', '.oooo.'];
-    const kc = { '#': C.woodD, h: C.woodL, w: C.wood, d: C.woodD, o: [44, 26, 16] };
-    for (const [xa, flip] of [[0, false], [W - 6, true]]) KN.forEach((row, j) => [...row].forEach((ch, i) => {
-      if (ch === '.') return; const ii = flip ? 5 - i : i; put(xa + ii, y0 - 2 + j, ch === 'h' && flip ? C.wood : kc[ch]);
-    }));
+    for (const [ex, dir] of [[cx0, 1], [cx1, -1]]) {                                         // the spiral end: a shaded column, a lighter one, one ink dot
+      for (let j = 1; j < RH - 1; j++) { put(ex + dir, y0 + j, T.lo); put(ex + 2 * dir, y0 + j, j === 1 || j === RH - 2 ? T.lo : T.mid); }
+      put(ex + dir, y0 + (RH >> 1), C.ink); put(ex + 2 * dir, y0 + (RH >> 1) - 1, T.lo);
+    }
   }
   drawRibbon(y0) {                                              // red ribbon tied round the bottom rod: band, bow, swaying tails
     const { W } = this, D = this.img.data;

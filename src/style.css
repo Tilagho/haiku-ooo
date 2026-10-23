@@ -138,8 +138,7 @@ body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .ink
 /* ---------- round 14.5: the © line + credits (src/credits.js). Under the noren curtains, above the Japanese name. ---------- */
 .cr-row { position: relative; z-index: 3; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 6px; min-height: 36px; padding: 0 4px; }
 .cr-line { margin: 0; font: 400 20px/1 var(--small); word-spacing: 3px; color: #6b6670; white-space: nowrap; }
-.cr-btn { display: inline-flex; align-items: center; gap: 6px; min-width: 44px; min-height: 44px; margin: -4px 0; padding: 0 6px; border: 0; background: none; cursor: pointer; font: 400 20px/1 var(--small); color: #2a2830; -webkit-tap-highlight-color: transparent; }
-.cr-btn canvas { width: 33px; height: 30px; image-rendering: pixelated; }
+.cr-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: -4px 0; padding: 0 14px; border: 0; background: none; cursor: pointer; font: 400 20px/1 var(--small); color: #2a2830; -webkit-tap-highlight-color: transparent; }   /* round 14.6: just the word; the padding is the generous invisible hit area */
 .cr-btn:active { transform: translateY(3px); }
 #credits { position: fixed; inset: 0; z-index: 120; --dim: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer; }
 #credits[hidden] { display: none; }
