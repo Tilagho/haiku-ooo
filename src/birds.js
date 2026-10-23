@@ -58,10 +58,13 @@ export function birdMask(size, frame, variant = 0) {
 // ---- the flight
 const smooth = x => x * x * (3 - 2 * x);
 function vnoise(seed, x) { const i = Math.floor(x), f = x - i, h = k => (hash(seed, k) & 0xffff) / 0xffff - .5; return h(i) + (h(i + 1) - h(i)) * smooth(f); }
+// round 14.2: a tap near a flying bird STARTLES its flight: it flaps ~2.5x faster and flies away ~2.6x faster, the boost held
+// ~1.3 s then easing back down over ~1.2 s (SCARE_S in all); same direction, same pair / trio / skein grouping, same count.
+export const SCARE_S = 2.5, SCARE_HOLD = 1.2, SCARE_SPEED = 1.6, SCARE_FLAP = 1.5, SCARE_R = 72;   // r in screen px (forgiving for a finger)
 export class Flock {
   // mode 'few' | 'flock'; dir +1 = left to right; lane {y, slope}; poems [{x,y,w,h}] in scroll units
   constructor({ mode = 'few', dir = 1, lane = { y: 400, slope: 0 }, seed = 1, poems = [], lean = 0 } = {}) {
-    const R = this.R = rng(hash('flock', seed)); this.seed = seed; this.mode = mode; this.dir = dir; this.lane = lane; this.poems = poems; this.t = 0;
+    const R = this.R = rng(hash('flock', seed)); this.seed = seed; this.mode = mode; this.dir = dir; this.lane = lane; this.poems = poems; this.t = 0; this.scare = 0;
     const n = mode === 'few' ? 2 + (R() < .5) : mode === 'small' ? 4 + Math.floor(R() * 4) : 8 + Math.floor(R() * 5);   // round 14.1: <= 12 a flight
     if (mode === 'small') this.mode = mode = 'few';                    // a small group flies like 'few' (loose), just more of them
     this.sp = mode === 'few' ? 15 + R() * 6 : mode === 'skein' ? 10.5 + R() * 3 : 11 + R() * 4;   // slot spacing (units)
@@ -94,12 +97,15 @@ export class Flock {
   }
   get length() { return this.birds.length ? Math.max(...this.birds.map(b => b.i)) * this.sp + 60 : 0; }
   get done() { const m = 30; return this.birds.every(b => this.dir > 0 ? b.x > SCROLL_W + m : b.x < -m); }
+  startle() { this.scare = SCARE_S; return this; }
+  get boost() { return this.scare > 0 ? Math.min(1, this.scare / (SCARE_S - SCARE_HOLD)) : 0; }   // 1 while held, then easing to 0
   step(dt) {
-    this.t += dt; const t = this.t, B = this.birds, k = 5.5, c = 3.2;
-    this.lead += this.speed * dt;
+    this.t += dt; const t = this.t, B = this.birds, k = 5.5, c = 3.2, f = this.boost, sm = 1 + SCARE_SPEED * f, fm = 1 + SCARE_FLAP * f;
+    if (this.scare > 0) this.scare = Math.max(0, this.scare - dt);
+    this.lead += this.speed * sm * dt;
     const gx = vnoise(this.seed + 3, t * .35) * 18, gy = vnoise(this.seed + 5, t * .3) * 14;   // gusts (units/s^2)
     for (const b of B) {
-      const s = this.slot(b, t), lvx = this.speed * this.dir, lvy = lvx * this.lane.slope;
+      const s = this.slot(b, t), lvx = this.speed * sm * this.dir, lvy = lvx * this.lane.slope;
       let ax = k * (s.x - b.x) - c * (b.vx - lvx) + gx, ay = k * (s.y - b.y) - c * (b.vy - lvy) + gy * (.6 + .4 * b.size / 2);
       for (const o of B) if (o !== b) {                                  // separation: soft personal space
         const dx = b.x - o.x, dy = b.y - o.y, d2 = dx * dx + dy * dy, r = 9;
@@ -114,8 +120,9 @@ export class Flock {
       b.vx += ax * dt; b.vy += ay * dt; b.x += b.vx * dt; b.y += b.vy * dt;
       // wings: flap at its own rate, now and then a glide (wings held), longer glides for the big ones
       b.nextGlide -= dt;
+      if (b.glide > 0 && f > 0) b.glide = 0;                              // startled birds don't glide
       if (b.glide > 0) { b.glide -= dt; b.frame = 4; }
-      else { b.ph = (b.ph + b.hz * dt) % 1; b.frame = Math.floor(b.ph * 4); if (b.nextGlide <= 0) { b.glide = .4 + this.R() * (b.size === 2 ? 1.2 : .7); b.nextGlide = 1.5 + this.R() * 3.5; } }
+      else { b.ph = (b.ph + b.hz * fm * dt) % 1; b.frame = Math.floor(b.ph * 4); if (b.nextGlide <= 0) { b.glide = .4 + this.R() * (b.size === 2 ? 1.2 : .7); b.nextGlide = 1.5 + this.R() * 3.5; } }
     }
     return this;
   }
@@ -197,6 +204,17 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
     for (const F of ctl.flocks) F.step(dt);
     draw();
   });
-  ctl.stop = () => { off(); cv.remove(); ctl.flocks.length = 0; };
+  // a tap near a flying bird startles its flight. Passive listeners only (they never cancel or block anything, never in the way of a tap on
+  // the UI, the button, Inky or a poem, nor of scrolling): a pointerdown + a pointerup that barely moved = a tap.
+  ctl.startleAt = (cx, cy, r = SCARE_R) => {
+    if (busy() || !win) return 0;
+    const hr = view.host.getBoundingClientRect(), s = view.host.clientWidth / SCROLL_W || 1, H = view.composer.height; let n = 0;
+    for (const F of ctl.flocks) if (F.birds.some(b => Math.hypot(hr.left + b.x * s - cx, hr.top + (H - b.y) * s - cy) <= r)) { F.startle(); n++; }
+    return n;
+  };
+  let down = null;
+  const pd = e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; }, pu = e => { if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12 && performance.now() - down.t < 600) ctl.startleAt(e.clientX, e.clientY); down = null; };
+  addEventListener('pointerdown', pd, { passive: true, capture: true }); addEventListener('pointerup', pu, { passive: true, capture: true });
+  ctl.stop = () => { off(); cv.remove(); ctl.flocks.length = 0; removeEventListener('pointerdown', pd, true); removeEventListener('pointerup', pu, true); };
   return ctl;
 }

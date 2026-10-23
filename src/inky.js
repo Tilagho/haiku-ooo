@@ -33,6 +33,8 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v
 const reducedMQ = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const rnd = (a, b) => a + Math.random() * (b - a);
 
+// round 14.2: how long he stays dead (X eyes, flat) before he springs back: DOUBLE the round 14.1 hold (1.7 s / reduced 1.1 s)
+export const DEAD_HOLD = 3.4, DEAD_HOLD_REDUCED = 2.2;
 export class Inky {
   constructor({ R = 7, reduced = reducedMQ(), rand = Math.random } = {}) {
     this.cv = document.createElement('canvas'); this.cv.className = 'inky-canvas'; this.cv.setAttribute('aria-hidden', 'true');
@@ -205,7 +207,7 @@ export class Inky {
     if (flying && v > 130 && !this.reduced) { this.stick = .07 + Math.min(.11, v / 3600); this.stickV = this.vx; this.vx = 0; }   // stuck flat for a beat
   }
   splatDown() {
-    this.splatT = this.reduced ? 1.1 : 1.7; this.sRest = .8; this.s = .9; this.sv = 0; this.puff = 0; this.targetX = null; this.vx = 0;
+    this.splatT = this.reduced ? DEAD_HOLD_REDUCED : DEAD_HOLD; this.sRest = .8; this.s = .9; this.sv = 0; this.puff = 0; this.targetX = null; this.vx = 0;
     this.setMood('splat'); this.splat(this.reduced ? 5 : 14, 1.3); this.wobble(1.6);
     this.puddles.push({ x: this.x, y: this.fy, w: Math.round(this.R * 1.5), life: 1.2, color: WASH });
   }

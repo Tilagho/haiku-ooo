@@ -6,7 +6,7 @@
 //   cumulus rolling billows: domain-warped (noise-advected) fbm that churns slowly, a faint grey ink-wash underside
 //   streak  thin long wisps, 1-3 px tall
 // Extremely subtle (at most ~half the pixels of a bank's core).
-// Round 14.1: the mist is a TINGE OFF THE PAPER, not white/cream highlights: one paper-toned colour (a hair off the
+// (Round 14.1, superseded by 14.2 below: the mist was a TINGE OFF THE PAPER, not white/cream highlights: one paper-toned colour (a hair off the
 // paper's own average, assets/paper.png = 244,236,218) laid at LOW opacity, and the opacity follows the density
 // (MIST_A0 at the faint fringe -> MIST_A1 in a bank's core), so every bank feathers out into the paper with no hard
 // edge; over open paper it all but disappears, over the ink it softly veils it - a hint of movement, not a cloud
@@ -16,8 +16,13 @@
 import { SCROLL_W, AW, PX } from './scroll-engine2.js';
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map(v => (v + .5) / 16);
-export const PAPER = [244, 236, 218], MIST_TINT = [241, 234, 218], MIST_SHADE = [234, 227, 212];   // paper avg; the mist a tinge off it
-export const MIST_A0 = .02, MIST_A1 = .26, MIST_SHADE_A = .1;   // opacity at the fringe .. the core; the underside
+// Round 14.2: 14.1 was invisible (a paper-toned veil at <= .26 over bare paper shows nothing, and the ink under it barely
+// changed). The COLOUR stays the paper's own (a hair under it: never lighter, never white, never darker/greyer); what is
+// raised is the OPACITY (core ~.62, fringe ~.05, still feathering to ~0) so the ink art under a bank visibly fades into
+// paper as it passes and reappears after it, and the DRIFT (MIST_SPEED x2: the banks, and their churn, move twice as fast).
+export const PAPER = [244, 236, 218], MIST_TINT = [243, 235, 217], MIST_SHADE = [236, 228, 211];   // the paper's own tone, a hair under it
+export const MIST_SPEED = 2;   // x the round 14.1 drift
+export const MIST_A0 = .05, MIST_A1 = .62, MIST_SHADE_A = .22;   // opacity at the fringe .. the core; the underside
 // the opacity of a lit mist pixel at density d (0..MIST_MAX): eased so the fringe fades into the paper
 export const mistAlpha = d => { const q = Math.max(0, Math.min(1, d / MIST_MAX)); return MIST_A0 + (MIST_A1 - MIST_A0) * q * q * (3 - 2 * q); };
 export const MIST_MAX = .55, MIST_EVERY = 360, MIST_HZ = 30;
@@ -97,7 +102,7 @@ export function mountMist(view, { clock, reduced = false } = {}) {
     if (document.hidden || globalThis.HB?.compose?.opened) return;
     const v = viewWin(), moved = !win || v.lo < win.lo + 30 || v.hi > win.hi - 30;
     if (moved) { place(v); key = ''; }
-    if (!reduced) { t += dt; acc += dt; }
+    if (!reduced) { t += dt * MIST_SPEED; acc += dt; }
     const k = reduced ? (win.lo + ':' + win.hi + ':' + view.composer.height) : '';
     if (reduced ? k !== key : acc >= 1 / MIST_HZ || moved) { acc = 0; key = k; draw(); }
   });
