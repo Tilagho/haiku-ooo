@@ -136,10 +136,20 @@ body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .ink
 
 
 /* ---------- round 14.5: the © line + credits (src/credits.js). Under the noren curtains, above the Japanese name. ---------- */
-.cr-row { position: relative; z-index: 3; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 6px; min-height: 36px; padding: 0 4px; }
-.cr-line { margin: 0; font: 400 20px/1 var(--small); word-spacing: 3px; color: #6b6670; white-space: nowrap; }
-.cr-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; margin: -4px 0; padding: 0 14px; border: 0; background: none; cursor: pointer; font: 400 20px/1 var(--small); color: #2a2830; -webkit-tap-highlight-color: transparent; }   /* round 14.6: just the word; the padding is the generous invisible hit area */
-.cr-btn:active { transform: translateY(3px); }
+.cr-row { position: relative; z-index: 3; display: flex; justify-content: center; align-items: center; min-height: 36px; padding: 0 4px; }
+/* round 14.7b: ONE inline text run: '© 2026 Tiago Ramirez all rights reserved credits'. 'credits' is an inline <button> inside the same <p>, so it shares the font, size, word / letter spacing, baseline and line box, and the gap before it is the normal word gap (a plain space + word-spacing).
+   --crfs scales the WHOLE run uniformly on a narrow screen (22px down to 16px at the narrowest), never one word on its own; the run is ~16.15em wide, so it is 22px (+10% over 20px) on every phone from 375 css px up, ~21px at 360. */
+.cr-line { --crfs: clamp(16px, calc((100vw - 16px) / 16.3), 22px); margin: 0; font: 400 var(--crfs)/1 var(--small); letter-spacing: normal; word-spacing: 3px; color: #6b6670; white-space: nowrap; text-align: center; }
+.cr-btn { position: relative; display: inline; margin: 0; padding: 0; border: 0; background: none; cursor: pointer; font: inherit; letter-spacing: inherit; word-spacing: inherit; font-kerning: inherit; text-shadow: none; color: inherit; -webkit-tap-highlight-color: transparent; }   /* the word itself is inline and no bigger than the text; the >= 44 px hit area is the invisible ::before below */
+.cr-btn::before { content: ''; position: absolute; left: -12px; right: -12px; top: -14px; bottom: -14px; }   /* 1 em line + 28 = 48 px tall, word + 24 wide (>= 44) */
+/* round 14.7 shine: a lighter copy of the word, masked to a hard-edged, slanted streak that steps across the letters every 3.6 s; at rest the mask is empty, so the resting ink is exactly the (c) line's */
+.cr-w { position: relative; display: inline-block; white-space: nowrap; }
+.cr-w::after { content: attr(data-t); position: absolute; left: 0; top: 0; color: #c7c0c4; pointer-events: none;
+  -webkit-mask-image: linear-gradient(105deg, transparent 0 46%, #000 46% 50.6%, transparent 50.6% 52.6%, #000 52.6% 54%, transparent 54%); mask-image: linear-gradient(105deg, transparent 0 46%, #000 46% 50.6%, transparent 50.6% 52.6%, #000 52.6% 54%, transparent 54%);
+  -webkit-mask-size: 300% 100%; mask-size: 300% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; -webkit-mask-position: 100% 0; mask-position: 100% 0;
+  animation: cr-shine 3.6s steps(1, end) infinite; }
+@keyframes cr-shine { 0% { -webkit-mask-position: 100% 0; mask-position: 100% 0; animation-timing-function: steps(16, end); } 24% { -webkit-mask-position: 0% 0; mask-position: 0% 0; } 100% { -webkit-mask-position: 0% 0; mask-position: 0% 0; } }
+.cr-btn:active .cr-w { transform: translateY(3px); }
 #credits { position: fixed; inset: 0; z-index: 120; --dim: 0; touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer; }
 #credits[hidden] { display: none; }
 #credits::before { content: ''; position: absolute; inset: -60vh -30vw; background: rgba(26,24,28,.66); opacity: var(--dim); }
@@ -148,12 +158,12 @@ body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .ink
 .cr-art { position: absolute; left: 0; top: 0; image-rendering: pixelated; }
 .cr-paper { position: absolute; overflow: hidden; }
 .cr-in { position: relative; display: flex; flex-direction: column; color: var(--ink); }
-.cr-title { margin: 2px 0 6px; font: 400 48px/1 var(--small); text-align: center; color: var(--ink); }
-.cr-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 2px 8px; font: 400 32px/1.12 var(--small); scrollbar-width: none; touch-action: pan-y; }   /* round 14.5: the (c) line's face (FindersKeepers), 2x (its next pixel-exact size) */
+.cr-title { text-shadow: 2px 0 0 currentColor; margin: 2px 0 8px; font: 400 32px/1.12 var(--small); text-align: center; color: var(--ink); }
+.cr-list { color: var(--ink); text-shadow: 2px 0 0 currentColor; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 2px 8px; font: 400 32px/1.12 var(--small); scrollbar-width: none; touch-action: pan-y; }   /* round 14.5: the (c) line's face (FindersKeepers), 2x (its next pixel-exact size) */
 .cr-list::-webkit-scrollbar { display: none; }
 .cr-list section { margin: 0 0 18px; }
-.cr-list h3 { margin: 0 0 6px; font: 400 32px/1.1 var(--small); color: #4a4550; border-bottom: 3px dotted rgba(98,72,46,.5); padding-bottom: 2px; }
+.cr-list h3 { text-shadow: 2px 0 0 currentColor; margin: 0 0 6px; font: 400 32px/1.12 var(--small); color: var(--ink); border-bottom: 3px dotted rgba(98,72,46,.5); padding-bottom: 2px; }
 .cr-list p { margin: 0 0 10px; overflow-wrap: anywhere; }
-.cr-close { flex: none; margin: 0; padding: 8px 0 6px; text-align: center; font: 400 32px/1.1 var(--small); color: #4a4550; border-top: 3px dotted rgba(98,72,46,.55); }
+.cr-close { text-shadow: 2px 0 0 currentColor; flex: none; margin: 0; padding: 8px 0 6px; text-align: center; font: 400 32px/1.12 var(--small); color: var(--ink); border-top: 3px dotted rgba(98,72,46,.55); }
 .cr-poof { position: absolute; image-rendering: pixelated; pointer-events: none; display: none; }
-@media (prefers-reduced-motion: reduce) { .cr-btn:active { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cr-btn:active .cr-w { transform: none; } .cr-w::after { display: none; } .cr-w { text-decoration: underline dotted 2px; text-underline-offset: 4px; } }   /* no shine; a dotted underline in the same ink marks it as tappable */
