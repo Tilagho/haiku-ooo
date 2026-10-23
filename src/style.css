@@ -158,7 +158,7 @@ body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .ink
 .cr-art { position: absolute; left: 0; top: 0; image-rendering: pixelated; }
 .cr-paper { position: absolute; overflow: hidden; }
 .cr-in { position: relative; display: flex; flex-direction: column; color: var(--ink); }
-.cr-title { text-shadow: 2px 0 0 currentColor; margin: 2px 0 8px; font: 400 32px/1.12 var(--small); text-align: center; color: var(--ink); }
+.cr-title { text-shadow: 4px 0 0 currentColor; margin: 0 0 12px; font: 400 64px/1 var(--small);   /* round 14.8: 2x the 32px body (4 css px per font pixel, whole device px at 3x), the stroke scaled 2px -> 4px */ text-align: center; color: var(--ink); }
 .cr-list { color: var(--ink); text-shadow: 2px 0 0 currentColor; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0 2px 8px; font: 400 32px/1.12 var(--small); scrollbar-width: none; touch-action: pan-y; }   /* round 14.5: the (c) line's face (FindersKeepers), 2x (its next pixel-exact size) */
 .cr-list::-webkit-scrollbar { display: none; }
 .cr-list section { margin: 0 0 18px; }

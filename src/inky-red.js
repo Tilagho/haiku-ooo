@@ -292,6 +292,7 @@ export class RedInky {
         const px = e + (this.look > 0 ? 2 : this.look < 0 ? 0 : 1);
         put(px, ey + py - 1, INK); put(px, ey + py, INK);
         if (m === 'worry') put(e + (left ? 2 : 0), ey - 3, W);
+        else if (m === 'happy' && this.worried) { put(e, ey - 3, W); put(e + 1, ey - 3, W); put(e + 2, ey - 3, W); }   // round 14.8: the default face is HAPPY: relaxed, level, raised brows (no slant)
         else if (this.worried && m !== 'cheer') { if (left) { put(e, ey - 3, W); put(e + 1, ey - 3, W); put(e + 2, ey - 4, W); } else { put(e, ey - 4, W); put(e + 1, ey - 3, W); put(e + 2, ey - 3, W); } }   // worried brows: up in the middle
         continue;
       }
@@ -299,11 +300,12 @@ export class RedInky {
       for (let j = 0; j < eh; j++) { put(e, ey + j, W); put(e + 1, ey + j, W); }
       put(e + (this.look > 0 ? 1 : 0), ey + (this.lookY < 0 ? 0 : eh - 1), INK);
       if (m === 'worry') put(e + (e === ex[0] ? 1 : 0), ey - 2, W);
+      else if (m === 'happy' && this.worried) { put(e, ey - 2, W); put(e + 1, ey - 2, W); }   // round 14.8: the default face is HAPPY: relaxed, level, raised brows (no slant)
       else if (this.worried && m !== 'cheer') { if (left) { put(e - 1, ey - 1, W); put(e, ey - 2, W); put(e + 1, ey - 3, W); } else { put(e, ey - 3, W); put(e + 1, ey - 2, W); put(e + 2, ey - 1, W); } }   // worried brows: up in the middle
     }
     const my = Math.round(cy + R * .32 * sy), mx = Math.round(cx - .5 + lx * .5);
-    if (m === 'happy' && this.worried) { put(mx - 1, my + 1, W); put(mx, my, W); put(mx + 1, my, W); put(mx + 2, my + 1, W); }   // a nervous little frown
-    else if (m === 'think' && this.worried) { put(mx, my + 1, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); }
+    // round 14.8: no nervous frown on the default face: 'happy' always gets the upturned smile + blush below (the worried mouth stays on think / worry)
+    if (m === 'think' && this.worried) { put(mx, my + 1, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); }
     else if (m === 'happy' || m === 'cheer') { put(mx - 1, my, W); put(mx, my + 1, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); put(ex[0] - 2, my - 1, CHEEK); put(ex[1] + 3, my - 1, CHEEK); if (m === 'cheer') { put(mx, my + 2, INK); put(mx + 1, my + 2, INK); } }
     else if (m === 'shout') { for (let j = 0; j < 3; j++) for (let i = 0; i < 3; i++) put(mx + i - 1, my + j - 1, j === 0 ? W : INK); }
     else if (m === 'worry') { put(mx - 1, my + 1, W); put(mx, my, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); const sx2 = cx + R * .9, sy2 = cy - R * .5; put(sx2, sy2, BLUE); put(sx2, sy2 + 1, BLUE); put(sx2 + 1, sy2 + 1, BLUE); }

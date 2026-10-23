@@ -380,7 +380,7 @@ export const EGGS = {
   inky:   { weight: 13, about: 'a tiny sleeping Inky', reaction: 'jolts awake: eyes pop wide, hops with a sweat drop and a "!", stares back blinking; yawns and dozes off (zzz) when the flag drops' },
   frog:   { weight: 11, about: 'a little green frog, asleep', reaction: 'leaps straight up with its legs out and a "!", lands goggle-eyed with its throat puffing; shuts its eyes when covered' },
   cat:    { weight: 11, about: 'a gray cat curled up in a loaf', reaction: 'puffs into an arched halloween-cat pose, fur on end, tail up, with a "!"; sits up wary, then curls back into a loaf when covered' },
-  haiku:  { weight: 9, about: 'a folded note pinned to the wall', reaction: 'flutters up and unfolds in front of the curtains into a three-word haiku card: "psst / hello / you"; folds itself away when covered' },
+  haiku:  { weight: 9, about: 'a folded note pinned to the wall', reaction: 'flutters up in front of the curtains, its face wakes up (two eyes and a smile, no words), does a happy wiggle and hop with a couple of glints; folds itself away when covered' },
   maki:    { weight: 11, about: 'a maki sushi roll (rice, nori, a red tuna centre), dozing', reaction: 'its eyes squeeze shut in fright, it wobbles, rolls right over on its side and back, and the rice grains pop up off it like goosebumps; covered, it rocks still and dozes' },
   sashimi: { weight: 11, about: 'a slice of sashimi, lying flat', reaction: 'flops and wiggles like a fish out of water: both ends curl up and down, it hops, then lies there twitching, eye wide; covered, it goes flat and still' },
   onigiri: { weight: 10, about: 'an onigiri rice ball with its nori band, asleep', reaction: 'blushes pink, sinks down to hide behind its nori band, then peeks back up with wide eyes (still blushing); covered, the blush fades and it dozes' },
@@ -542,8 +542,18 @@ export class Egg {
     if (this.name === 'inky' && s === 'sleep' && this.exposed > .2 && !R) blit(put, MARK.z, cx + 4, bottom - 12 - Math.floor((this.t * 3) % 3));
     if (this.name === 'haiku' && (s === 'startle' || s === 'awake' || (s === 'settle' && t < .3))) {
       const open = s === 'startle' ? Math.min(1, t / .35) : s === 'settle' ? 1 - t / .3 : 1;
-      if (open > .66) card(put, ['psst', 'hello', 'you'], cx, Math.max(0, bottom - 25 - (R ? 0 : Math.round(2 * Math.sin(this.t * 2)))), F);
-      else blit(put, SPRITES.note, cx - 4, bottom - 9 - Math.round(open * 8));
+      // round 14.8: NO words. The note flutters up in front of the curtains, its folded face wakes up (two eyes and a smile), it does a
+      // little happy wiggle + hop, and drops back to be folded away; reduced motion: no wiggle / hop.
+      const hopY = R || open < 1 ? 0 : Math.round(Math.abs(Math.sin(this.t * 7)) * 3), wig = R || open < 1 ? 0 : Math.round(Math.sin(this.t * 11) * 1.4);
+      const x = cx - 4 + wig, y = Math.max(0, bottom - 9 - Math.round(open * 11) - hopY);
+      blit(put, SPRITES.note, x, y);
+      if (open > .66) {
+        for (let j = 1; j < 7; j++) for (let i = 1; i < 7; i++) put(x + i, y + j, PAL.C);            // the folded note's face, blank paper...
+        const blinkNow = !R && Math.floor(this.t * 2.5) % 5 === 0;
+        put(x + 2, y + (blinkNow ? 3 : 2), PAL.K); put(x + 5, y + (blinkNow ? 3 : 2), PAL.K); if (!blinkNow) { put(x + 2, y + 3, PAL.K); put(x + 5, y + 3, PAL.K); }   // ...with two eyes
+        put(x + 2, y + 5, PAL.K); put(x + 3, y + 6, PAL.K); put(x + 4, y + 6, PAL.K); put(x + 5, y + 5, PAL.K);                                                   // ...and a smile
+        if (!R && Math.floor(this.t * 6) % 2) { blit(put, MARK.spark, x - 5, y - 1); blit(put, MARK.spark, x + 9, y + 3); }                                       // a couple of glints
+      }
     }
     if (this.name === 'secret' && (s === 'startle' || s === 'awake')) {
       if (!R && Math.floor(this.t * 6) % 2) { blit(put, MARK.spark, cx - 8, bottom - 12); blit(put, MARK.spark, cx + 6, bottom - 6); }

@@ -491,7 +491,7 @@ export function mountCompose(deps) {
     else { ta.value = v; setCaret(Math.min(v.length, clampLines(ta.value.slice(0, s0) + t).length)); }
     if (denied) clearDenied(); poke(); update();
   });
-  ta.addEventListener('focus', () => { if (body.classList.contains('await-tap')) { body.classList.remove('await-tap'); if (tapBubble) { tapBubble = false; bubble.hidden = true; } } syncCaret(); poke(); });
+  ta.addEventListener('focus', () => { if (gate !== 'open' && opened) { gate = 'open'; idleAt = 0; } if (body.classList.contains('await-tap')) { body.classList.remove('await-tap'); if (tapBubble) { tapBubble = false; bubble.hidden = true; } } syncCaret(); poke(); });
   ta.addEventListener('blur', () => {
     rows.forEach(r => { r.caret.hidden = true; r.el.classList.remove('focus'); });
     // round 14.1: iOS dismissed the keyboard (a page cannot stop that, and a focus() outside a tap cannot bring it back): no
@@ -604,6 +604,11 @@ export function mountCompose(deps) {
 
   // ---------- bubble: drawn pixel by pixel, always points back at Inky ----------
   let bubbleUntil = 0, bubbleFrom = -1e9, pending = null, idleAt = 0, bubbleOpacity = '';
+  // round 14.8: 'tap to write' is ALWAYS his first words on every compose open. `sess` ticks on each open (stale timers of an older session can't speak),
+  // `gate` keeps idle / progress / tap comments out until 'tap to write' has been shown and the first tap landed (or its minimum hold passed).
+  let sess = 0, gate = 'open', gateShown = -1e9;
+  const gateOpen = () => gate === 'open' || (gate === 'shown' && clock.now() - gateShown >= HOLD_MIN);
+  function resetSpeech() { body.classList.remove('await-tap'); sess++; pending = null; bubble.hidden = true; bubbleUntil = 0; bubbleFrom = -1e9; bubbleOpacity = ''; bubble.style.opacity = '0'; tapBubble = false; idleAt = 0; bugTaps = 0; bugAt = -1e9; inky.tapping = false; gate = KB_MODE === 'late' && coarse ? 'wait' : 'open'; gateShown = -1e9; }
   const bubbleLog = [];   // measured by the tests / captures: every bubble shown (when, text, hold ms)
   function say(text, ms = 1800, big = false) {   // raw: shows now (state changes: open / post / deny). Idle chatter and taps go through chat()
     if (text !== 'tap to write') tapBubble = false;
@@ -613,12 +618,15 @@ export function mountCompose(deps) {
     bubble._bw = Math.ceil(t.width / BU); bubble._bh = Math.ceil(t.height / BU); bubble._key = '';
     bubble.style.width = bubble._bw * BU + 'px'; bubble.style.height = bubble._bh * BU + 'px';
     bubbleFrom = clock.now(); bubbleUntil = bubbleFrom + ms; bubble.style.opacity = '0'; bubbleOpacity = '0'; placeBubble();
+    if (text === 'tap to write') { gate = 'shown'; gateShown = bubbleFrom; }
     bubbleLog.push({ text: text.replace(/<br>/g, ' '), at: bubbleFrom, hold: ms });
   }
   // Gated speech. kind 'tap' = the user bugged him (immediate, but it may only replace a bubble that has been up >= TAP_MIN_UP, else it waits for
   // that moment; rapid taps keep ONE pending line, so they can never machine-gun); 'event' (line done, sign it?) waits for the current bubble's
   // whole hold; 'idle' is dropped if anything is up or pending. `make` returns the text only when it is actually shown (keeps the no-repeat order).
-  function chat(kind, make, hold) {
+  function chat(kind, make0, hold) {
+    if (!gateOpen()) return false;                                   // nothing is said (or queued) before 'tap to write' has had its say
+    const s0 = sess, make = () => s0 === sess ? make0() : null;      // a callback from an older compose session says nothing
     const up = !bubble.hidden && clock.now() < bubbleUntil;
     if (!up && !pending) { const t = make(); if (t) say(t, hold ?? bubbleHold(t)); return true; }
     if (kind === 'idle') return false;
@@ -675,6 +683,7 @@ export function mountCompose(deps) {
   let homeInky = null;
   async function open() {
     if (opened || body.classList.contains('composing')) return;
+    resetSpeech();                                                   // 14.8: no bubble, queue or timer of an earlier session survives into this open
     lockScroll(); body.classList.add('composing'); html.classList.add('composing'); busy = true; rejects = hintAt = 0; denied = false; denyMsg = ''; body.classList.remove('is-denied');
     if (theme) theme.content = '#1a181c';
     syncViewport();
@@ -709,7 +718,7 @@ export function mountCompose(deps) {
     await inky.whip([[innerWidth + 90, vvt + vvh * .56], [innerWidth * .62, vvt + vvh * .74], [innerWidth * .36, vvt + vvh * .9], [innerWidth * .48, vvt + vvh * .8], [innerWidth * .26, vvt + vvh * .76], [d.x, d.foot]], .95, { splash: 10 });
     await done; busyScroll = false; unrolling = false;
     inky.mode = 'coach'; inky.dock = dock; inky.setMood('happy'); inky.look = 1;
-    say('hi! I\'m counting.<br>give me 5-7-5', bubbleHold('hi! I\'m counting. give me 5-7-5'));
+    if (!(KB_MODE === 'late' && coarse)) say('hi! I\'m counting.<br>give me 5-7-5', bubbleHold('hi! I\'m counting. give me 5-7-5'));   // 14.8: in the tap-to-write flow his FIRST words are 'tap to write' (this greeting used to flash first)
   }
   async function rollUp() {
     body.classList.remove('opened');
@@ -725,11 +734,13 @@ export function mountCompose(deps) {
     bi.placeAt(hx, hf); bi.floor = bi.fy; bi.grounded = true; bi.setMood('happy');
     const bp = bi.pos, dur = 1.3;
     const s = field.suck(bp.x, bp.y, { dur, endR: 6 });
-    body.classList.remove('composing', 'ready', 'is-denied', 'opened', 'kb', 'washed'); html.classList.remove('composing', 'washed'); frozen = false; plan = null; kbUp = false;
+    html.classList.add('draining');                    // html stays ink (and the theme colour) until the iris has gone
+    inky.drops = []; inky.puddles = []; inky.sparks = [];   // no stray red bits left over on the black
+    body.classList.remove('composing', 'ready', 'is-denied', 'opened', 'kb', 'washed', 'await-tap'); html.classList.remove('composing', 'washed'); frozen = false; plan = null; kbUp = false;
     unlockScroll(unlockTo); unlockTo = undefined; drawSeals();
-    if (theme) theme.content = theme0;
     clock.wait(dur * 930).then(() => { bi.visible = true; bi.s = .5; bi.sv = 0; bi.wobble(1.4); });
     await s;
+    html.classList.remove('draining'); if (theme) theme.content = theme0;
   }
   function restoreBoard() {
     const bi = deps.inky, je = springEasing(SPRINGS.drop);
@@ -742,7 +753,7 @@ export function mountCompose(deps) {
   // ---------- BACK: Inky stamps the red arrow, roll up, Inky leaves sad, the black drains back ----------
   async function cancel() {
     if (!opened || busy) return;
-    busy = true; bubble.hidden = true; inky.tapping = false; denied = false; denyMsg = ''; rejects = hintAt = 0;
+    busy = true; bubble.hidden = true; pending = null; tapBubble = false; inky.tapping = false; denied = false; denyMsg = ''; rejects = hintAt = 0;
     const br = $('#cback .blot').getBoundingClientRect(), tx = br.left + br.width / 2, ty = br.top + br.height / 2;
     inky.hanko = false; inky.mode = 'stamp'; inky.dock = null; inky.setMood('worry');
     await inky.hopTo(tx, ty - 60, .4, 40); inky.s = -.35; await clock.wait(90);

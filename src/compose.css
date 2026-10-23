@@ -8,14 +8,17 @@ html.composing, html.composing body { overflow: hidden; overscroll-behavior: non
 #compose .back, #compose .cpost, #compose .sign, #compose #clines, #compose .deny { touch-action: manipulation; }
 #compose input, #compose textarea { font: inherit; color: inherit; border: 0; background: transparent; outline: none; padding: 0; margin: 0; border-radius: 0; box-shadow: none; -webkit-appearance: none; appearance: none; }
 #compose [hidden] { display: none !important; }
-.ink-field { position: fixed; left: 0; top: 0; pointer-events: none; image-rendering: pixelated; }
+.ink-field { position: fixed; left: 0; top: 0; /* round 14.8: oversize (ink-field.js sets left/top to minus its margin) */ pointer-events: none; image-rendering: pixelated; }
 #cveil { position: fixed; inset: 0; z-index: 22; display: none; }
 body.composing #cveil { display: block; }
 /* FULL BLACKOUT once the flood has filled the screen: a solid wash far past every edge of the screen (above and below the
    visual viewport, behind Safari's translucent toolbars / keyboard bar, the overscroll bounce, the safe areas), and the
    same ink on html + body so nothing of the board can ever show around it. The board itself is locked (compose.js). */
-body.composing.washed #cveil { top: -60vh; bottom: -60vh; left: -30vw; right: -30vw; background: var(--ink, #1a181c); }
+body.composing.washed #cveil { inset: -80vmax; background: var(--ink, #1a181c); }       /* round 14.8: past every edge by 80% of the larger screen side: no vh / dvh / innerHeight */
 html.composing.washed, html.composing.washed body { background: #1a181c !important; }
+/* round 14.8: html itself is ink for the whole compose life (the flood, the compose, the drain home): the overscroll bounce,
+   the safe areas and the strip behind Safari's bars can never show paper. (body keeps its own paper, so the board looks the same.) */
+html.composing, html.draining { background: #1a181c; }
 
 /* the stage follows the VISUAL viewport, so a real on-screen keyboard never covers the lines or Inky */
 #cstage { position: fixed; left: 0; right: 0; top: var(--vvt, 0px); height: var(--vvh, 100%); z-index: 30; pointer-events: none; }
