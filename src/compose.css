@@ -107,7 +107,7 @@ body.kb #compose .paper { padding-top: 4px; }
 body.kb #compose .ln { margin-top: 2px; }
 body.kb #compose .field { height: calc(4px + var(--fsm, 48px) * var(--asc, .78) + 3px + 12px + 13px + 2px); }
 body.kb #compose .field .mirror .nums { top: calc(var(--fsr, 48px) * var(--asc, .78) + 3px + 12px); line-height: 13px; }   /* just clear of the 12 px painted rule */
-body.kb #compose .paper { padding-right: 30px; }
+body.kb #compose .paper { padding-right: 14px; }   /* round 14.4: the torn right edge clips the width (compose.js fits per row), the rest is for the type */
 body.kb #compose .field .mirror { letter-spacing: calc(var(--fsr, 48px) / -16); }          /* one font px tighter (compose.js KERN) */
 body.kb #compose #cpoem { letter-spacing: calc(max(16px, var(--fs, 32px)) / -16); }
 body.kb #compose .sign { position: absolute; margin: 0; left: 114px; right: 114px; top: calc(var(--ph) - 58px); justify-content: center; gap: 6px; }

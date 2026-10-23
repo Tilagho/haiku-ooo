@@ -14,6 +14,11 @@
 // the browser restores the page from its back/forward cache. Override for captures: ?egg=<name>&eggflag=<1..9>.
 // Roster: sleeping Inky, frog, cat, haiku note, maki roll, sashimi, onigiri, daruma, maneki-neko, and a rare 秘 seal.
 //
+// ROUND 14.3 (replayable): once the egg has been FOUND (uncovered and startled) it stays ~1 s, then scampers off in front of the
+// cloth (a few hops, toward the side with more room), vanishes in a small grayscale pixel POOF, and ~1 s later a DIFFERENT egg
+// hides under a DIFFERENT flag (nextEgg: never the same egg or flag as the one just found; the pick is remembered for the next
+// load too). ?egg= / ?eggflag= still force the FIRST egg; ?eggonce=1 turns the replay off (captures / tests of one egg).
+//
 // SCROLL GUST: scrolling the page blows a gust through all the flags (see stepGust).
 //
 // Drawn into a low-res canvas (1 art px = 3 CSS px, the background's grid), shown nearest-neighbour. Runs on the
@@ -404,19 +409,62 @@ export function pickEgg(rand = cryptoRand, params = typeof location !== 'undefin
   if (!forced) memory?.set({ name, flag });                                                // overrides (captures) don't touch the memory
   return { name, flag };
 }
+// round 14.3: found -> hold FOUND_HOLD -> run FLEE_T (hops, in front of the cloth) -> poof POOF_T -> gone -> GONE_WAIT -> next egg
+export const FOUND_HOLD = 1.0, FLEE_T = .75, POOF_T = .5, GONE_WAIT = 1.0, FLEE_DIST = 44;
+// the next hidden asset + flag: weighted like pickEgg, never the egg or the flag that was just found (so never the same
+// asset + curtain back to back); rand is injectable for tests
+export function nextEgg(cur, rand = cryptoRand) {
+  const pool = Object.keys(EGGS).filter(k => k !== cur?.name), tot = pool.reduce((t, k) => t + EGGS[k].weight, 0);
+  let r = rand() * tot; const name = pool.find(k => (r -= EGGS[k].weight) < 0) || pool[pool.length - 1];
+  const ks = CHARS.map((_, k) => k).filter(k => k !== cur?.flag), flag = ks[Math.floor(rand() * ks.length) % ks.length];
+  return { name, flag };
+}
 export class Egg {
-  constructor(name, F, reduced) { this.name = name; this.F = F; this.state = 'sleep'; this.t = 0; this.cover = 0; this.reduced = reduced; this.exposed = 0; this.seen = 0; }
+  constructor(name, F, reduced) { this.name = name; this.F = F; this.state = 'sleep'; this.t = 0; this.cover = 0; this.reduced = reduced; this.exposed = 0; this.seen = 0; this.disc = false; this.found = 0; this.hold = FOUND_HOLD; this.end = null; }
   step(h) {
     this.t += h; const ex = this.exposed;
-    if (this.state === 'sleep' && ex > .38) { this.state = 'startle'; this.t = 0; this.seen++; }
+    if (this.state === 'gone') return;
+    if (this.state === 'flee') { if (this.t >= (this.reduced ? .01 : FLEE_T)) { this.end = this.runPos(this.reduced ? 0 : FLEE_T); this.state = 'poof'; this.t = 0; } return; }
+    if (this.state === 'poof') { if (this.t >= POOF_T) { this.state = 'gone'; this.t = 0; } return; }
+    if (this.disc && (this.found += h) >= this.hold) { this.state = 'flee'; this.t = 0; return; }   // found ~1 s ago: off it goes
+    if (this.state === 'sleep' && ex > .38) { this.state = 'startle'; this.t = 0; this.seen++; if (!this.disc) { this.disc = true; this.found = 0; } }
     else if (this.state === 'startle' && this.t > .9) { this.state = 'awake'; this.t = 0; }
     else if ((this.state === 'awake' || this.state === 'startle') && ex < .12) { this.cover += h; if (this.cover > .6) { this.state = 'settle'; this.t = 0; } }
     else if (this.state === 'settle' && this.t > .7) { this.state = 'sleep'; this.t = 0; }
     if (ex >= .12) this.cover = 0;
   }
+  // where the runner is t seconds into the run (art px): along the paper toward the side with more room, hopping
+  runPos(t) {
+    const { cx, bottom } = this.box, d = cx < NW / 2 ? 1 : -1, q = Math.min(1, t / FLEE_T), ease = q * (2 - q) * .35 + q * .65;
+    const x = Math.max(7, Math.min(NW - 7, cx + d * FLEE_DIST * ease));
+    return { x, y: bottom - (this.reduced ? 0 : Math.round(Math.abs(Math.sin(q * Math.PI * 4)) * 3)), dir: d };
+  }
+  // the runner (in front of the cloth, so it scampers out from under the curtain) and then the poof
+  drawRun(put) {
+    if (this.state === 'flee' && !this.reduced) {
+      const P = this.runPos(this.t), { cx, bottom } = this.box, s0 = this.state, t0 = this.t;
+      this.state = 'awake'; this.t = .9; this._run = true;
+      this.drawBack((x, y, c) => put(x + (P.x - cx), y + (P.y - bottom), c));
+      if (this.name === 'haiku') blit(put, SPRITES.note, Math.round(P.x) - 4, P.y - 9);                         // the note has no back sprite once awake
+      this.state = s0; this.t = t0; this._run = false;
+      if (Math.floor(this.t * 24) % 2) { put(P.x - P.dir * 7, P.y - 1, PAL.g); put(P.x - P.dir * 9, P.y, PAL.g); }   // a dust kick behind it
+    } else if (this.state === 'poof') this.drawPoof(put);
+  }
+  // a small chunky pixel poof, sumi grays (white core -> light -> mid -> dark as it thins out), no colour
+  drawPoof(put) {
+    const e = this.end || this.runPos(0), q = Math.min(1, this.t / POOF_T), r = 1.5 + 8 * (1 - (1 - q) ** 2), col = [PAL.W, PAL.g, PAL.G, PAL.D][Math.min(3, Math.floor(q * 4))], sz = q < .55 ? 2 : 1;
+    for (let k = 0; k < 8; k++) {
+      const a = k * Math.PI / 4 + .2, px = Math.round(e.x + Math.cos(a) * r), py = Math.round(e.y - 4 + Math.sin(a) * r * .8);
+      if (q > .7 && (k + Math.floor(q * 10)) % 2) continue;                               // the last frames thin out
+      for (let j = 0; j < sz; j++) for (let i = 0; i < sz; i++) put(px + i, py + j, col);
+    }
+    if (q < .3) for (const [i, j] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]]) put(Math.round(e.x) + i, Math.round(e.y) - 4 + j, PAL.W);   // the flash at the centre
+    if (q > .15 && q < .6) { put(Math.round(e.x), Math.round(e.y - 4 - r * .5), PAL.K); put(Math.round(e.x - r * .6), Math.round(e.y - 3), PAL.D); put(Math.round(e.x + r * .6), Math.round(e.y - 3), PAL.D); }   // a few dark ink flecks
+  }
   get box() { const f = this.F; return { cx: Math.round(f.x0 + f.w / 2), bottom: TOP + f.h - 3 }; }
   // draw the egg itself (behind the cloth)
   drawBack(put) {
+    if (this.state === 'flee' || this.state === 'poof' || this.state === 'gone') { if (!this._run) return; }
     const { cx, bottom } = this.box, s = this.state, t = this.t, R = this.reduced;
     const hop = (H, dur) => R || s !== 'startle' || t > dur ? 0 : Math.round(-H * Math.sin(Math.PI * t / dur));
     const blink = s === 'awake' && (t % 2.4) > 2.25;
@@ -481,6 +529,7 @@ export class Egg {
   }
   // marks that pop out in front of the cloth ("!", sweat, zzz, cards)
   drawFront(put, covered) {
+    if (this.state === 'flee' || this.state === 'poof' || this.state === 'gone') { this.drawRun(put); return; }
     const { cx, bottom } = this.box, s = this.state, t = this.t, R = this.reduced, F = font('small');
     if (s === 'startle' && t < .7 && this.name !== 'haiku') blit(put, MARK.bang, cx + (this.name === 'maneki' ? -7 : 5), bottom - 15);
     if (this.name === 'maki' && s === 'startle' && t < .8 && !R) for (const [gx, vy, vx] of GRAINS) {     // rice grains pop up startled
@@ -619,15 +668,22 @@ export function mountNoren(host, { reduced = typeof matchMedia !== 'undefined' &
   }
   // back/forward cache restores the old page as it was; treat that like a fresh load and hide a new egg
   addEventListener('pageshow', e => { if (!e.persisted) return; const ne = pickEgg(cryptoRand, undefined, memory); N.egg = new Egg(ne.name, N.flags[ne.flag], reduced); N.eggFlag = ne.flag; api.egg.name = ne.name; api.egg.flag = ne.flag + 1; });
+  // round 14.3: once the found egg has run off and poofed, a DIFFERENT egg hides under a DIFFERENT flag (never the same back to back)
+  const once = typeof location !== 'undefined' && new URLSearchParams(location.search).has('eggonce');
+  const rotate = () => {
+    const ne = nextEgg({ name: N.egg.name, flag: N.eggFlag }); memory.set(ne);
+    N.egg = new Egg(ne.name, N.flags[ne.flag], reduced); N.eggFlag = ne.flag; api.egg.name = ne.name; api.egg.flag = ne.flag + 1; api.egg.found++;
+  };
   clock.onTick(dt => {
     if (!visible) return;
+    if (N.egg.state === 'gone' && !once && N.egg.t >= GONE_WAIT) rotate();
     if (reduced && !held && N.egg.state === 'sleep' && Math.abs(N.gustIn || 0) < 5 && Math.abs(N.gust || 0) < .01 && N.flags.every(F => F.lift() < .3)) { if ((quiet += dt) > 2) return; } else quiet = 0;   // reduced: only simulate while something moves
     stepNoren(N, dt, wind); paint();
   });
   paint();
   // hooks for captures / tests (art-px coordinates)
-  const api = { canvas: cv, sim: N, paint, gust: v => { N.gustIn = v; }, egg: { name: egg.name, flag: egg.flag + 1, get state() { return N.egg.state; }, get exposed() { return N.egg.exposed; } },
+  const api = { canvas: cv, sim: N, paint, gust: v => { N.gustIn = v; }, egg: { name: egg.name, flag: egg.flag + 1, found: 0, get state() { return N.egg.state; }, get exposed() { return N.egg.exposed; } },
     flagCenter: k => { const F = N.flags[k], r = cv.getBoundingClientRect(); return { x: r.left + (F.x0 + F.w / 2) / NW * r.width, hem: r.top + (TOP + F.h - 2) / NH * r.height, top: r.top + TOP / NH * r.height, w: F.w / NW * r.width }; },
-    grab: (x, y) => tryGrab({ x, y, t: clock.now() }), drag: (x, y) => drag({ x, y, t: clock.now() }), release };
+    rotate, grab: (x, y) => tryGrab({ x, y, t: clock.now() }), drag: (x, y) => drag({ x, y, t: clock.now() }), release };
   return api;
 }

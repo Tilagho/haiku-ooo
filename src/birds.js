@@ -60,7 +60,15 @@ const smooth = x => x * x * (3 - 2 * x);
 function vnoise(seed, x) { const i = Math.floor(x), f = x - i, h = k => (hash(seed, k) & 0xffff) / 0xffff - .5; return h(i) + (h(i + 1) - h(i)) * smooth(f); }
 // round 14.2: a tap near a flying bird STARTLES its flight: it flaps ~2.5x faster and flies away ~2.6x faster, the boost held
 // ~1.3 s then easing back down over ~1.2 s (SCARE_S in all); same direction, same pair / trio / skein grouping, same count.
-export const SCARE_S = 2.5, SCARE_HOLD = 1.2, SCARE_SPEED = 1.6, SCARE_FLAP = 1.5, SCARE_R = 72;   // r in screen px (forgiving for a finger)
+// ROUND 14.4: twice as hard again: flies ~4.7x (was 2.6x) and flaps ~4.6x (was 2.5x) the calm rate, held ~1.7 s, then eased out over ~1.3 s.
+// And each startling tap has a 1-in-5 (KO_P) chance to KNOCK OUT the one bird nearest the tap: it tumbles dazed (quarter turns, pixel
+// style, wings held) and falls off the bottom of the screen in a small grey puff + a drifting feather, while the rest of its flight
+// startles and flies off. ?birdko=1 forces it, ?birdko=0 turns it off (tests / captures). A knocked-out bird still counts in its
+// flight, so the 12-bird cap and the spawn rhythm are untouched; it is only dropped from the sky once it has fallen out of view.
+export const SCARE_S = 3.0, SCARE_HOLD = 1.7, SCARE_SPEED = 3.7, SCARE_FLAP = 3.6, SCARE_R = 72;   // r in screen px (forgiving for a finger)
+export const KO_P = .2, KO_G = 560, KO_SPIN = 9;   // chance per startling tap; fall (units/s^2); quarter turns per second
+export const rollKnock = (rand = Math.random, p = KO_P) => p >= 1 ? true : p <= 0 ? false : rand() < p;
+export const koP = q => q === '1' ? 1 : q === '0' ? 0 : KO_P;   // r in screen px (forgiving for a finger)
 export class Flock {
   // mode 'few' | 'flock'; dir +1 = left to right; lane {y, slope}; poems [{x,y,w,h}] in scroll units
   constructor({ mode = 'few', dir = 1, lane = { y: 400, slope: 0 }, seed = 1, poems = [], lean = 0 } = {}) {
@@ -96,7 +104,11 @@ export class Flock {
     return { x, y: this.laneY(x) + side + 5 * Math.sin(t * .4 + b.drift) };
   }
   get length() { return this.birds.length ? Math.max(...this.birds.map(b => b.i)) * this.sp + 60 : 0; }
-  get done() { const m = 30; return this.birds.every(b => this.dir > 0 ? b.x > SCROLL_W + m : b.x < -m); }
+  get done() { const m = 30; return this.birds.every(b => b.ko || (this.dir > 0 ? b.x > SCROLL_W + m : b.x < -m)); }
+  knock(b) {   // dazed: a little hop up and back, then it tumbles down (no flapping)
+    if (!b || b.ko) return false;
+    b.ko = { t: 0 }; b.frame = 4; b.glide = 0; b.vx = b.vx * .35; b.vy = 55 + (this.R() - .5) * 20; return true;
+  }
   startle() { this.scare = SCARE_S; return this; }
   get boost() { return this.scare > 0 ? Math.min(1, this.scare / (SCARE_S - SCARE_HOLD)) : 0; }   // 1 while held, then easing to 0
   step(dt) {
@@ -105,9 +117,10 @@ export class Flock {
     this.lead += this.speed * sm * dt;
     const gx = vnoise(this.seed + 3, t * .35) * 18, gy = vnoise(this.seed + 5, t * .3) * 14;   // gusts (units/s^2)
     for (const b of B) {
+      if (b.ko) { b.ko.t += dt; b.vy -= KO_G * dt; b.vx *= Math.max(0, 1 - 1.4 * dt); b.x += b.vx * dt; b.y += b.vy * dt; b.frame = 4; continue; }
       const s = this.slot(b, t), lvx = this.speed * sm * this.dir, lvy = lvx * this.lane.slope;
       let ax = k * (s.x - b.x) - c * (b.vx - lvx) + gx, ay = k * (s.y - b.y) - c * (b.vy - lvy) + gy * (.6 + .4 * b.size / 2);
-      for (const o of B) if (o !== b) {                                  // separation: soft personal space
+      for (const o of B) if (o !== b && !o.ko) {                                  // separation: soft personal space
         const dx = b.x - o.x, dy = b.y - o.y, d2 = dx * dx + dy * dy, r = 9;
         if (d2 < r * r && d2 > 1e-4) { const d = Math.sqrt(d2), f = (r - d) / r * 60; ax += dx / d * f; ay += dy / d * f; }
       }
@@ -131,7 +144,7 @@ export class Flock {
 // ---- DOM: one canvas window that follows the viewport inside the scaled art layer
 export function mountBirds(view, { clock, reduced = false, search = typeof location !== 'undefined' ? location.search : '' } = {}) {
   const q = new URLSearchParams(search).get('birds'), forced = ['few', 'small', 'flock', 'skein'].includes(q) ? q : null;
-  const ctl = { flock: null, spawn: () => null, stop() {}, forced, enabled: false };
+  const ctl = { flock: null, spawn: () => null, stop() {}, forced, enabled: false, ko: koP(new URLSearchParams(search).get('birdko')), rand: Math.random, fx: [], knocked: 0 };
   view.birds = ctl;
   if (q === 'off' || reduced) return ctl;
   ctl.enabled = true;
@@ -186,7 +199,15 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
     for (const F of ctl.flocks) for (const b of F.birds) {
       const c = spr[b.size][b.variant][b.frame][F.dir > 0 ? 0 : 1];
       g.globalAlpha = b.faint ? .35 : 1;
-      g.drawImage(c, Math.round(b.x / BPX - c.width / 2), Math.round((win.hi - b.y) / BPX - c.height / 2));
+      const px = Math.round(b.x / BPX), py = Math.round((win.hi - b.y) / BPX);
+      if (b.ko) { g.save(); g.translate(px, py); g.rotate(Math.floor(b.ko.t * KO_SPIN) % 4 * Math.PI / 2); g.drawImage(c, -Math.round(c.width / 2), -Math.round(c.height / 2)); g.restore(); }   // quarter turns only: crisp pixels
+      else g.drawImage(c, px - Math.round(c.width / 2), py - Math.round(c.height / 2));
+    }
+    g.globalAlpha = 1;
+    for (const f of ctl.fx) {   // the knock-out puff (chunky grey squares) and feather (a drifting 3-pixel diagonal)
+      const px = Math.round(f.x / BPX), py = Math.round((win.hi - f.y) / BPX), u = f.t / f.life;
+      if (f.k === 'puff') { const z = u < .35 ? 2 : 1; g.fillStyle = f.c; g.globalAlpha = 1 - u * .7; g.fillRect(px - z, py - z, z * 2, z * 2); }
+      else { g.fillStyle = 'rgb(26,24,29)'; g.globalAlpha = 1 - u * .6; const d = Math.floor(f.t * 6) % 2 ? 1 : -1; g.fillRect(px, py, 2, 1); g.fillRect(px + 2, py + d, 2, 1); g.fillRect(px + 4, py + 2 * d, 1, 1); }
     }
     g.globalAlpha = 1;
   };
@@ -196,9 +217,12 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
       wait = NEXT();
       if (ctl.flocks.length < MAX_FLIGHTS) { if (!forced && Math.random() < .2 && ctl.flocks.length === 0) ctl.spawnPair(); else ctl.spawn(forced || pickMode(inAir() > 7)); }
     }
-    if (!ctl.flocks.length) return;
+    if (!ctl.flocks.length && !ctl.fx.length) return;
     const v = viewWin();
-    for (let i = ctl.flocks.length - 1; i >= 0; i--) { const F = ctl.flocks[i]; if (F.birds.every(b => b.y < v.lo - 400 || b.y > v.hi + 400) || F.done) ctl.flocks.splice(i, 1); }   // gone, or scrolled far away
+    for (const f of ctl.fx) { f.t += dt; f.x += f.vx * dt; f.y += f.vy * dt; if (f.k === 'puff') { f.vx *= .93; f.vy *= .93; } else { f.vy = Math.max(f.vy - 90 * dt, -26); f.vx = Math.sin(f.t * 5) * 14; } }
+    ctl.fx = ctl.fx.filter(f => f.t < f.life);
+    for (const F of ctl.flocks) F.birds = F.birds.filter(b => !(b.ko && b.y < v.lo - 80));   // a knocked-out bird that has fallen out of view leaves the sky
+    for (let i = ctl.flocks.length - 1; i >= 0; i--) { const F = ctl.flocks[i]; if (!F.birds.length || F.birds.every(b => b.y < v.lo - 400 || b.y > v.hi + 400) || F.done) ctl.flocks.splice(i, 1); }   // gone, or scrolled far away
     if (!ctl.flocks.length) { draw(); return; }
     if (v.lo < win.lo + 40 || v.hi > win.hi - 40) place(v);
     for (const F of ctl.flocks) F.step(dt);
@@ -208,12 +232,24 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
   // the UI, the button, Inky or a poem, nor of scrolling): a pointerdown + a pointerup that barely moved = a tap.
   ctl.startleAt = (cx, cy, r = SCARE_R) => {
     if (busy() || !win) return 0;
-    const hr = view.host.getBoundingClientRect(), s = view.host.clientWidth / SCROLL_W || 1, H = view.composer.height; let n = 0;
-    for (const F of ctl.flocks) if (F.birds.some(b => Math.hypot(hr.left + b.x * s - cx, hr.top + (H - b.y) * s - cy) <= r)) { F.startle(); n++; }
+    const hr = view.host.getBoundingClientRect(), s = view.host.clientWidth / SCROLL_W || 1, H = view.composer.height; let n = 0, near = null, nd = Infinity, nF = null;
+    for (const F of ctl.flocks) {
+      let hit = false;
+      for (const b of F.birds) { if (b.ko) continue; const d = Math.hypot(hr.left + b.x * s - cx, hr.top + (H - b.y) * s - cy); if (d <= r) { hit = true; if (d < nd) { nd = d; near = b; nF = F; } } }
+      if (hit) { F.startle(); n++; }
+    }
+    ctl.lastKO = false;
+    if (near && rollKnock(ctl.rand, ctl.ko) && nF.knock(near)) {   // 1 in 5: the bird nearest the tap is knocked out of the sky
+      ctl.lastKO = true; ctl.knocked++;
+      const R = nF.R, gray = ['rgb(150,146,152)', 'rgb(196,192,196)', 'rgb(96,92,100)', 'rgb(224,220,222)'];
+      for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + R(), v = 38 + R() * 30; ctl.fx.push({ k: 'puff', x: near.x, y: near.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: .45 + R() * .2, c: gray[i % 4] }); }
+      for (let i = 0; i < 2; i++) ctl.fx.push({ k: 'feather', x: near.x + (R() - .5) * 6, y: near.y, vx: 0, vy: 10, t: 0, life: 1.5 + R() * .5 });
+    }
     return n;
   };
   let down = null;
-  const pd = e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; }, pu = e => { if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12 && performance.now() - down.t < 600) ctl.startleAt(e.clientX, e.clientY); down = null; };
+  const pd = e => { down = { x: e.clientX, y: e.clientY, t: performance.now() }; }, UI = 'button, a, input, textarea, select, label, summary, [role="button"], [tabindex], #fab, #compose, .noren-head',
+    pu = e => { if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12 && performance.now() - down.t < 600 && !(e.target?.closest && e.target.closest(UI))) ctl.startleAt(e.clientX, e.clientY); down = null; };   // never on a tap that lands on the UI
   addEventListener('pointerdown', pd, { passive: true, capture: true }); addEventListener('pointerup', pu, { passive: true, capture: true });
   ctl.stop = () => { off(); cv.remove(); ctl.flocks.length = 0; removeEventListener('pointerdown', pd, true); removeEventListener('pointerup', pu, true); };
   return ctl;

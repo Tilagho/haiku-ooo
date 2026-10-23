@@ -21,12 +21,13 @@ const ROWS_OPEN = 72, IDLE_MS = 9000;
 // when the keyboard goes down (just more dark space below): no reflow, no font jump. Red Inky stands in his own band
 // fully UNDER the lower roller (INKY_GAP below it), never over a stamp, the roller or the paper. When the visible height
 // is short, the top roller tucks up under the screen edge (st down to ST_MIN) before the type steps down a size.
-const ST_KB = 30, ST_MIN = -48, ST_TUCK = -54, INKY_GAP = 4;
+const ST_KB = 30, ST_MIN = -62, ST_TUCK = -66, INKY_GAP = 4;   // round 14.4: the top roller tucks 8 css px further (the 2 px crimson outline on Inky costs 8 px of height)
 // the visible height with the keyboard up, before it is up: the screen height minus a keyboard + its ^ v ✓ bar + the
 // status bar (iPhone 390x844: ~454 css px, the 375x667 SE: ~357, 430x932: ~503)
 const KB_VIS = () => { const sh = (typeof screen !== 'undefined' && screen.height) || innerHeight; return sh - Math.round(sh * .45) - 10; };
 // keyboard timing: 'late' (default) = no keyboard during the animation, 'tap to write' after it; 'early' = round 14 (primer at the tap)
 const KB_MODE = typeof location !== 'undefined' && new URLSearchParams(location.search).get('kb') === 'early' ? 'early' : 'late';
+const DBG = typeof location !== 'undefined' && new URLSearchParams(location.search).has('kbdbg'); let dbgEl = null;   // ?kbdbg=1: a tiny readout of the visible height / planned type size
 const FOCUS_DELAY = 420;                                  // ms after the unroll has fully played before the caret lands on line 1
 const DENY_STAMPS = [{ src: 'assets/compose/stamp-kyakka.png', alt: '却下 (rejected)' }, { src: 'assets/compose/stamp-fuka.png', alt: '不可 (not allowed)' }];
 // at most 3 lines: anything past the 3rd joins the 3rd (a pasted 4-line poem does not vanish)
@@ -78,9 +79,14 @@ const DPR3 = typeof devicePixelRatio === 'number' && devicePixelRatio >= 2.5;
 // (40px at DPR 3 is 7.5 device px per font px, so its blocks differ by 1 device px; worth it so a typical line gets > 37.33px)
 const FS_OPEN = DPR3 ? [48, 128 / 3, 40, 112 / 3, 32, 80 / 3, 64 / 3, 16] : [48, 40, 32, 24, 20, 16];
 // round 14.1, keyboard-up / touch type: about DOUBLE round 14's (32-40px), each row shrinking only if it would hit the edge
-const FS_KB = DPR3 ? [112 / 3, 32, 80 / 3, 64 / 3, 16] : [40, 32, 24, 20, 16], FS_KB_SHORT = DPR3 ? [32, 80 / 3, 64 / 3, 16] : [32, 24, 20, 16],
-  FS_KB_SMALL = DPR3 ? [80 / 3, 64 / 3, 16] : [24, 20, 16], FS_KB_TINY = DPR3 ? [64 / 3, 16] : [20, 16];
-export const FS_TIERS = [FS_KB, FS_KB_SHORT, FS_KB_SMALL, FS_KB_TINY];
+// round 14.4: +15-20% over 14.2's top size (37.33): 42.67 at DPR 3 (8 device px per font px; 48 at DPR 2), then the old sizes
+// as the fallback tiers when the visible height is short
+// round 14.4 (keyboard-up size): the keyboard-up layout used to drop a WHOLE tier (42.7 -> 32 -> 21.3) the moment the visible height was a
+// few px short, so the type looked big until the keyboard came up. Now the top tier holds as long as compaction can find the room (the top
+// roller tucks, ST_MIN), and below that the size steps down GRADUALLY: one fine step at a time (about 2.7px per step), only as far as the
+// visible height needs. A row still shrinks on its own only if its text is too wide.
+const FS_STEPS = DPR3 ? [128 / 3, 40, 112 / 3, 104 / 3, 32, 88 / 3, 80 / 3, 72 / 3, 64 / 3, 16] : [48, 44, 40, 36, 32, 28, 24, 20, 16];
+export const FS_TIERS = FS_STEPS.slice(0, -1).map((_, i) => FS_STEPS.slice(i));
 // round 14.1: with the big touch type the pixel font is set one font px tighter per letter (KERN, CSS letter-spacing
 // -fs/16 on the drawn words and the textarea alike), so a typical line keeps the big size; tw() = the drawn width
 let KERN = 0;
@@ -117,7 +123,7 @@ export function mountCompose(deps) {
   const theme = document.querySelector('meta[name="theme-color"]'), theme0 = theme?.content;
   const field = new InkField({ z: 20 });
   const inky = new RedInky({ R: 5.6, z: 60, bigEyes: false, fury: true, chunky: true, worried: true });   // round 14.1: 80% of round 14 (R 7), chunkier, more worried
-  const INKY_H = () => Math.ceil(inky.R * 2.6 * 4) + 2;          // css px from his foot to the top of his head
+  const INKY_H = () => Math.ceil(inky.R * 2.6 * 4) + 2 + 8;          // css px from his foot to the top of his head (+ the 2 px (8 css) crimson outline, round 14.4)
   const art = new ScrollArt($('#scv'), { maxRows: 92, seed: 8370, outline: 2 });   // 8370: the torn edges stay shallow beside the three writing rows (more room for big type)
   const bubble = document.createElement('div'); bubble.className = 'cbubble'; bubble.hidden = true; root.appendChild(bubble);
   const bcv = document.createElement('canvas'); bcv.className = 'bcv';
@@ -207,6 +213,8 @@ export function mountCompose(deps) {
     else if (!plan) plan = kbPlan(kbUp ? vvh : Math.min(vvh, KB_VIS()));  // decided once: the keyboard-up layout, kept when it goes down
     else if (kbUp && plan.st + plan.body > vvh + .5) plan = kbPlan(vvh);   // the real keyboard is taller than planned: re-plan (rare)
     $('#cscroll').style.setProperty('--st', (plan ? plan.st : 34) + 'px');
+    if (DBG) { dbgEl ||= Object.assign(document.body.appendChild(document.createElement('div')), { id: 'kbdbg' }); Object.assign(dbgEl.style, { position: 'fixed', left: '2px', top: '2px', zIndex: 99999, font: '10px monospace', color: '#0f0', background: 'rgba(0,0,0,.7)', padding: '2px 4px', pointerEvents: 'none' });
+      dbgEl.textContent = `vvh ${Math.round(vvh)} ih ${innerHeight} sh ${screen.height} kbUp ${kbUp} fs ${plan ? plan.sizes[0].toFixed(1) : '-'} st ${plan ? Math.round(plan.st) : '-'} body ${plan ? Math.round(plan.body) : '-'}`; }   // ?kbdbg=1: what the real phone reports
     if (wasKb !== kb) drawSeals();
     if (wasKb !== kb || (plan && plan.rows + ':' + plan.st + ':' + plan.sizes[0]) !== wasPlan) { fitPaper(); update(); }
   }
@@ -397,25 +405,59 @@ export function mountCompose(deps) {
     advanced = -1;
     if (li < MAXL - 1) focusLine(li + 1); else submit();      // line 3: exactly like pressing the checkmark seal
   }
-  // AUTO-ADVANCE: a line that has just hit its count (5 / 7) and is then ended by a space or punctuation, with the caret at
-  // the end of that line and the next line still empty, moves the caret to the next line (the space is dropped). Never
-  // mid-word (it waits for the word end), never past the target (a line that overshoots just overflows, numerals turn
-  // red), and line 3 stays put: complete = ready to post (the sign row shows; Return or the seal posts).
-  const WORD_END = /[\s.,;:!?…—–-]$/;
-  function autoAdvance(e) {
-    if (e.isComposing || !/^insert(Text|CompositionText|ReplacementText)$/.test(e.inputType || '')) return false;
-    if (ta.selectionStart !== ta.selectionEnd) return false;
-    const v = ta.value, s0 = ta.selectionStart, { li } = caretAt(), at = lineStart(v, li), nl = v.indexOf('\n', at), end = nl < 0 ? v.length : nl;
-    if (li >= MAXL - 1 || s0 !== end || !WORD_END.test(v.slice(at, s0))) return false;
-    const line = v.slice(at, end);
-    if (!line.trim() || (texts()[li + 1] ?? '').trim()) return false;
-    const res = countLine(line, PATTERN[li]);
-    if (!(res.ok && res.count === PATTERN[li])) return false;
-    const kept = line.replace(/\s+$/, '');                         // drop the space that ended the word
-    ta.value = v.slice(0, at) + kept + v.slice(end);
-    focusLine(li + 1, 0); advanced = li + 1;
-    return true;
+  // AUTO-FLOW (round 14.4): the writing flows by itself. With the caret at the end of line 1 or 2 and the line's last word
+  // FINISHED (a space / punctuation was typed, or ~350 ms of idle, whichever comes first - IME / autocorrect / fast typing
+  // safe: it runs off the input events and compositionend, never mid-composition):
+  //   * the count is exactly the target (5 / 7)  -> the caret moves on to the next line (the trailing space is dropped);
+  //     on an IDLE pause that needs the last word to be a real dictionary word (a half-typed "wat" can't have it)
+  //   * the count has gone OVER (every reading > target) -> the words past the target spill onto the front of the next
+  //     line and the caret follows them (the long line in Tiago's screenshot: "ah this is much" | "better but now ...")
+  // Line 3 never flows (complete = ready to post: the sign row shows; Return or the seal posts). A paste of one long line is
+  // re-flowed the same way across the three lines. Keeps the one textarea focused throughout (no blur, no keyboard flicker).
+  const WORD_END = /[\s.,;:!?…—–-]$/, IDLE_MS = 350, minSum = r => Math.min(...r.possible);
+  // split a line at the word boundary that fits the target: { keep, spill } (spill '' = nothing to move)
+  function fitLine(line, target) {
+    const res = countLine(line, target); if (!res.words.length || minSum(res) <= target) return { keep: line, spill: '' };
+    const starts = [...line.matchAll(/\S+/g)].map(m => m.index);          // where each space-separated word starts (countLine's own `from` is the word text, not an offset)
+    let cut = -1;
+    for (let k = 1; k < starts.length; k++) { const pre = countLine(line.slice(0, starts[k]), target); if (pre.ok) { cut = k; break; } if (minSum(pre) >= target) break; cut = k; }   // first exact hit, else the last prefix still under
+    if (cut < 1) return { keep: line, spill: '' };                    // one huge word: never leave a line empty
+    return { keep: line.slice(0, starts[cut]).replace(/\s+$/, ''), spill: line.slice(starts[cut]).trim() };
   }
+  function autoFlow(e, idle = false) {
+    if (e && (e.isComposing || !/^insert(Text|CompositionText|ReplacementText|FromComposition)?$/.test(e.inputType || 'insertText'))) return false;
+    if (!opened || busy || ta.selectionStart !== ta.selectionEnd) return false;
+    const v = ta.value, s0 = ta.selectionStart, { li } = caretAt(), at = lineStart(v, li), nl = v.indexOf('\n', at), end = nl < 0 ? v.length : nl;
+    if (li >= MAXL - 1 || s0 !== end) return false;
+    const line = v.slice(at, end); if (!line.trim()) return false;
+    const done = idle || WORD_END.test(line); if (!done) return false;
+    const res = countLine(line, PATTERN[li]), next = (texts()[li + 1] ?? '').trim();
+    if (res.ok) {
+      if (next) return false;
+      const last = res.words[res.words.length - 1];
+      if (idle && !WORD_END.test(line) && (!last || last.source === 'guess')) return false;
+      ta.value = v.slice(0, at) + line.replace(/\s+$/, '') + v.slice(end);
+      focusLine(li + 1, 0); advanced = li + 1; return true;
+    }
+    if (minSum(res) > PATTERN[li]) {
+      const { keep, spill } = fitLine(line, PATTERN[li]); if (!spill) return false;
+      const rest = v.slice(end + 1), tail = nl < 0 ? '' : rest;      // everything after this line
+      const nxtEnd = tail.indexOf('\n'), nxt = nl < 0 ? '' : (nxtEnd < 0 ? tail : tail.slice(0, nxtEnd)), after = nl < 0 ? '' : (nxtEnd < 0 ? '' : tail.slice(nxtEnd));
+      const lead = spill + ' ';
+      ta.value = v.slice(0, at) + keep + '\n' + lead + nxt.replace(/^\s+/, '') + after;
+      const pos = at + keep.length + 1 + (spill.length + 1);
+      advanced = -1; if (ta.disabled) ta.disabled = false; setCaret(Math.min(pos, ta.value.length)); update(); return true;
+    }
+    return false;
+  }
+  // re-flow a whole value (a paste of one long line): every line over its target hands its overflow to the next
+  function reflowAll(txt) {
+    const L = txt.split('\n').map(x => x.trim()).filter(x => x !== ''); if (!L.length) return txt;
+    for (let i = 0; i < MAXL - 1 && i < L.length; i++) { const { keep, spill } = fitLine(L[i], PATTERN[i]); if (spill) { L[i] = keep; if (L[i + 1] != null) L[i + 1] = spill + ' ' + L[i + 1]; else L.push(spill); } }
+    return L.slice(0, MAXL - 1).concat(L.length > MAXL - 1 ? [L.slice(MAXL - 1).join(' ')] : []).join('\n');
+  }
+  let idleTok = 0;
+  const scheduleIdle = () => { const tok = ++idleTok; clock.wait(IDLE_MS).then(() => { if (tok === idleTok && opened && !busy && document.activeElement === ta && autoFlow(null, true)) { poke(); update(); } }); };
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); kdEnter = true; setTimeout(() => kdEnter = false, 0); enter(); } });
   ta.addEventListener('beforeinput', e => {
     if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') { e.preventDefault(); if (!kdEnter) enter(); return; }
@@ -427,17 +469,20 @@ export function mountCompose(deps) {
   ta.addEventListener('input', e => {
     const v = ta.value, c = clampLines(v);
     if (c !== v) { const pos = ta.selectionStart; ta.value = c; setCaret(Math.min(pos, c.length)); }
-    if (!autoAdvance(e) && !/^delete/.test(e.inputType || '')) { if (advanced >= 0 && caretAt().col > 0) advanced = -1; }
+    if (!autoFlow(e) && !/^delete/.test(e.inputType || '')) { if (advanced >= 0 && caretAt().col > 0) advanced = -1; }
     if (/^delete/.test(e.inputType || '')) advanced = -1;
+    if (!e.isComposing && !/^delete/.test(e.inputType || '')) scheduleIdle(); else idleTok++;
     if (denied) clearDenied(); poke(); update();
   });
+  ta.addEventListener('compositionend', () => { setTimeout(() => { if (autoFlow(null)) { poke(); update(); } scheduleIdle(); }, 0); });   // IME / autocorrect finished a word
   ta.addEventListener('paste', e => {
     const raw = e.clipboardData?.getData('text'); if (raw == null) return;
     e.preventDefault();
     let t = raw.replace(/\r\n?/g, '\n');
     t = t.includes('\n') ? t.split('\n').map(s => s.trim()).filter(Boolean).join('\n') : t.includes(' / ') ? t.split(' / ').map(s => s.trim()).join('\n') : t;
-    const s0 = ta.selectionStart, s1 = ta.selectionEnd, v = clampLines(ta.value.slice(0, s0) + t + ta.value.slice(s1));
-    ta.value = v; setCaret(Math.min(v.length, clampLines(ta.value.slice(0, s0) + t).length));
+    const s0 = ta.selectionStart, s1 = ta.selectionEnd; let v = clampLines(ta.value.slice(0, s0) + t + ta.value.slice(s1));
+    if (!/\n/.test(raw.trim()) && !/ \/ /.test(raw) && !/\n/.test(ta.value.slice(0, s0) + ta.value.slice(s1))) { v = reflowAll(v); ta.value = v; setCaret(v.length); }   // round 14.4: one long line flows over the three
+    else { ta.value = v; setCaret(Math.min(v.length, clampLines(ta.value.slice(0, s0) + t).length)); }
     if (denied) clearDenied(); poke(); update();
   });
   ta.addEventListener('focus', () => { if (body.classList.contains('await-tap')) { body.classList.remove('await-tap'); if (tapBubble) { tapBubble = false; bubble.hidden = true; } } syncCaret(); poke(); });

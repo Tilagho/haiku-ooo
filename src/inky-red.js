@@ -8,7 +8,8 @@
 import { clock } from './clock.js';
 
 const P = 4;
-const BODY = [214, 58, 40], EDGE = [150, 34, 24], HI = [246, 136, 110], PAPER = [255, 250, 240], INK = [26, 24, 28];
+const BODY = [214, 58, 40], EDGE = [150, 34, 24], OUTLINE = [96, 20, 14],   // OUTLINE = the stamps' dark crimson rim (compose.js WAX.o)
+  OUT_R2 = 5, HI = [246, 136, 110], PAPER = [255, 250, 240], INK = [26, 24, 28];
 const CHEEK = [255, 182, 190], GOLD = [226, 167, 46], BLUE = [120, 170, 230], WHITE = [255, 250, 240];
 const G = 260, NR = 10;
 const ease = u => u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
@@ -230,12 +231,24 @@ export class RedInky {
       if (f >= 1) put(x, y, BODY);
       else if (f >= .82 && (x + y) % 2 === 0) put(x, y, EDGE);            // dithered wet edge
     }
-    for (const p of this.puddles) for (let k = -p.w; k <= p.w; k++) if (p.life > .5 || (k + Math.round(p.x)) % 2 === 0) put(p.x + k, p.y, p.color);
     if (showBody) this.face(cx, cy, put);
     if (showBody && this.tapping && this.grounded) this.foot(cx, put);
     if (showBody && this.hanko) this.drawHanko(cx, cy - R * 1.3 * this.sy, put);
+    this.outline(D, x0, y0, x1, y1);                      // round 14.4: a thick (2 px) dark crimson outline round the WHOLE silhouette (body, brows, sweat drop, hanko), every state
+    for (const p of this.puddles) for (let k = -p.w; k <= p.w; k++) if (p.life > .5 || (k + Math.round(p.x)) % 2 === 0) put(p.x + k, p.y, p.color);
     for (const s of this.sparks) { put(s.x, s.y, s.color); if (s.life > .5) { put(s.x + 1, s.y, s.color); put(s.x - 1, s.y, s.color); put(s.x, s.y + 1, s.color); put(s.x, s.y - 1, s.color); } }
     this.ctx.putImageData(img, 0, 0);
+  }
+  // dilate every drawn pixel by 2 px (a chunky cartoony rim, matching the stamps) into the transparent pixels round it
+  outline(D, x0, y0, x1, y1) {
+    const { cw, ch } = this, X0 = Math.max(0, x0 - 3), Y0 = Math.max(0, y0 - 3), X1 = Math.min(cw - 1, x1 + 3), Y1 = Math.min(ch - 1, y1 + 3), w = X1 - X0 + 1, h = Y1 - Y0 + 1;
+    if (w <= 0 || h <= 0) return; const m = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (D[((y + Y0) * cw + x + X0) * 4 + 3]) m[y * w + x] = 1;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      if (m[y * w + x]) continue; let hit = false;
+      for (let dy = -2; dy <= 2 && !hit; dy++) { const yy = y + dy; if (yy < 0 || yy >= h) continue; for (let dx = -2; dx <= 2; dx++) { const xx = x + dx; if (xx < 0 || xx >= w || dx * dx + dy * dy > OUT_R2) continue; if (m[yy * w + xx] === 1) { hit = true; break; } } }
+      if (hit) { const i = ((y + Y0) * cw + x + X0) * 4; D[i] = OUTLINE[0]; D[i + 1] = OUTLINE[1]; D[i + 2] = OUTLINE[2]; D[i + 3] = 255; }
+    }
   }
   foot(cx, put) {                                    // a little stub foot tapping beside him + dust ticks
     const ph = (this.t * 4.2) % 1, up = ph > .5 ? 1 : 0, fx = Math.round(cx + this.R * 1.05), fy = Math.round(this.fy) - 1 - up;
