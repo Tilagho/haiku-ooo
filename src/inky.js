@@ -178,7 +178,7 @@ export class Inky {
   }
   // let go: keep the throw velocity, fall with gravity, plop onto the float line
   throw() {
-    this.mode = 'roam'; this.grounded = false; this.floor = this.pageFloor(); this.bounces = 0;
+    this.mode = 'roam'; this.grounded = false; this.floor = this.pageFloor(); this.bounces = 0; this.flung = true;   // (flung: his landings / wall hits make a wet slap until he settles)
     const V = this.reduced ? 120 : 420; this.vx = Math.max(-V, Math.min(V, this.vx)); this.vy = Math.max(-V, Math.min(V, this.vy));
     if (this.fy > this.floor) this.vy = Math.min(this.vy, -Math.sqrt(2 * G * (this.fy - this.floor + 4)));   // dropped below the line: hop up onto it
     if (this.dizzy) { this.dizzyT = this.reduced ? 2 : rnd(2, 4); this.dizzy = 0; }
@@ -188,6 +188,7 @@ export class Inky {
   poke(now = clock.now()) {
     const r = this.meter.tap(now); this.lastPoke = now;
     if (r.kind === 'ignored') return r;
+    this.onSfx?.(r.kind === 'splat' ? 'splat' : 'poke', { anger: Math.min(1, r.taps / (this.meter.splatAt || 8)) });   // round 15.0 sound: angrier toward the splat
     const R = this.reduced;
     if (r.kind === 'splat') this.splatDown();
     else {
@@ -202,6 +203,7 @@ export class Inky {
   squashOn(nx, ny, a) { const I = this.imp; if (a < I.s - .05) return; I.nx = nx; I.ny = ny; I.s = Math.max(I.s, a * (this.reduced ? .5 : 1)); I.sv = 0; }
   hitWall(side, v, flying) {
     if (v < 35) return;
+    if ((this.mode === 'drag' && !this._wallX) || (this.mode !== 'drag' && this.flung)) this.onSfx?.('impact', { strength: Math.min(1, v / 380), where: 'wall' });   // (dragging: once per contact, not while held against it)
     this.squashOn(side, 0, Math.min(.74, v / 380));   // (14.1: flatter, toward almost flat on hard throws)
     if (v > 70 && this.visible) this.splat(Math.min(6, Math.round(v / 70)), v / 320, INK, this.x + side * this.R * .9, this.fy - this.R);
     if (flying && v > 130 && !this.reduced) { this.stick = .07 + Math.min(.11, v / 3600); this.stickV = this.vx; this.vx = 0; }   // stuck flat for a beat
@@ -212,7 +214,7 @@ export class Inky {
     this.puddles.push({ x: this.x, y: this.fy, w: Math.round(this.R * 1.5), life: 1.2, color: WASH });
   }
   popUp() {
-    this.splatT = 0; this.sRest = 0; this.meter.revive();
+    this.splatT = 0; this.sRest = 0; this.meter.revive(); this.onSfx?.('reform');
     this.s = this.reduced ? 0 : -.55; this.sv = this.reduced ? 0 : -6; this.wobble(1.3); this.setMood('happy'); this.giggle = .8;
     if (!this.reduced) { this.grounded = true; this.jump(.8); }
     this.onPopUp?.();
@@ -278,8 +280,10 @@ export class Inky {
       const d = this.drag, k = this.reduced ? 420 : 150, c = this.reduced ? 40 : 13;
       this.vx += ((d.tx - this.x) * k - this.vx * c) * dt; this.vy += ((d.ty - this.fy) * k - this.vy * c) * dt;
       this.x += this.vx * dt; this.fy += this.vy * dt;
-      if (this.x < R || this.x > this.cw - R) { const side = this.x < R ? -1 : 1; this.hitWall(side, Math.abs(this.vx), false); this.vx = 0; }   // dragged into the screen edge: he squashes on it
+      if (this.x < R || this.x > this.cw - R) { const side = this.x < R ? -1 : 1; this.hitWall(side, Math.abs(this.vx), false); this.vx = 0; this._wallX = side; }   // dragged into the screen edge: he squashes on it
+      else if (this.x > R + 1 && this.x < this.cw - R - 1) this._wallX = 0;   // (off the wall again: the next contact makes a sound)
       { const pen = d.tx < R ? R - d.tx : d.tx > this.cw - R ? d.tx - (this.cw - R) : 0; if (pen > .5) this.squashOn(d.tx < R ? -1 : 1, 0, Math.min(.55, pen / R * .9)); }   // pressed into it: stays flat
+      { const e = this.fy < R * 2.4 ? -1 : this.fy > this.ch - 1 ? 1 : 0; if (e && e !== this._edgeY && Math.abs(this.vy) > 60) this.onSfx?.('impact', { strength: Math.min(1, Math.abs(this.vy) / 380), where: e < 0 ? 'ceiling' : 'floor' }); this._edgeY = e; }   // squished into the top / bottom
       this.x = Math.max(R, Math.min(this.cw - R, this.x)); this.fy = Math.max(R * 2.4, Math.min(this.ch - 1, this.fy));
     } else if (!this.grounded && this.floor != null) {             // body ballistics (hops, throws)
       if (this.stick > 0) {                                        // SPLATTED flat on the wall: hangs there a beat, sliding a little
@@ -288,13 +292,14 @@ export class Inky {
       }
       this.vy += G * dt; this.x += this.vx * dt; this.fy += this.vy * dt;
       if (this.x < R || this.x > this.cw - R) { const side = this.x < R ? -1 : 1, v = Math.abs(this.vx); this.x = Math.max(R, Math.min(this.cw - R, this.x)); this.vx *= -.45; this.wobble(.5); this.hitWall(side, v, true); }   // off the screen sides
-      if (this.fy < R * 2.4 && this.vy < 0) { this.fy = R * 2.4; this.vy *= -.3; }
+      if (this.fy < R * 2.4 && this.vy < 0) { if (this.flung && this.vy < -60) this.onSfx?.('impact', { strength: Math.min(1, -this.vy / 380), where: 'ceiling' }); this.fy = R * 2.4; this.vy *= -.3; }
       if (this.fy >= this.floor && this.vy > 0) {
         const impact = this.vy; this.fy = this.floor;
+        if (this.flung && impact > 70) this.onSfx?.('impact', { strength: Math.min(1, impact / 330), where: 'floor' });
         this.s = Math.min(.45, impact / 300); this.sv = 0; if (impact > 70) this.splat(Math.round(impact / 25), impact / 160);
         this.squashOn(0, 1, Math.min(.7, impact / 330));                          // flattens along the floor normal too
         if (impact > 70 && this.bounces < 1 && !this.reduced) { this.bounces++; this.vy = -impact * .28; this.vx *= .5; this.wobble(.8); }   // plop + one small bounce
-        else { this.vy = 0; this.vx = 0; this.grounded = true; this.bounces = 0; }
+        else { this.vy = 0; this.vx = 0; this.grounded = true; this.bounces = 0; this.flung = false; }
         this.onLand?.(impact);
       }
     }

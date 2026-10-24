@@ -24,6 +24,7 @@
 // Drawn into a low-res canvas (1 art px = 3 CSS px, the background's grid), shown nearest-neighbour. Runs on the
 // shared clock, pauses off-screen, and under reduced motion there is no idle breeze or brushing (lifting a flag
 // still works, and the egg reacts without jumping).
+import { sfx } from './sfx.js';   // round 15.0 sound events: egg found / scurries off / poofs
 import { drawLine, measure, font } from './brush-text.js';
 import KANJI from './kanji-glyphs.js';
 import { clock } from './clock.js';
@@ -424,10 +425,10 @@ export class Egg {
   step(h) {
     this.t += h; const ex = this.exposed;
     if (this.state === 'gone') return;
-    if (this.state === 'flee') { if (this.t >= (this.reduced ? .01 : FLEE_T)) { this.end = this.runPos(this.reduced ? 0 : FLEE_T); this.state = 'poof'; this.t = 0; } return; }
+    if (this.state === 'flee') { if (this.t >= (this.reduced ? .01 : FLEE_T)) { this.end = this.runPos(this.reduced ? 0 : FLEE_T); this.state = 'poof'; this.t = 0; sfx('poof'); } return; }
     if (this.state === 'poof') { if (this.t >= POOF_T) { this.state = 'gone'; this.t = 0; } return; }
-    if (this.disc && (this.found += h) >= this.hold) { this.state = 'flee'; this.t = 0; return; }   // found ~1 s ago: off it goes
-    if (this.state === 'sleep' && ex > .38) { this.state = 'startle'; this.t = 0; this.seen++; if (!this.disc) { this.disc = true; this.found = 0; } }
+    if (this.disc && (this.found += h) >= this.hold) { this.state = 'flee'; this.t = 0; sfx('scurry'); return; }   // found ~1 s ago: off it goes
+    if (this.state === 'sleep' && ex > .38) { this.state = 'startle'; this.t = 0; this.seen++; if (!this.disc) { this.disc = true; this.found = 0; sfx('eggReveal'); } }
     else if (this.state === 'startle' && this.t > .9) { this.state = 'awake'; this.t = 0; }
     else if ((this.state === 'awake' || this.state === 'startle') && ex < .12) { this.cover += h; if (this.cover > .6) { this.state = 'settle'; this.t = 0; } }
     else if (this.state === 'settle' && this.t > .7) { this.state = 'sleep'; this.t = 0; }

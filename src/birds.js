@@ -18,6 +18,7 @@
 //   ?birds=few|small|skein|flock forces the kind (first flight after ~1 s); ?birds=off disables.
 //   Captures: HB.view.birds.spawn(kind, { dir }) / spawnPair() with HB.clock in manual mode; .flocks = all in the air.
 // The sim and sprite masks are pure (Node-testable); only mountBirds() touches the DOM.
+import { sfx } from './sfx.js';
 import { SCROLL_W, skyLanes } from './scroll-engine2.js';
 import { rng, hash } from './brush-text.js';
 
@@ -240,7 +241,7 @@ export function mountBirds(view, { clock, reduced = false, search = typeof locat
     }
     ctl.lastKO = false;
     if (near && rollKnock(ctl.rand, ctl.ko) && nF.knock(near)) {   // 9 in 10 (KO_P): the bird nearest the tap is knocked out of the sky
-      ctl.lastKO = true; ctl.knocked++;
+      ctl.lastKO = true; ctl.knocked++; sfx('hitmarker');   // round 15.0: birds are silent until one is tapped and hit
       const R = nF.R, gray = ['rgb(150,146,152)', 'rgb(196,192,196)', 'rgb(96,92,100)', 'rgb(224,220,222)'];
       for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2 + R(), v = 38 + R() * 30; ctl.fx.push({ k: 'puff', x: near.x, y: near.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, t: 0, life: .45 + R() * .2, c: gray[i % 4] }); }
       for (let i = 0; i < 2; i++) ctl.fx.push({ k: 'feather', x: near.x + (R() - .5) * 6, y: near.y, vx: 0, vy: 10, t: 0, life: 1.5 + R() * .5 });

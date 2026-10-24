@@ -169,3 +169,10 @@ body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .ink
 .cr-close { text-shadow: 2px 0 0 currentColor; flex: none; margin: 0; padding: 8px 0 6px; text-align: center; font: 400 32px/1.12 var(--small); color: var(--ink); border-top: 3px dotted rgba(98,72,46,.55); }
 .cr-poof { position: absolute; image-rendering: pixelated; pointer-events: none; display: none; }
 @media (prefers-reduced-motion: reduce) { .cr-btn:active .cr-w { transform: none; } .cr-w::after { display: none; } .cr-w { text-decoration: underline dotted 2px; text-underline-offset: 4px; } }   /* no shine; a dotted underline in the same ink marks it as tappable */
+
+/* round 15.0: the sound toggle, a small pixel speaker at the right end of the 俳句の掲示板 line (scrolls away with the header) */
+.snd-btn { position: absolute; z-index: 3; right: max(18px, calc(env(safe-area-inset-right) + 8px)); top: 50%; margin-top: -22px !important; width: 44px; height: 44px; margin: 0; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; -webkit-tap-highlight-color: transparent; }
+.snd-art { width: 36px; height: 27px; image-rendering: pixelated; display: block; opacity: .9; }
+.snd-btn:active .snd-art { transform: translateY(3px); }
+.snd-btn:focus-visible { outline: 3px solid #6b6670; outline-offset: -3px; }
+body.composing .snd-btn, body.capture-clean .snd-btn { visibility: hidden; }

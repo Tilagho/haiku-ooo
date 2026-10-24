@@ -11,6 +11,7 @@ import { RedInky } from './inky-red.js';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { InkField } from './ink-field.js';
 import { ScrollArt, SP, RH } from './scroll-art.js';
+import { sfx } from './sfx.js';                        // round 15.0 sound events (src/sound-wire.js plays them)
 
 const NAMES = ['five', 'seven', 'five'];
 const PH = ['five syllables', 'then seven', 'and five to end'];
@@ -636,6 +637,7 @@ export function mountCompose(deps) {
   function bugInky() {
     if (!opened || !inky.visible || inky.mode !== 'coach') return;
     const now = clock.now(); bugTaps = now - bugAt < 2200 ? bugTaps + 1 : 1; bugAt = now;
+    sfx('poke', { anger: Math.min(1, (bugTaps - 1) / 6) });   // red Inky: the same poke, crosser with each tap in a row
     inky.s = .55 + Math.min(.15, bugTaps * .04); inky.sv = 0; inky.wobble(.9 + Math.min(.8, bugTaps * .15));   // squish + wobble
     if (busy || denied) return;                    // mid-post / mid-denial: only the squish, no face or words over it
     inky.tapping = false;
@@ -764,6 +766,7 @@ export function mountCompose(deps) {
     anim(sc, [{ transform: 'translateX(-50%) translateY(-140px) scale(.92,1.1)' }, { transform: 'translateX(-50%) translateY(0) scale(1)' }], { stiffness: 340, damping: 17 });
     await clock.wait(240);
     busyScroll = true; unrolling = true;
+    sfx('scrollOpen');                              // the write scroll unrolls: old paper
     const done = art.setTarget(rowsNow(), { k: 95, c: 11 });
     await clock.wait(380);
     const d = dock(); inky.visible = true; inky.setMood('cheer'); inky.look = -1;
@@ -775,6 +778,7 @@ export function mountCompose(deps) {
   async function rollUp() {
     body.classList.remove('opened');
     const sc = $('#cscroll'); busyScroll = true;
+    sfx('scrollClose');
     await art.setTarget(0, { mode: 'roll' });
     const b = sc.animate([{ transform: 'translateX(-50%)' }, { transform: 'translateX(-50%) translateY(10px) scale(1.06,.85)', offset: .3 }, { transform: 'translateX(-50%) translateY(-260px) scale(.9,1.15)' }], { duration: 420, easing: 'cubic-bezier(.5,0,.8,.5)', fill: 'forwards' });
     await clock.wait(420); sc.hidden = true; b.cancel(); busyScroll = false;
@@ -817,7 +821,7 @@ export function mountCompose(deps) {
     const d0 = dock(); inky.hopTo(d0.x, d0.foot, .42, 22);
     await clock.wait(120);
     blurAll(); await rollUp();
-    inky.mode = 'idle'; inky.setMood('sad'); say('…oh. okay.', 1000);
+    inky.mode = 'idle'; inky.setMood('sad'); say('…oh. okay.', 1000); sfx('sadNotes');   // backed out of the haiku: the sad bones
     await clock.wait(600);
     await inky.sadRunOff(-1, { pace: .7 });
     bubble.hidden = true;
@@ -850,7 +854,7 @@ export function mountCompose(deps) {
     await inky.hopTo(tx, ty - 66, .46, 46); inky.s = -.35; await clock.wait(120);
     inky.floor = (ty + 10) / 4; inky.grounded = false; inky.vy = 330; inky.vx = 0;
     await new Promise(res => inky.onLand = () => { inky.onLand = null; res(); });
-    $('#cpost').classList.add('stamped');
+    $('#cpost').classList.add('stamped'); sfx('stampSuccess');   // accepted: the triumphant stamp
     anim($('#cpost .wax'), [{ transform: 'scale(1.3,.7)' }, { transform: 'scale(1)' }], { stiffness: 520, damping: 14 }); shake(.5);
     inky.splat(6, 1); inky.setMood('cheer');
     await clock.wait(140);
@@ -882,7 +886,7 @@ export function mountCompose(deps) {
     deny_.hidden = false; Object.assign(deny_.style, { left: tx + 'px', top: ty - 110 + 'px', opacity: 1 });
     const rot = (denyN % 2 ? -1 : 1) * (4 + Math.random() * 8);                 // a fresh 4-12 degree tilt, leaning the other way each try
     anim(deny_, [{ transform: `rotate(${rot - 10}deg) scale(2.6)`, opacity: 0 }, { transform: `rotate(${rot}deg) scale(.86,1.12)`, opacity: 1, offset: .3 }, { transform: `rotate(${rot}deg) scale(1.06,.95)`, offset: .6 }, { transform: `rotate(${rot}deg) scale(1)`, opacity: 1 }], { stiffness: 460, damping: 17 }, { fill: 'forwards' });
-    shake(1.4);
+    shake(1.4); sfx('stampFail');                  // the submit failed: the heavy stamp
     // (no ink splat here: its droplets settled along the wrong line and read as a red error line)
     inky.hanko = false; inky.setMood('angry');
     await clock.wait(120);
@@ -901,6 +905,7 @@ export function mountCompose(deps) {
   async function installPost(post) {
     unlockTo = 0;                                           // newest is on top: be there before the black lifts
     homeInky = { x: innerWidth * .2, foot: innerHeight - 78 };
+    sfx('inkWash');                                         // published: the whole bucket of ink washes away
     const drained = drainHome();
     await clock.wait(700);
     let added = null;

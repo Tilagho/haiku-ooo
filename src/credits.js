@@ -12,6 +12,7 @@ import { clock } from './clock.js';
 
 // ---- every credit found in the repo (index.html footer, src/style.css + src/brush-font.js headers, README 'Round 4 credits',
 // src/cmu-data.js + src/kanji-glyphs.js headers, tools/fonts/misaki-LICENSE-ja.txt). Nothing here is invented. ----
+import { sfx } from './sfx.js';   // round 15.0 sound events
 export const CC_BY_LINE = 'type: ChiKareGo2 & FindersKeepers by Giles Booth (CC BY)';   // the old footer text, verbatim
 export const COPYRIGHT = '© 2026 Tiago Ramirez All Rights Reserved'   // the board header line (round 14.7b: Title Case, one run with the 'Credits' label);
 export const CREDIT_COPY = '© 2026 all rights reserved';   // round 14.7: the scroll says it once ('Made by Tiago Ramirez'); the name is not repeated in a second authorship line
@@ -93,18 +94,18 @@ export function mountCredits({ clock: clk = clock, reduced = false, root = docum
     if (state !== 'closed' || body.classList.contains('composing')) return false;
     state = 'opening'; lock(); layout(); ov.hidden = false; list.scrollTop = 0; fitDeco(); poof.style.display = 'none'; $('.cr-art').style.visibility = ''; win.style.visibility = '';
     openedAt = clk.now(); btn.setAttribute('aria-expanded', 'true');
-    if (reduced) { setDim(1); art.jump(rows); paper.style.height = Math.max(0, art.openCss - 6) + 'px'; win.style.height = Math.max(0, art.openCss - 12) + 'px'; state = 'open'; return true; }
+    if (reduced) { sfx('scrollOpen'); setDim(1); art.jump(rows); paper.style.height = Math.max(0, art.openCss - 6) + 'px'; win.style.height = Math.max(0, art.openCss - 12) + 'px'; state = 'open'; return true; }
     art.jump(0); paper.style.height = '0px'; win.style.height = '0px'; setDim(0);
-    tween(0, 1, 220, setDim); await art.setTarget(rows, { k: 95, c: 11 });
+    tween(0, 1, 220, setDim); sfx('scrollOpen'); await art.setTarget(rows, { k: 95, c: 11 });
     if (state === 'opening') state = 'open'; return true;
   }
   async function close() {
     if (state !== 'open' && !(state === 'opening' && clk.now() - openedAt > 400)) return false;
     state = 'closing'; btn.setAttribute('aria-expanded', 'false');
-    if (reduced) { done(); return true; }
-    await art.setTarget(0, { mode: 'roll' });
+    if (reduced) { sfx('poof'); done(); return true; }
+    sfx('scrollClose'); await art.setTarget(0, { mode: 'roll' });
     if (state !== 'closing') return false;
-    await puff(); done(); return true;
+    sfx('poof'); await puff(); done(); return true;   // the exit poof (the same one as the egg's)
   }
   function puff() {   // the scroll vanishes in a grayscale pixel poof (art px = 3 css px, the board's grid)
     const W = Math.ceil(scr.clientWidth / 3), Hh = 40; poof.width = W; poof.height = Hh;

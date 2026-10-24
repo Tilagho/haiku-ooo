@@ -14,6 +14,7 @@ import { mountNoren } from './noren.js';
 import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
+import { mountSound } from './sound-wire.js';   // round 15.0: synthesized sound (starts on the first tap; toggle in the header)
 
 const $ = s => document.querySelector(s);
 const store = createStore();
@@ -168,6 +169,7 @@ const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl, { wind: () =>
 const norenEl = $('#noren'), noren = norenEl ? mountNoren(norenEl) : null;
 const credits = mountCredits({ clock, reduced });   // round 14.5: the © line's 'credits' scroll (src/credits.js)
 const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; } });
+const sound = mountSound({ view, inky, clock });
 // springy press: squash on touch, spring back on release
 const booted = loadAll();
 // he slips in from off-screen once the board is up
@@ -175,7 +177,7 @@ booted.then(() => clock.wait(reduced ? 0 : 450)).then(() => { if (!composing()) 
 
 // test hooks for screenshots / e2e
 // Public hooks (see README, "Seal-stamp hook"): the compose flow calls HB.addPost(post) or the pieces directly.
-window.HB = { credits, view, inky, clock, booted, fabArt, noren, compose, wind, writeTapped, onWrite: null,
+window.HB = { sound, credits, view, inky, clock, booted, fabArt, noren, compose, wind, writeTapped, onWrite: null,
   rollUpButton: ms => fabArt?.rollUp(ms) ?? Promise.resolve(), unrollButton: ms => fabArt?.unroll(ms) ?? Promise.resolve(), copyText, copyPoem, lastCopied: () => lastCopied, stampDemo,
   typePoem: (el, o) => view.typePoem(el, o), stampSeal: (el, o) => view.stampSeal(el, o), addPost: addNewPost,
   openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say, speech, popBubble,
