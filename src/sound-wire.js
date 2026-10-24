@@ -25,7 +25,7 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
   let lastImpact = -1e9, dragging = false, dragAcc = 0, near = false;
   setSfxSink((name, p) => {
     if (snd.muted) return 'muted';
-    if (!live()) return 'locked';
+    if (!live()) { if (name === 'fabRoll' && snd._pending) { snd.play(name, p); return 'deferred'; } return 'locked'; }   // round 15.2: a write tap as the very first tap still gets its paper roll (~0.1 s late, once the graph is built)
     if (name === 'dragStart') snd.startDrag();
     else if (name === 'dragEnd') snd.stopDrag();
     else if (name === 'rustleStart') snd.startRustle();

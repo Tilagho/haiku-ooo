@@ -897,6 +897,7 @@ export function mountCompose(deps) {
     const rot = (denyN % 2 ? -1 : 1) * (4 + Math.random() * 8);                 // a fresh 4-12 degree tilt, leaning the other way each try
     anim(deny_, [{ transform: `rotate(${rot - 10}deg) scale(2.6)`, opacity: 0 }, { transform: `rotate(${rot}deg) scale(.86,1.12)`, opacity: 1, offset: .3 }, { transform: `rotate(${rot}deg) scale(1.06,.95)`, offset: .6 }, { transform: `rotate(${rot}deg) scale(1)`, opacity: 1 }], { stiffness: 460, damping: 17 }, { fill: 'forwards' });
     shake(1.4); sfx('stampFail');                  // the submit failed: the heavy stamp
+    sfx('baka', { delay: 0.25 });                   // round 15.2: ...and red Inky, an old man disappointed in you: a sigh, 'BAAH-kah' (the sigh starts as the slam settles)
     // (no ink splat here: its droplets settled along the wrong line and read as a red error line)
     inky.hanko = false; inky.setMood('angry');
     await clock.wait(120);

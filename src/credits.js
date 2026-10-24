@@ -14,10 +14,10 @@ import { clock } from './clock.js';
 // src/cmu-data.js + src/kanji-glyphs.js headers, tools/fonts/misaki-LICENSE-ja.txt). Nothing here is invented. ----
 import { sfx } from './sfx.js';   // round 15.0 sound events
 export const CC_BY_LINE = 'type: ChiKareGo2 & FindersKeepers by Giles Booth (CC BY)';   // the old footer text, verbatim
-export const COPYRIGHT = '© 2026 Tiago Ramirez All Rights Reserved'   // the board header line (round 14.7b: Title Case, one run with the 'Credits' label);
-export const CREDIT_COPY = '© 2026 all rights reserved';   // round 14.7: the scroll says it once ('Made by Tiago Ramirez'); the name is not repeated in a second authorship line
+export const COPYRIGHT = '© 2026 Tiago Ramirez. All Rights Reserved.'   // the board header line (round 14.7b: Title Case, one run with the 'Credits' label);
+export const CREDIT_COPY = '© 2026 all rights reserved.';   // round 14.7: the scroll says it once ('Made by Tiago Ramirez'); the name is not repeated in a second authorship line
 export const CREDITS = [
-  { h: 'haiku.ooo', p: ['Made by Tiago Ramirez', CREDIT_COPY] },
+  { h: 'haiku.ooo', p: ['Made by Tiago Ramirez.', CREDIT_COPY] },
   { h: 'type (CC BY)', p: [
     CC_BY_LINE,
     'ChiKareGo2 (a Chicago homage) and FindersKeepers (a Geneva 9 homage), by Giles Booth, from the BitFontMaker2 gallery (pentacom.jp). Homages to Susan Kare\'s 1984 Macintosh Chicago and Geneva 9.',

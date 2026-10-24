@@ -10,6 +10,7 @@ import { clock } from './clock.js';
 import { copyText } from './share.js';
 import { mountWind } from './wind.js';
 import { mountScrollButton } from './scroll-button.js';
+import { sfx } from './sfx.js';
 import { mountNoren } from './noren.js';
 import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
@@ -131,6 +132,7 @@ let rolling = false;
 const composing = () => !!compose?.opened || !!compose?.busy || document.body.classList.contains('composing');
 async function writeTapped() {
   if (composing() || rolling) return; rolling = true;
+  sfx('fabRoll');                                   // round 15.2: the button rolls itself up: the crunchy old-paper roll (the write scroll's roll-up sound), once, at the tap
   try { await fabArt?.rollUp(); } finally { rolling = false; }
   window.dispatchEvent(new CustomEvent('haiku:write'));
   await (window.HB?.onWrite || openCompose)();

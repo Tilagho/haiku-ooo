@@ -22,7 +22,7 @@
 
 export const DEFAULTS = {
   master: { volume: 0.7 },
-  wind: { volume: 0.42, tone: 0.45, gust: 0.5, width: 0.7, breeze: 0.5 },   // breeze: the ethereal little breezes that come and go (round 15.1)
+  wind: { volume: 0.42, tone: 0.45, gust: 0.5, width: 0.7, breeze: 0.5, bed: 1 },   // breeze: the passing gusts that come and go (15.1, 15.2); bed: the steady wind's own level (15.2)
   waterfall: { volume: 0.42, tone: 0.35, intensity: 0.5, drops: 0.35 },
   inky: { volume: 0.7, tone: 0.5, wet: 0.35 },
   scroll: { volume: 0.6, tone: 0.5, crackle: 0.5 },
@@ -30,9 +30,11 @@ export const DEFAULTS = {
   fx: { volume: 0.55, tone: 0.5 },          // the little moments: egg reveal, scurry, bird hit, sad notes, stamps
 };
 const KEY = 'hb-sound', MUTE_KEY = 'hb-sound-muted';
-// the SITE's levels (the lab DEFAULTS are for auditioning). Round 15.1: every ambient ~11 dB lower than 15.0 (wind .24 -> .068), one-shots unchanged
-export const SITE_LEVELS = { master: { volume: 0.6 }, wind: { volume: 0.068 }, waterfall: { volume: 0.068 }, inky: { volume: 0.6 }, scroll: { volume: 0.5 }, poof: { volume: 0.45 }, fx: { volume: 0.5 } };
-export const BREEZE_EVERY = [15, 45], BREEZE_LEN = [4, 10];   // a breeze starts every 15-45 s (random), each swells and dies over 4-10 s
+// the SITE's levels (the lab DEFAULTS are for auditioning). Round 15.1: every ambient ~11 dB lower than 15.0 (wind .24 -> .068), one-shots unchanged.
+// Round 15.2 (Tiago: 'even lower ... the wind softer with occasional passing gusts a little more pronounced'): the ambient buses another -6 dB
+// (.068 -> .034), the steady wind bed a further -3 dB under that (bed .708), and the passing gusts pushed up (breeze 1.1) so they rise ~4-6 dB over it
+export const SITE_LEVELS = { master: { volume: 0.6 }, wind: { volume: 0.034, bed: 0.708, breeze: 1.0, gust: 0.3 }, waterfall: { volume: 0.034 }, inky: { volume: 0.6 }, scroll: { volume: 0.5 }, poof: { volume: 0.45 }, fx: { volume: 0.5 } };
+export const BREEZE_EVERY = [15, 45], BREEZE_LEN = [5, 10];   // a gust starts every 15-45 s (random), each swells (2-4 s) and dies away over 5-10 s in all
 export const FLOOD_FILL = 0.9;    // s from the write tap's flood start until the black has filled the screen (measured 0.83 s in tools/e2e-round15_1-sound.mjs)
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -256,28 +258,31 @@ function makeIR(c, sec) {
 }
 
 // ---------- WIND: two band-passed pink-noise layers wide in stereo, a faint whistle, a brown-noise body; slow LFO drift + scheduled gusts ----------
-// a BREEZE (round 15.1): a small ethereal gust that slowly picks up and dies back down in the background, len 4-10 s.
-// An airy whoosh (pink noise, a soft band sweeping up then back), a thin glassy whistle (a narrow band gliding a few semitones) and a
-// faint shimmer on top, all carried across the stereo field (left -> right or back) as it passes. ~8 nodes, gone when it ends.
+// a passing GUST (round 15.1 'breeze', reshaped in 15.2): a soft airy whoosh that swells over 2-4 s, opens a little brighter at its peak, then fades
+// away slower, len 5-10 s. Pink noise through a band sweeping up then back, a thin glassy whistle gliding a few semitones and a faint shimmer, all
+// under a lowpass that opens at the peak and closes again (no hiss); carried across the stereo field as it passes. A smooth sine-squared swell
+// and fade (setValueCurveAtTime): never abrupt. ~9 nodes, gone when it ends.
 function breeze(E, t, len) {
-  const S = E.settings.wind, k = S.breeze ?? 0.5, dir = Math.random() < 0.5 ? -1 : 1, rise = len * rnd(0.4, 0.55);
-  const out = E.gain(0), p = E.pan(-dir * 0.7); out.connect(p).connect(E.bus.wind);
-  out.gain.setValueAtTime(0, t); out.gain.setTargetAtTime(1, t, rise / 2.2); out.gain.setTargetAtTime(0, t + rise, (len - rise) / 3);   // up slowly, down slower
+  const S = E.settings.wind, k = S.breeze ?? 0.5, dir = Math.random() < 0.5 ? -1 : 1, rise = Math.min(len * 0.5, rnd(2, 4)), fall = len - rise;
+  const out = E.gain(0), lp = E.filt('lowpass', 1300, 0.5), p = E.pan(-dir * 0.7); out.connect(lp).connect(p).connect(E.bus.wind);
+  const N = 96, cv = new Float32Array(N); for (let i = 0; i < N; i++) { const x = i / (N - 1) * len; cv[i] = x < rise ? Math.sin(Math.PI / 2 * x / rise) ** 2 : Math.cos(Math.PI / 2 * (x - rise) / fall) ** 2; }
+  out.gain.setValueAtTime(0, t); out.gain.setValueCurveAtTime(cv, t + 0.001, len);
+  lp.frequency.setValueAtTime(1300, t); lp.frequency.exponentialRampToValueAtTime(2600, t + rise); lp.frequency.exponentialRampToValueAtTime(1200, t + len);   // brighter at the peak
   p.pan.setValueAtTime(-dir * 0.7, t); p.pan.linearRampToValueAtTime(dir * 0.7, t + len);
-  const f0 = rnd(420, 700), whoosh = E.src('pink', t), wb = E.filt('bandpass', f0, 0.9), wg = E.gain(1.7 * k);
-  wb.frequency.setValueAtTime(f0, t); wb.frequency.exponentialRampToValueAtTime(f0 * rnd(1.6, 2.2), t + rise); wb.frequency.exponentialRampToValueAtTime(f0 * 1.1, t + len);
+  const f0 = rnd(380, 620), whoosh = E.src('pink', t), wb = E.filt('bandpass', f0, 0.9), wg = E.gain(1.7 * k);
+  wb.frequency.setValueAtTime(f0, t); wb.frequency.exponentialRampToValueAtTime(f0 * rnd(2.1, 2.7), t + rise); wb.frequency.exponentialRampToValueAtTime(f0 * 1.05, t + len);
   whoosh.connect(wb).connect(wg).connect(out);
-  const fw = rnd(1100, 1700), wh = E.src('white', t), hb = E.filt('bandpass', fw, 22), hg = E.gain(0.8 * k);            // the whistle
+  const fw = rnd(1100, 1600), wh = E.src('white', t), hb = E.filt('bandpass', fw, 22), hg = E.gain(0.7 * k);            // the whistle
   hb.frequency.setValueAtTime(fw, t); hb.frequency.linearRampToValueAtTime(fw * rnd(1.12, 1.3), t + rise); hb.frequency.linearRampToValueAtTime(fw * rnd(0.92, 1.02), t + len);
   wh.connect(hb).connect(hg).connect(out);
-  const sh = E.src('pink', t), sb = E.filt('bandpass', rnd(2600, 3400), 3), sg = E.gain(0.17 * k);                       // the shimmer (kept soft: no hiss on phones)
+  const sh = E.src('pink', t), sb = E.filt('bandpass', rnd(2400, 3000), 3), sg = E.gain(0.12 * k);                       // the shimmer (kept soft: no hiss on phones)
   sh.connect(sb).connect(sg).connect(out);
-  for (const n of [whoosh, wh, sh]) n.stop(t + len + 2);
+  for (const n of [whoosh, wh, sh]) n.stop(t + len + 0.5);
 }
 function windVoice(E) {
   const c = E.ctx, S = E.settings.wind, t0 = E.now, nodes = [];
   const out = E.gain(0), lp = E.filt('lowpass', 1600, 0.5), env = E.gain(0.55);
-  env.connect(lp).connect(out).connect(E.bus.wind);
+  env.connect(lp).connect(out).connect(E.gain(S.bed ?? 1)).connect(E.bus.wind);   // round 15.2: bed = the steady wind's level under the gusts
   out.gain.setTargetAtTime(1, t0, 1.5);                                     // fade in over ~4 s
   const base = () => 320 + S.tone * 520;
   const lay = (type, f, Q, g, pan, rate) => { const s = E.src(type, t0, { rate }), b = E.filt('bandpass', f, Q), a = E.gain(g), p = E.pan(pan); s.connect(b).connect(a).connect(p).connect(env); nodes.push(s); return { s, b, a, p }; };
@@ -442,6 +447,7 @@ const SHOTS = {
   },
   scrollOpen(E, t) { mapPaper(E, t, { dur: 1.3, open: true }); },
   scrollClose(E, t) { mapPaper(E, t, { dur: 0.95, open: false }); },
+  fabRoll(E, t) { SHOTS.scrollClose(E, t); },                           // round 15.2: the write button rolling itself up on the tap: the same old-paper roll
   // a cartoon 'pop!' then the puff of smoke: a bubble pops (a sine whose pitch jumps up as the film snaps, a tiny wet click), a soft breathy 'pff'
   // swells out of it, and the round-2 tail (the closing noise sweep + the three falling blips) is kept as it was, 35 ms later
   poof(E, t0) {
@@ -534,14 +540,14 @@ const fxShots = {
   },
   // bird hit: a punchy 'hit landed' tick (original): a hard metallic transient (inharmonic partials 1.9/3.1/4.7 kHz, 25 ms) + a dry noise crack + a short low thump for weight
   hitmarker(E, t) {
-    const d = fxOut(E), m = E.gain(1); m.connect(d);
+    const d = fxOut(E), m = E.gain(1.5); m.connect(d);                          // round 15.2: the tick / bone layer +3.5 dB (Tiago: louder)
     for (const [f, a] of [[1900, 0.32], [3100, 0.2], [4700, 0.09]]) { const o = E.ctx.createOscillator(), g = E.gain(0); o.type = 'triangle'; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.92, t + 0.03);
       g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(a, t + 0.0007); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045); o.connect(g).connect(m); o.start(t); o.stop(t + 0.05); }
     const n = E.src('white', t, { loop: false }), nb = E.filt('bandpass', 2600, 1.3), ng = E.gain(0); ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.75, t + 0.0005); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.018); n.connect(nb).connect(ng).connect(m); n.stop(t + 0.03);
     bloop(E, t, m, 240, 140, 0.06, 0.55, 'sine');
     // round 15.1: the comedy - a burst of feathers (quick papery wing flaps, slowing and scattering, over a soft feathery whoosh) and a little
     // cartoon puff: the poof's family, but quicker and lighter (no bubble, no falling notes) so it never reads as the egg / credits poof
-    const f = E.gain(1); f.connect(d); const side = Math.random() < 0.5 ? -1 : 1;
+    const f = E.gain(1.5); f.connect(d); const side = Math.random() < 0.5 ? -1 : 1;
     for (let i = 0, x = 0.035; i < 9; i++) { const u = i / 8, T = t + x; x += lerp(0.028, 0.07, u) * rnd(0.85, 1.15);
       const s = E.src('white', T, { loop: false }), b = E.filt('bandpass', rnd(1300, 2600) * (1 - 0.3 * u), 1.1), g = E.gain(0), pn = E.pan(side * (u - 0.3) * 0.9 + rnd(-0.2, 0.2));
       g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(0.42 * (1 - 0.65 * u), T + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, T + rnd(0.03, 0.05));   // a flap: papery 'fft'
@@ -552,6 +558,7 @@ const fxShots = {
     { const T = t + 0.05, s = E.src('white', T), lp = E.filt('lowpass', 2600, 1), g = E.gain(0);               // the puff: a short, light 'pf'
       lp.frequency.setValueAtTime(2600, T); lp.frequency.exponentialRampToValueAtTime(420, T + 0.16);
       g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(0.3, T + 0.008); g.gain.setTargetAtTime(0, T + 0.02, 0.045); s.connect(lp).connect(g).connect(f); s.stop(T + 0.35); }
+    caw(E, t + 0.06, d, side);                                                                  // round 15.2: and the bird squawks ONE startled 'caw' (after the tick, so the hitmarker stays clear)
   },
   // backing out of quitting: the falling 'aww' played on BONES (original): hollow, clacky xylophone / woodblock strikes that walk the old wobbly slide
   // down an octave (slowing as they go), a hollow low 'bonk', then a little rattle of bones settling
@@ -563,14 +570,15 @@ const fxShots = {
     for (let i = 0, x = 1.07; i < 7; i++) { x += rnd(0.025, 0.07) * (1 + i * 0.2); bone(E, t + x, out, rnd(700, 1300), 0.07 * (1 - i / 9), rnd(-0.5, 0.5), 0.03); }   // rattle
   },
   // STAMP FAIL: a big heavy rubber stamp on a desk: a thick body thump (180 -> 70 Hz with a 300 Hz knock), a wooden 'tok', a paper slap, a dull rattle
-  stampFail(E, t) { stampHit(E, t, fxOut(E), 1.25); },
+  stampFail(E, t) { stampHit(E, t, stampRoom(E, t, { wet: 0.8, echo: 0.8, ring: 0.8, drive: 1.6, level: 0.9, duck: 0.3 }), 1.25); },   // round 15.2: the same heavy stamp, now in the big stamp room (its tail ducks under red Inky's 'baka')
+  baka(E, t, p = {}) { redBaka(E, t + (p.delay ?? 0), p.v); },               // round 15.2: red Inky, disgusted: 'tch... baaaka.' (p.delay: after the stamp lands)   // round 15.2: the same heavy stamp, now in the big stamp room
   // round 15.1: red Inky lands on the BACK stamp himself: a lighter, woodier thunk than stamp-fail (a small rubber stamp on a wooden block: a light
   // stamp hit + a hollow wooden knock and its little after-knock). The sad notes follow ~1 s later (after the roll-up), so it rings out short.
-  backStamp(E, t) { const d = fxOut(E), w = E.gain(1.2); w.connect(d); stampHit(E, t, d, 0.5); bone(E, t + 0.004, w, 262, 0.34, 0, 0.16, true); bone(E, t + 0.05, w, 523, 0.1, 0.15, 0.06); },
+  backStamp(E, t) { bigStamp(E, t); },                                   // round 15.2: a GIANT wooden stamp slamming onto a solid wooden table (see bigStamp)
   // STAMP SUCCESS: a firm, bright stamp, then the same rising arpeggio (C E G C) as a little brass fanfare (bright saw voices through an opening filter,
   // a bell on each note), a quick V chord pickup that RESOLVES on a held C major chord with a swell, and a sparkly shimmer falling over it
   stampSuccess(E, t) {
-    const d = fxOut(E); stampHit(E, t, d, 0.9);
+    const d = stampRoom(E, t, { wet: 0.7, echo: 0.6, ring: 0.6, drive: 1.3, level: 0.9 }); stampHit(E, t, d, 0.9);   // round 15.2: in the big stamp room (the notes too)
     const bus = E.gain(0.9); bus.connect(d);
     [523.3, 659.3, 784, 1046.5].forEach((f, i) => { const T = t + 0.1 + i * 0.075; brass(E, T, bus, f, 0.1, 0.085, -0.45 + i * 0.3); chime(E, T, bus, f * 2, 0.035, 0.6, -0.45 + i * 0.3); });
     const P = t + 0.43; [587.3, 784, 987.8].forEach(f => brass(E, P, bus, f, 0.11, 0.05));            // V (D G B), a short pickup...
@@ -623,6 +631,80 @@ function brass(E, T, dest, f, dur, amp, pan = 0, held = false) {
   if (held) { g.gain.setTargetAtTime(amp * 1.05, T + 0.15, 0.2); lp.frequency.setTargetAtTime(f * 3.4, T + 0.15, 0.2); }
   g.gain.setTargetAtTime(0, T + dur, held ? 0.12 : 0.03);
 }
+// round 15.2: a crow-ish 'CAW' (original): a sawtooth voice that pops up then bends down (~600 -> 360 Hz), roughened by a fast sub-rate wobble (the rasp)
+// and a little breathy noise, through two nasal formant bands (~1.1 kHz, ~1.9 kHz) with the low end thinned out; ~0.3 s, once
+function caw(E, T, dest, side = 1) {
+  const c = E.ctx, dur = 0.3, out = E.gain(0), hp = E.filt('highpass', 420, 0.7), p = E.pan(-side * 0.25); out.connect(hp).connect(p);
+  const dry = E.gain(E.settings.fx.volume), wet = E.gain(0.1); p.connect(dry).connect(E.bpan.fx); p.connect(wet).connect(dest);                   // mostly dry: a long room tail would drag the gag out
+  const f1 = E.filt('bandpass', 1150, 4), f2 = E.filt('bandpass', 1900, 5), g1 = E.gain(1), g2 = E.gain(0.35), mix = E.gain(1);   // (15.2: the upper formant softer: it sits behind)
+  mix.connect(f1).connect(g1).connect(out); mix.connect(f2).connect(g2).connect(out);
+  f1.frequency.setValueAtTime(1000, T); f1.frequency.linearRampToValueAtTime(1250, T + 0.06); f1.frequency.exponentialRampToValueAtTime(950, T + dur);   // the beak opens, then closes
+  const o = c.createOscillator(), rasp = E.gain(1); o.type = 'sawtooth';
+  o.frequency.setValueAtTime(520, T); o.frequency.linearRampToValueAtTime(610, T + 0.04); o.frequency.exponentialRampToValueAtTime(360, T + dur);
+  const w = c.createOscillator(), wg = E.gain(0.55); w.type = 'square'; w.frequency.setValueAtTime(95, T); w.frequency.linearRampToValueAtTime(70, T + dur);   // the rasp: a gritty amplitude flutter
+  w.connect(wg).connect(rasp.gain); const j = c.createOscillator(), jg = E.gain(14); j.frequency.value = 33; j.connect(jg).connect(o.frequency);     // and a little pitch jitter
+  o.connect(rasp).connect(mix);
+  const n = E.src('white', T, { loop: false }), ng = E.gain(0.35); n.connect(ng).connect(mix);                                                      // breath in the throat
+  out.gain.setValueAtTime(0, T); out.gain.linearRampToValueAtTime(0.18, T + 0.025); out.gain.setTargetAtTime(0.13, T + 0.05, 0.08);   // round 15.2: -9 dB, subdued behind the hit out.gain.setTargetAtTime(0, T + dur - 0.06, 0.03);
+  for (const x of [o, w, j]) { x.start(T); x.stop(T + dur + 0.2); } n.stop(T + dur + 0.2);
+}
+// round 15.2: RED INKY SAYS 'BAKA' - reworked (Tiago: 'darker, gritty, like an old man is saying it. Bahkah. The sound of disappointment baked in').
+// Pure formant synthesis (original; no recordings, no TTS). An OLD MAN's voice: a sawtooth 'glottis' at ~85-120 Hz (falling), roughened with
+// pulse jitter (noise on its pitch), a creaky sub-harmonic flutter (vocal fry), breathy rasp mixed into the source and a slow tremble of age,
+// through adult-male 'ah' formants (700 / 1100 / 2450 Hz), darkened by a lowpass. Delivery: a soft low 'tsk' and a weary sigh out of the nose,
+// a heavy drawn 'BAAH' that sags, a firm 'k' (a burst + breath through the vowel's formants), and a tired, dropping 'kah' that trails off into
+// breath and creak. ~1.6 s. vo: lab overrides (variants were auditioned against a speech recognizer).
+function redBaka(E, t0, vo = {}) {
+  const P = { f0: 1, fm: 1, sigh: 0.5, tsk: 1, creak: 0.55, breath: 0.22, jit: 5, len: 0.46, gap: 0.085, kAmp: 1.3, kf: 1400, kQ: 3, aspF: 0.2, dbl: 0.6, bar: 0.12, rel: 0.3, f1b: 300, f2b: 700, kaLen: 0.34, dark: 2800, vot: 0.05, ...vo }, q = P.f0, m = P.fm;
+  const c = E.ctx, d0 = fxOut(E), dark = E.filt('lowpass', P.dark, 0.6), out = E.gain(1.5), p = E.pan(0.15); out.connect(dark).connect(p).connect(d0);
+  const noise = (T, dur, f, Q, a, type = 'white', dec = dur / 3, dest = out) => { const s = E.src(type, T, { loop: false }), b = E.filt('bandpass', f, Q), g = E.gain(0);
+    g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(a, T + 0.002); g.gain.setTargetAtTime(0, T + 0.004, dec); s.connect(b).connect(g).connect(dest); s.stop(T + dur + 0.1); };
+  // the weary lead-in: a soft low 'tsk', then a long sigh out through the nose (falling)
+  if (P.tsk) noise(t0, 0.02, 2000, 2, 0.18, 'white', 0.005);
+  const S0 = t0 + (P.tsk ? 0.06 : 0);
+  if (P.sigh) { const s = E.src('pink', S0, { loop: false }), b = E.filt('bandpass', 750, 1.4), g = E.gain(0);
+    b.frequency.setValueAtTime(900, S0); b.frequency.exponentialRampToValueAtTime(420, S0 + P.sigh);
+    g.gain.setValueAtTime(0, S0); g.gain.linearRampToValueAtTime(0.14, S0 + P.sigh * 0.3); g.gain.linearRampToValueAtTime(0, S0 + P.sigh); s.connect(b).connect(g).connect(out); s.stop(S0 + P.sigh + 0.1); }
+  const T = S0 + P.sigh * 0.85, A = T + 0.05, Aend = A + P.len, K = Aend + P.gap, KA = K + P.vot, END = KA + P.kaLen;
+  // the source: an old, rough glottis
+  const o = c.createOscillator(); o.type = 'sawtooth'; const voice = E.gain(0), fry = E.gain(1), src = E.gain(1);
+  o.connect(fry).connect(src);
+  const br = E.src('pink', T), brg = E.gain(P.breath); br.connect(brg).connect(src); br.stop(END + 0.4);                     // breathy rasp in the source
+  src.connect(voice);
+  const fr = o.frequency;
+  fr.setValueAtTime(100 * q, T); fr.linearRampToValueAtTime(118 * q, A + 0.04); fr.linearRampToValueAtTime(108 * q, A + 0.18); fr.exponentialRampToValueAtTime(86 * q, Aend);   // 'BAAH': up a little, then sagging
+  fr.setValueAtTime(102 * q, KA); fr.exponentialRampToValueAtTime(72 * q, END);                                                       // 'kah': tired, dropping
+  const jn = E.src('white', T), jl = E.filt('lowpass', 60, 0.7), jg = E.gain(P.jit * q); jn.connect(jl).connect(jg).connect(fr); jn.stop(END + 0.2);   // pulse jitter
+  const trem = c.createOscillator(), tg = E.gain(2.2 * q); trem.frequency.value = 5.2; trem.connect(tg).connect(fr);                // the tremble of age (pitch)
+  const ta = E.gain(0.12); trem.connect(ta).connect(fry.gain);                                                                        // ...and level (before the voicing gate: silent gaps stay silent)
+  const cr = c.createOscillator(), cg = E.gain(0); cr.type = 'square'; cr.frequency.setValueAtTime(50 * q, T); cr.frequency.linearRampToValueAtTime(38 * q, END);   // the creak (sub-harmonic fry)
+  cr.connect(cg).connect(fry.gain); cg.gain.setValueAtTime(P.creak * 0.35, T); cg.gain.setValueAtTime(P.creak * 0.35, Aend - 0.2); cg.gain.linearRampToValueAtTime(P.creak, Aend - 0.04);
+  cg.gain.setValueAtTime(P.creak * 0.4, KA); cg.gain.setValueAtTime(P.creak * 0.4, END - P.kaLen * 0.55); cg.gain.linearRampToValueAtTime(P.creak * 1.1, END);
+  // the formants (adult male 'ah') + a 'b' voice bar
+  const F = [[700 * m, 6, 1], [1100 * m, 9, 0.6], [2450 * m, 12, 0.2]].map(([f, Q, a]) => { const b = E.filt('bandpass', f, Q), g = E.gain(a * 3.4); voice.connect(b).connect(g).connect(out); return b; });
+  if (P.bar) { const bo = c.createOscillator(), bl = E.filt('lowpass', 300, 0.7), bg = E.gain(0); bo.frequency.value = 100 * q; bg.gain.setValueAtTime(0, T); bg.gain.linearRampToValueAtTime(P.bar, T + 0.012); bg.gain.setValueAtTime(P.bar, A - 0.003); bg.gain.linearRampToValueAtTime(0, A + 0.004); bo.connect(bl).connect(bg).connect(out); bo.start(T); bo.stop(A + 0.02); }
+  const v = voice.gain;
+  v.setValueAtTime(0, T); v.setValueAtTime(0, A - 0.002);
+  v.linearRampToValueAtTime(0.36, A + 0.035); v.setTargetAtTime(0.3, A + 0.08, 0.15); v.setTargetAtTime(0, Aend - 0.03, 0.014);           // 'BAAH' (then the k closure)
+  v.setValueAtTime(0, KA); v.linearRampToValueAtTime(0.3, KA + 0.02); v.setTargetAtTime(0.16, KA + 0.06, 0.08); v.setTargetAtTime(0, END - P.kaLen * 0.35, P.kaLen * 0.2);   // 'kah', trailing off
+  const [f1, f2, f3] = F;
+  f1.frequency.setValueAtTime(P.f1b * m, A); f1.frequency.exponentialRampToValueAtTime(700 * m, A + 0.035);                              // the lips open into 'ah'
+  f2.frequency.setValueAtTime(P.f2b * m, A); f2.frequency.exponentialRampToValueAtTime(1100 * m, A + 0.045);
+  f1.frequency.setValueAtTime(700 * m, Aend - 0.06); f1.frequency.linearRampToValueAtTime(480 * m, Aend);                               // the velar pinch into 'k'
+  f2.frequency.setValueAtTime(1100 * m, Aend - 0.06); f2.frequency.linearRampToValueAtTime(1500 * m, Aend);
+  f3.frequency.setValueAtTime(2450 * m, Aend - 0.06); f3.frequency.linearRampToValueAtTime(2000 * m, Aend);
+  f1.frequency.setValueAtTime(480 * m, KA); f1.frequency.exponentialRampToValueAtTime(700 * m, KA + 0.04);                              // out of 'k' into 'ah'
+  f2.frequency.setValueAtTime(1500 * m, KA); f2.frequency.exponentialRampToValueAtTime(1100 * m, KA + 0.05);
+  f3.frequency.setValueAtTime(2000 * m, KA); f3.frequency.exponentialRampToValueAtTime(2450 * m, KA + 0.05);
+  noise(A - 0.003, 0.012, 600, 1, P.rel, 'pink', 0.004);                                                                               // the 'b' release
+  noise(K, 0.02, P.kf, P.kQ, P.kAmp, 'white', 0.006);                                                                                  // the 'k' burst
+  if (P.dbl) noise(K + 0.011, 0.015, P.kf * 1.1, P.kQ, P.kAmp * P.dbl, 'white', 0.005);
+  if (P.aspF) { const s = E.src('white', K, { loop: false }), g = E.gain(0); g.gain.setValueAtTime(0, K + 0.008); g.gain.linearRampToValueAtTime(P.aspF, K + 0.016); g.gain.setTargetAtTime(0, KA - 0.004, 0.009);
+    s.connect(g); g.connect(F[1]); g.connect(F[2]); s.stop(KA + 0.08); }
+  { const s = E.src('pink', END - P.kaLen * 0.4, { loop: false }), b = E.filt('bandpass', 800, 1.2), g = E.gain(0), T2 = END - P.kaLen * 0.4;    // trailing off into breath
+    g.gain.setValueAtTime(0, T2); g.gain.linearRampToValueAtTime(0.06, T2 + 0.08); g.gain.linearRampToValueAtTime(0, END + 0.25); s.connect(b).connect(g).connect(out); s.stop(END + 0.3); }
+  for (const x of [o, trem, cr]) { x.start(T); x.stop(END + 0.15); }
+}
 // a bone / woodblock strike: a hollow sine body with a high inharmonic 'clack' partial (3.9x) that dies at once, plus a dry noise tick
 function bone(E, T, dest, f, amp, pan = 0, dec = 0.11, hollow = false) {
   const p = E.pan(pan); p.connect(dest);
@@ -634,6 +716,64 @@ function bone(E, T, dest, f, amp, pan = 0, dec = 0.11, hollow = false) {
   g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(amp * 0.8, T + 0.0005); g.gain.exponentialRampToValueAtTime(0.0001, T + 0.012); n.connect(b).connect(g).connect(p); n.stop(T + 0.02);
 }
 function pulseWave(c, duty) { const n = 32, re = new Float32Array(n), im = new Float32Array(n); for (let k = 1; k < n; k++) im[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * duty); return c.createPeriodicWave(re, im); }
+// round 15.2 (v3, Tiago: 'loud, thunderous, deep, bellowing reverb ... shakes the Earth'; 'all the stamp sounds big and heavy with a lot of
+// reverb and echo and resonance'): THE STAMP ROOM, shared by every stamp. Input -> gentle tanh saturation (size) -> a big dark hall (a generated
+// 2.8 s stereo IR, 30 ms pre-delay, darkening as it decays) + low-passed feedback echoes that rumble away + low tuned resonances (the floor
+// shaking, blooming after the hit) + the dry hit -> a limiter -> the fx level, straight to the master (past the fx bus's 80 Hz low cut, so
+// the sub boom survives on headphones / speakers; phones get the 80-250 Hz weight). Returns the input node. o: wet, echo, ring, duck (s).
+function stampIR(c) {
+  const sr = c.sampleRate, pre = Math.round(sr * 0.03), n = Math.round(sr * 2.8), b = c.createBuffer(2, n, sr);
+  for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); let lp = 0;
+    for (let i = pre; i < n; i++) { const t = (i - pre) / sr, a = 0.5 * Math.exp(-t * 2.6) + 0.04; lp += (Math.random() * 2 - 1 - lp) * a;   // the one-pole closes as it decays: a dark tail
+      d[i] = lp * Math.exp(-t * 2.6) * Math.min(1, t / 0.012) * Math.min(1, (n - i) / (sr * 0.25)); } }                    // ~-60 dB at 2.7 s, smooth to silence
+  let ss = 0; for (let ch = 0; ch < 2; ch++) for (const v of b.getChannelData(ch)) ss += v * v;
+  const k = 0.7 / Math.sqrt(ss / 2 + 1e-9); for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = 0; i < n; i++) d[i] *= k; }
+  return b;
+}
+function satCurve(k) { const n = 1024, cv = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; cv[i] = Math.tanh(k * x) / Math.tanh(k); } return cv; }
+function stampRoom(E, t, { wet = 1, echo = 1, ring = 1, drive = 2.2, duck = 0, level = 1, bed = 1 } = {}) {
+  const c = E.ctx; if (E._stampIRc !== c) { E._stampIR = stampIR(c); E._stampIRc = c; }
+  const inp = E.gain(1), sh = c.createWaveShaper(); sh.curve = satCurve(drive); sh.oversample = '2x';
+  const tone = E.filt('lowpass', 6500, 0.5), sum = E.gain(bed), lim = c.createDynamicsCompressor(), out = E.gain(0);
+  lim.threshold.value = -9; lim.knee.value = 4; lim.ratio.value = 14; lim.attack.value = 0.002; lim.release.value = 0.3;
+  inp.connect(sh).connect(tone); tone.connect(sum);                                                            // the dry hit
+  const cv = c.createConvolver(); cv.buffer = E._stampIR; const cvg = E.gain(1.1 * wet); tone.connect(cv).connect(cvg).connect(sum);   // the hall
+  if (echo > 0) { const dl = c.createDelay(1), fb = E.gain(0.34), elp = E.filt('lowpass', 900, 0.6), eg = E.gain(0.38 * echo);         // the echoes (rumbling away, darker each time)
+    dl.delayTime.value = 0.26; tone.connect(dl); dl.connect(elp).connect(fb).connect(dl); elp.connect(eg).connect(sum); eg.connect(cv); }
+  if (ring > 0) for (const [f, a, Q] of [[58, 1, 18], [87, 0.7, 16], [116, 0.45, 14]]) { const bp = E.filt('bandpass', f, Q), g = E.gain(0);   // the floor resonances bloom just after the hit
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.7 * a * ring, t + 0.12); g.gain.setTargetAtTime(0, t + 0.5, 0.5); inp.connect(bp).connect(g).connect(sum); }
+  sum.connect(lim).connect(out).connect(E.master);
+  const L = E.settings.fx.volume * level; out.gain.setValueAtTime(L, t);
+  if (duck) out.gain.setTargetAtTime(L * 0.6, t + duck, 0.25);                                                   // the tail steps ~4 dB back for what follows (the sad notes)
+  inp.lim = lim;                                                                                                 // (straight into the limiter: for a dry, up-front layer, e.g. the back stamp's thunk)
+  return inp;
+}
+// round 15.2 (v3): the back stamp: an earth-shaking slam of a giant stamp. v3.1 (Tiago: 'the beginning needs a deep loud thunk'): it opens on a
+// dense, DRY, up-front THUNK (a heavy solid block on thick wood): a fast pitch-dropping body (sine 150 -> 60 Hz, ~90 ms) + its octave (triangle
+// 300 -> 120 Hz: the phone hears it), a tight dull wooden knock (bandpassed brown noise ~280 Hz + two short wood tones 230 / 340 Hz) and a
+// click-free 'tok' (pink noise ~1.1 kHz, 1.5 ms rise) for definition, all soft-clipped (tanh) for punch and fed mostly straight into the room's
+// limiter (only a little into the hall). THEN the boom he liked swells in under it (sine 90 -> 30 Hz, ~1.5 s, + a 175 -> 88 Hz body), the floor
+// rattle, and the stamp room (hall, echoes, floor resonances); its tail ducks ~4 dB as the sad notes arrive (~1.3 s).
+function bigStamp(E, t) {
+  const c = E.ctx, d = stampRoom(E, t, { wet: 1, echo: 1, ring: 0.6, drive: 2.4, duck: 1.15, level: 2.7, bed: 0.3 });   // bed: the rumble sits ~7 dB under the limiter so the thunk stands out
+  const tone = (type, f0, f1, dur, amp, dec, dest = d, att = 0.004) => { const o = c.createOscillator(), g = E.gain(0); o.type = type;
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(amp, t + att); g.gain.setTargetAtTime(0, t + Math.max(0.02, att), dec); o.connect(g).connect(dest); o.start(t); o.stop(t + dec * 8 + 0.05); };
+  // THE THUNK: dry and first
+  const th = E.gain(1), sh = c.createWaveShaper(), tl = E.filt('lowpass', 3000, 0.5), dry = E.gain(1.8), wet = E.gain(0.5);
+  sh.curve = satCurve(3); sh.oversample = '2x'; th.connect(sh).connect(tl); tl.connect(dry).connect(d.lim); tl.connect(wet).connect(d);
+  tone('sine', 150, 60, 0.07, 1.0, 0.03, th, 0.002);                                                       // the body: fast pitch drop, ~90 ms
+  tone('triangle', 300, 120, 0.07, 1.1, 0.028, th, 0.002);                                                // its octave (energy at 120-300 Hz for phones)
+  for (const [f, a, dec] of [[230, 0.6, 0.024], [340, 0.4, 0.017]]) tone('sine', f * 1.05, f, 0.02, a, dec, th, 0.0015);   // the wood's two short tones
+  { const s = E.src('brown', t, { loop: false }), b = E.filt('bandpass', 280, 1.4), g = E.gain(0);                        // the dull wooden knock
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(3.2, t + 0.0015); g.gain.setTargetAtTime(0, t + 0.004, 0.022); s.connect(b).connect(g).connect(th); s.stop(t + 0.2); }
+  { const s = E.src('pink', t, { loop: false }), b = E.filt('bandpass', 1100, 1.2), g = E.gain(0);                         // the 'tok': definition, no click
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.5, t + 0.0015); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03); s.connect(b).connect(g).connect(th); s.stop(t + 0.05); }
+  // ...THEN the earth-shaking rumble he liked, swelling in under the thunk
+  tone('sine', 90, 30, 0.9, 0.4, 0.34, d, 0.03);                                                           // the sub boom
+  tone('sine', 175, 88, 0.5, 0.6, 0.22, d, 0.025);                                                         // its body
+  wash(E, t + 0.03, d, { dur: 0.35, f0: 500, f1: 120, amp: 0.35, type: 'brown' });                          // the table and floor rattle under it
+}
 function stampHit(E, t, d, w) {
   bloop(E, t, d, 190 * (2 - w * 0.7), 70, 0.22 * w, 0.75, 'triangle');                                 // the body
   bloop(E, t, d, 310, 260, 0.06, 0.4 * w, 'sine');                                                     // the knock
