@@ -30,6 +30,7 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
     else if (name === 'dragEnd') snd.stopDrag();
     else if (name === 'rustleStart') snd.startRustle();
     else if (name === 'rustleEnd') snd.stopRustle();
+    else if (name === 'typeChar') return snd.babble(p);   // round 15.3: the typewriter's babble (one tiny syllable per letter; 'merged' / 'silent' / 'warming' otherwise)
     else if (name === 'impact') { const now = performance.now(); if (now - lastImpact < 140) return 'skipped'; lastImpact = now; snd.dragImpact(p.strength ?? 0.6); }
     else snd.play(name, p);
     return 'played';

@@ -7,6 +7,7 @@ import { ScrollComposer, SCROLL_W, U, AW, PX, paintRows } from './scroll-engine2
 import { drawLine, drawSeal, sealDims, SEAL_PX, ditherBacking, font, rng, hash } from './brush-text.js';
 import { clock } from './clock.js';
 import { prefersReducedMotion } from './spring.js';
+import { sfx } from './sfx.js';
 
 const CH = 256;                    // art rows per background chunk canvas (768 units)
 export class ScrollView {
@@ -109,13 +110,15 @@ export class ScrollView {
   async typePoem(el, { cps = 24, linePause = 260 } = {}) {
     const rec = this.recOf(el); if (!rec) return;
     if (prefersReducedMotion()) { this.paintPoem(rec, { seal: false }); return; }
-    const lens = rec.poem.layout.lines.map(l => [...l.t].length), total = lens.reduce((a, b) => a + b, 0);
+    const lines = rec.poem.layout.lines.map(l => l.t), lens = lines.map(t => [...t].length), total = lens.reduce((a, b) => a + b, 0);
     const ends = new Set(lens.map((_, i) => lens.slice(0, i + 1).reduce((a, b) => a + b, 0)));
     rec.el.classList.add('typing');
     this.paintPoem(rec, { chars: 0, sig: false, seal: false });
     for (let k = 1; k <= total; k++) {
       await clock.wait(1000 / cps);
       this.paintPoem(rec, { chars: k, sig: false, seal: false });
+      { let j = k - 1, li = 0; while (li < lens.length - 1 && j >= lens[li]) j -= lens[li++];      // round 15.3: Inky reads each letter out (the babble, src/sound.js)
+        sfx('typeChar', { line: lines[li], i: j, u: lens[li] > 1 ? j / (lens[li] - 1) : 0 }); }
       if (ends.has(k)) await clock.wait(linePause);
     }
     await clock.wait(180);
@@ -130,7 +133,7 @@ export class ScrollView {
     const rec = this.recOf(el); if (!rec) return;
     const { poem: p, W, H, pad } = rec, L = p.layout, n = p.n, [sw, sh] = sealDims(n);
     const done = () => { this.paintPoem(rec); window.dispatchEvent(new CustomEvent('haiku:sealed', { detail: { n, id: rec.post.id, el: rec.el } })); };
-    if (prefersReducedMotion()) return done();
+    if (prefersReducedMotion()) { sfx('numberStamp'); return done(); }
     this.paintPoem(rec, { seal: false });
     const sx = L.seal.x + pad, sy = L.seal.y + pad, pct = (v, of) => (v / of * 100) + '%';
     const box = (cls, x, y, w, h) => { const d = document.createElement('canvas'); d.className = cls; d.width = w; d.height = h;
@@ -157,6 +160,7 @@ export class ScrollView {
       { transform: 'translateY(0) scale(1, 1)', opacity: 1 },
     ], { duration: T, easing: 'cubic-bezier(.5,0,.9,.5)', fill: 'both' });
     await clock.wait(T * hit);
+    sfx('numberStamp');                                  // round 15.3: the seal of approval, at the impact frame
     // impact: ink soaks out, specks fly, the paper bumps
     bleed.animate([{ opacity: 0 }, { opacity: 1, offset: .12 }, { opacity: .7, offset: .5 }, { opacity: 0 }], { duration: 760, easing: 'steps(6)', fill: 'both' });
     const c = this.fontScale(L.u), R = rng(hash(rec.post.id, n, 'specks'));

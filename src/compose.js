@@ -873,6 +873,7 @@ export function mountCompose(deps) {
     await clock.wait(700);
     await rollUp();
     say('off it goes!', 800); await clock.wait(450);
+    sfx('inkyFlyaway');                             // round 15.3: he flies off the page in triumph: a sparkly inky whoosh (timed to runOff: the crouch, then the 0.95 s whip out right)
     await inky.runOff(1);
     inky.mode = 'idle'; bubble.hidden = true;
     await installPost(post);

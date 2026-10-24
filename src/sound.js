@@ -64,7 +64,8 @@ export class SoundEngine {
         this.timer = setInterval(() => { if (this.ctx.state === 'running') this.pump(); }, 1000);   // nothing scheduled while suspended (hidden / muted)
         if (this.muted) { this.master.gain.value = 0; c.suspend?.(); }
         for (const f of this._queue.splice(0)) f();
-        setTimeout(() => this.prepareFlood(), 1200);   // round 15.1: the write-page flood buffer (+ its reverse), a moment after the bed is going
+        setTimeout(() => this.prepareFlood(), 1200);
+        setTimeout(() => this.prepareBabble(), 1700);   // round 15.3: the typing babble's syllable bank (~30 x 0.1 s, once)   // round 15.1: the write-page flood buffer (+ its reverse), a moment after the bed is going
       });
     }
     const c = this.ctx || this._pending;
@@ -195,6 +196,35 @@ export class SoundEngine {
     E.muted = false; E.attach(oc, { noise: this.noise, grain: this.grain, ir: this.verb.buffer }); SHOTS.inkFlood(E, 0.01);
     return (this._floodP = oc.startRendering().then(b => { const rev = this.ctx.createBuffer(2, b.length, sr); for (let c = 0; c < 2; c++) { const a = b.getChannelData(c), o = rev.getChannelData(c); for (let i = 0, n = a.length; i < n; i++) o[i] = a[n - 1 - i]; } this.flood = { fwd: b, rev }; return this.flood; }).catch(e => { console.warn('sound: flood render failed', e); this._floodP = null; }));
   }
+  // round 15.3: the typing babble's syllable bank: 30 tiny syllables rendered once offline (sharing this engine's noise), sliced into buffers
+  prepareBabble() {
+    if (this._babbleP || !this.ctx) return this._babbleP; const sr = this.ctx.sampleRate, S = BABBLE.slot, keys = [];
+    for (const v of Object.keys(BABBLE_VOWELS)) for (const o of BABBLE_ONSETS) keys.push([o, v]);
+    const t0 = performance.now(), oc = new OfflineAudioContext(1, Math.ceil(sr * S * keys.length), sr), E = new SoundEngine({ settings: { ...this.settings, master: { volume: 1 } }, persist: false, water: false });
+    E.muted = false; E.attach(oc, { noise: this.noise, grain: this.grain, ir: this.verb.buffer }); keys.forEach(([o, v], k) => babbleVoice(E, k * S + 0.002, o, v));
+    return (this._babbleP = oc.startRendering().then(b => { const all = b.getChannelData(0), n = Math.round(sr * S), bank = {};
+      keys.forEach(([o, v], k) => { const buf = this.ctx.createBuffer(1, n, sr), d = buf.getChannelData(0); d.set(all.subarray(k * n, k * n + n)); let pk = 0; for (const x of d) pk = Math.max(pk, Math.abs(x)); const g = pk > 0 ? 0.5 / pk : 1; for (let i = 0; i < n; i++) d[i] *= g; bank[o + v] = buf; });
+      this.babbleBank = bank; this._babbleBus(); this.babbleMs = Math.round(performance.now() - t0); return bank; }).catch(e => { console.warn('sound: babble render failed', e); this._babbleP = null; }));
+  }
+  // one typed character (p: { line, i, u: 0..1 position in the line }); returns what happened (for the log / tests)
+  babble(p = {}, when) {
+    if (!this.ctx) return 'off';
+    const syl = babbleSyl(p.line, p.i); if (!syl) return 'silent';
+    if (!this.babbleBank) { this.prepareBabble(); return 'warming'; }
+    const t = when ?? this.now + 0.005, clk = when ?? performance.now() / 1000;                 // (the wall clock for the rate: the audio clock moves in coarse blocks)
+    if (clk - (this._babT ?? -1) < 1 / BABBLE.maxRate - 0.004) return 'merged';               // faster than ~15 / s: every other letter
+    this._babT = clk;
+    this._babbleBus();
+    const u = clamp(p.u ?? 0.5), contour = 1 + 0.05 * Math.sin(Math.PI * Math.min(1, u * 1.6)) - 0.07 * Math.max(0, u - 0.7) / 0.3;   // a gentle rise, then down at the line's end
+    const src = this.ctx.createBufferSource(); src.buffer = this.babbleBank[syl.onset + syl.vowel]; src.playbackRate.value = contour * rnd(0.95, 1.06);
+    const g = this.gain(rnd(0.8, 1)); src.connect(g).connect(this.babbleOut); src.start(t);
+    const live = this._babLive; live.push(src); src.onended = () => { const k = live.indexOf(src); if (k >= 0) live.splice(k, 1); };
+    while (live.length > BABBLE.poly) { const old = live.shift(); try { old.stop(t); } catch {} }
+    return 'played';
+  }
+  _babbleBus() { if (this.babbleOut) return; const o = this.babbleOut = this.gain(1), lv = this.gain(BABBLE.level * this.settings.inky.volume), pn = this.pan(-0.1), s = this.gain(0.12);
+    o.connect(lv).connect(pn).connect(this.master); pn.connect(s).connect(this.verb); this._babLive = []; }
+  babbleDuck(t = this.now) { const g = this.babbleOut?.gain; if (!g) return; g.cancelScheduledValues(t); g.setTargetAtTime(0.25, t, 0.01); g.setTargetAtTime(1, t + 0.5, 0.25); }   // a stamp landing over the typing
   _playBuf(buf, t, offset = 0) { const s = this.ctx.createBufferSource(), g = this.gain(this.settings.inky.volume); s.buffer = buf; s.connect(g).connect(this.master); s.start(t, offset); return s; }
   // round 15.1: the credits list being scrolled: a soft old-paper rustle that follows the scroll speed and fades when it stops
   startRustle(when) { if (!this.ctx) return this._defer(() => this.startRustle()); this.stopRustle(when); this.rustle = rustleVoice(this, when ?? this.now); }
@@ -215,6 +245,44 @@ export class SoundEngine {
   lfo(freq, depth, target, type = 'sine') { const o = this.ctx.createOscillator(); o.type = type; o.frequency.value = freq; const g = this.gain(depth); o.connect(g).connect(target); o.start(this.now + Math.random() * 0.01); return { o, g }; }
 }
 
+// ---------- round 15.3: TYPING BABBLE (Tiago: 'when the poem is being typed onto the main page ... use the engine used for Baka to synthetically
+// read out each letter as it's being typed, kind of like Animal Crossing') ----------
+// The baka voice engine (a sawtooth glottis through bandpass formants, noise for the consonants), made small, soft and cute: a young Inky
+// voice at ~300 Hz. Each typed letter is one tiny syllable (~45-70 ms): a vowel letter sings its own vowel; a consonant gives its onset class
+// (plosive burst / soft hiss / nasal hum / liquid glide) into the NEXT vowel in its word (or a neutral schwa); spaces, digits and punctuation
+// are silent; the typewriter's own line pause (260 ms) is the pause at a line break. Cheap on an iPhone: the 6 vowels x 5 onsets = 30
+// syllables are rendered ONCE offline (a ~2.5 s OfflineAudioContext, after the audio unlock), and each letter only starts one buffer source
+// (pitch varied by its playback rate: a little random per syllable + a gentle rise-and-fall over each line). Polyphony is capped at 3, and
+// letters arriving faster than ~15 / s are merged (the typewriter's 24 / s voices every other letter, Animal Crossing style).
+export const BABBLE = { maxRate: 15, poly: 3, level: 0.35, f0: 300, slot: 0.1 };
+export const BABBLE_VOWELS = { a: [900, 1450, 3000], e: [580, 2300, 3100], i: [380, 2800, 3500], o: [620, 1050, 2900], u: [420, 1100, 2800], '@': [650, 1600, 2900] };
+const ONSET_OF = {}; for (const [k, s] of [['plosive', 'pbtdkgcq'], ['fric', 'fvszhxj'], ['nasal', 'mn'], ['liquid', 'lrwy']]) for (const ch of s) ONSET_OF[ch] = k;
+export const BABBLE_ONSETS = ['none', 'plosive', 'fric', 'nasal', 'liquid'];
+// the syllable a typed character says: null = silent (space / punctuation / digit), else { onset, vowel }
+export function babbleSyl(line, i) {
+  const chars = [...String(line || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()], ch = chars[i];
+  if (!ch || !/\p{L}/u.test(ch)) return null;
+  if ('aeiou'.includes(ch)) return { onset: 'none', vowel: ch };
+  if (!/[a-z]/.test(ch)) return { onset: 'none', vowel: '@' };                                 // a letter outside a-z (kana, etc.): a soft neutral 'uh'
+  for (let j = i + 1; j < chars.length && /\p{L}/u.test(chars[j]); j++) if ('aeiou'.includes(chars[j])) return { onset: ONSET_OF[ch] || 'plosive', vowel: chars[j] };
+  return { onset: ONSET_OF[ch] || 'plosive', vowel: ch === 'y' ? 'i' : '@' };
+}
+function babbleVoice(E, t, onset, vowel) {
+  const c = E.ctx, F = BABBLE_VOWELS[vowel], f0 = BABBLE.f0, out = E.gain(1), soft = E.filt('lowpass', 3600, 0.5); soft.connect(E.master); out.connect(soft);
+  const V = t + ({ none: 0, plosive: 0.012, fric: 0.026, nasal: 0.022, liquid: 0.006 })[onset], dur = 0.05;
+  const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f0, V); o.frequency.linearRampToValueAtTime(f0 * 1.06, V + dur * 0.35); o.frequency.linearRampToValueAtTime(f0 * 0.97, V + dur);
+  const vg = E.gain(0); o.connect(vg);
+  vg.gain.setValueAtTime(0, V); vg.gain.linearRampToValueAtTime(0.5, V + 0.008); vg.gain.setValueAtTime(0.5, V + dur * 0.55); vg.gain.linearRampToValueAtTime(0, V + dur);
+  const fb = F.map((f, k) => { const Q = [5, 8, 10][k], a = [1, 0.5, 0.18][k]; const b = E.filt('bandpass', f, Q), g = E.gain(a); vg.connect(b).connect(g).connect(out); return b; });
+  if (onset === 'liquid') fb.forEach((b, k) => { b.frequency.setValueAtTime([330, 900, 2500][k], V); b.frequency.exponentialRampToValueAtTime(F[k], V + 0.03); });
+  const hiss = (T, d, f, Q, a) => { const s = E.src('white', T, { loop: false }), b = E.filt('bandpass', f, Q), g = E.gain(0);
+    g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(a, T + Math.min(0.004, d / 3)); g.gain.linearRampToValueAtTime(0, T + d); s.connect(b).connect(g).connect(out); s.stop(T + d + 0.02); };
+  if (onset === 'plosive') hiss(t, 0.012, 2600, 1.4, 0.35);
+  if (onset === 'fric') hiss(t, 0.03, 5200, 1.2, 0.12);
+  if (onset === 'nasal') { const n = c.createOscillator(), ng = E.gain(0); n.frequency.value = f0; const nb = E.filt('lowpass', 400, 0.7); n.connect(nb).connect(ng).connect(out);
+    ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.25, t + 0.008); ng.gain.linearRampToValueAtTime(0, V + 0.006); n.start(t); n.stop(V + 0.02); }
+  o.start(Math.min(t, V)); o.stop(V + dur + 0.02);
+}
 // ---------- noise buffers (seamless loops: the tail is cross-faded into the head) ----------
 function makeNoise(c, kind, seconds = 8) {
   const sr = c.sampleRate, X = Math.round(sr * 0.06), n = Math.round(sr * seconds) + X, d = new Float32Array(n);
@@ -618,6 +686,74 @@ const fxShots = {
     wash(E, t + 0.5, d, { dur: 0.6, f0: 4200, f1: 600, amp: 0.45, type: 'white', Q: 0.8 });          // the crest
     bloop(E, t + 0.5, d, 230, 95, 0.4, 0.5, 'triangle');
     pour(E, t + 0.55, d, 2.4);
+  },
+  // round 15.3 (Tiago: 'when text is copied there needs to be a little tiny charm sound'): a successful copy: three tiny glass tinks
+  // rising (B6, E7, G#7: an E-major sparkle), soft and close, with a faint high shimmer; ~0.35 s. Quiet: well under the other one-shots.
+  copyCharm(E, t) {
+    const d = fxOut(E), g = E.gain(17.5); g.connect(d);   // round 15.3 ship (Tiago t174u): +18 dB (was 2.2) to match the loud preview
+    [[1975.5, 0, 0.05, -0.25], [2637, 0.065, 0.042, 0.05], [3322.4, 0.13, 0.036, 0.3]].forEach(([f, at, a, pan]) => chime(E, t + at, g, f, a, 0.24, pan));
+    for (let i = 0; i < 5; i++) chime(E, t + 0.09 + i * 0.035 + rnd(0, 0.01), g, rnd(5200, 6400), 0.006, 0.12, rnd(-0.6, 0.6));
+  },
+  // round 15.3 (Tiago: 'after something you worked on has been accepted, and user hits post, he needs to switch away with a sparkly inky sound
+  // effect like he's flying away from the page in a triumphant success'): red Inky's runOff (src/inky-red.js: a 0.26 s crouch, then a 0.95 s
+  // whip up-left, looping over and out past the RIGHT edge). His inky swoosh (the drag churn's watery band, rising) + an airy whoosh that
+  // opens and climbs with his speed, panning with the path (left, then out right), a sparkle trail (a quick rising C-major arpeggio of glass
+  // chimes + glitter thrown behind him) and a last bright twinkle as he leaves the screen. ~1.3 s + tail. Played at the crouch.
+  inkyFlyaway(E, t) {
+    const W = t + 0.26, T = 0.95, X = W + T;                         // the whip starts after the crouch; X = off screen
+    const pan = E.pan(0); pan.pan.setValueAtTime(0, t); pan.pan.linearRampToValueAtTime(-0.35, W + T * 0.35); pan.pan.linearRampToValueAtTime(0.85, X);   // with his path
+    const sw = E.gain(0.9); sw.connect(pan).connect(E.bus.inky);
+    // the crouch: a little rising inky 'bloop' (he winds up)
+    bloop(E, t + 0.02, sw, 280, 520, 0.18, 0.28, 'triangle');
+    // his inky swoosh: the churn's watery band (brown noise ~260 Hz -> 900 Hz) + bubbly plips, swelling with the whip
+    { const s = E.src('brown', W), b = E.filt('bandpass', 260, 4), g = E.gain(0); b.frequency.setValueAtTime(260, W); b.frequency.exponentialRampToValueAtTime(900, X);
+      g.gain.setValueAtTime(0, W); g.gain.linearRampToValueAtTime(0.9, W + T * 0.45); g.gain.setTargetAtTime(0, X - 0.1, 0.09); s.connect(b).connect(g).connect(sw); s.stop(X + 0.6); }
+    for (let i = 0; i < 9; i++) { const u = i / 8; plip(E, W + 0.05 + u * (T - 0.15), sw, { f: lerp(380, 1100, u) * rnd(0.9, 1.1), amp: 0.07, dur: 0.05, rise: 1.7, pan: rnd(-0.3, 0.3) }); }
+    // the air: a whoosh opening and climbing with his speed (pink noise, bandpass 600 -> 3200 Hz)
+    { const s = E.src('pink', W), b = E.filt('bandpass', 600, 1.6), g = E.gain(0);
+      b.frequency.setValueAtTime(600, W); b.frequency.exponentialRampToValueAtTime(3200, X);
+      g.gain.setValueAtTime(0, W); g.gain.linearRampToValueAtTime(0.32, W + T * 0.6); g.gain.linearRampToValueAtTime(0.45, X - 0.05); g.gain.setTargetAtTime(0, X, 0.08); s.connect(b).connect(g).connect(pan); s.stop(X + 0.6); }
+    // the sparkle trail: a quick rising C-major arpeggio of glass chimes along the path, glitter thrown behind him, a last twinkle out
+    const sp = fxOut(E), sg = E.gain(1); sg.connect(sp);
+    [1046.5, 1318.5, 1568, 2093, 2637, 3136, 4186].forEach((f, i) => { const u = i / 6, T2 = W + 0.12 + u * (T - 0.22); chime(E, T2, sg, f, 0.05 - 0.015 * u, 0.5, lerp(-0.35, 0.8, u)); });
+    for (let i = 0; i < 14; i++) { const u = Math.random(); chime(E, W + 0.2 + u * (T + 0.15), sg, rnd(3800, 6200), rnd(0.008, 0.016), rnd(0.15, 0.3), lerp(-0.3, 0.9, u)); }
+    chime(E, X - 0.02, sg, 2093, 0.04, 0.55, 0.85); chime(E, X, sg, 3136, 0.03, 0.5, 0.9);
+  },
+  // round 15.3 (Tiago: 'after the poem gets posted on the main page we do that number stamp, that needs to have a satisfying stamp sound too,
+  // like a seal of approval'): the red kanji number seal pressing onto the new poem (src/scroll-view.js stampSeal, at its impact frame).
+  // A firm, confident press: a solid dry thunk (sine 170 -> 70 Hz + its octave, soft-clipped, up front) with a soft wet rubber/ink squish
+  // (a short bandpassed noise sliding down), a tiny wooden settle ~0.12 s later, and approval: a warm resolving tone (C5 + E5 -> G5 swelling
+  // in under a single bright bell 'ding'), all in the shared stamp room - lighter and shorter than the back stamp. Also ducks the typing babble.
+  numberStamp(E, t) {
+    const c = E.ctx; E.babbleDuck?.(t);
+    const d = stampRoom(E, t, { wet: 0.75, echo: 0.6, ring: 0.3, drive: 1.8, duck: 0.9, level: 0.95, bed: 0.55 });
+    const tone = (type, f0, f1, dur, amp, dec, dest, att = 0.003, at = t) => { const o = c.createOscillator(), g = E.gain(0); o.type = type;
+      o.frequency.setValueAtTime(f0, at); o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+      g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(amp, at + att); g.gain.setTargetAtTime(0, at + att, dec); o.connect(g).connect(dest); o.start(at); o.stop(at + dec * 8 + 0.05); };
+    // the press: dry and up front
+    const th = E.gain(1), sh = c.createWaveShaper(), tl = E.filt('lowpass', 3200, 0.5), dry = E.gain(1.3), wet = E.gain(0.55);
+    sh.curve = satCurve(2.5); sh.oversample = '2x'; th.connect(sh).connect(tl); tl.connect(dry).connect(d.lim); tl.connect(wet).connect(d);
+    tone('sine', 190, 90, 0.06, 0.6, 0.03, th, 0.002);
+    tone('triangle', 360, 160, 0.06, 0.9, 0.026, th, 0.002);
+    tone('sine', 300, 270, 0.02, 0.35, 0.02, th, 0.0015);                                                   // the wooden block of the stamp
+    { const s = E.src('pink', t, { loop: false }), b = E.filt('bandpass', 1300, 1.2), g = E.gain(0);           // the 'tok' (definition)
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.45, t + 0.0015); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.025); s.connect(b).connect(g).connect(th); s.stop(t + 0.05); }
+    // the rubber + ink squish: a short wet noise sliding down, just after the contact
+    { const T = t + 0.012, s = E.src('pink', T, { loop: false }), b = E.filt('bandpass', 1400, 3), g = E.gain(0);
+      b.frequency.setValueAtTime(1400, T); b.frequency.exponentialRampToValueAtTime(420, T + 0.09);
+      g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(0.5, T + 0.012); g.gain.setTargetAtTime(0, T + 0.03, 0.03); s.connect(b).connect(g).connect(d); s.stop(T + 0.3); }
+    bloop(E, t + 0.02, d, 420, 210, 0.07, 0.12, 'sine');                                                      // the little suck as it lifts
+    // a tiny wooden settle
+    bone(E, t + 0.12, d, 620, 0.09, 0.15, 0.06, true);
+    // approval: a warm, resolving tone under one bright ding
+    const ap = E.gain(1); ap.connect(d);
+    const warm = (f, at, dur, amp, pan) => { const o = c.createOscillator(), o2 = c.createOscillator(), g = E.gain(0), p = E.pan(pan); o.type = 'triangle'; o.frequency.value = f; o2.frequency.value = f * 2.001;
+      const g2 = E.gain(0.18); o2.connect(g2).connect(g); o.connect(g); g.connect(p).connect(ap);
+      g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(amp, at + 0.06); g.gain.setTargetAtTime(amp * 0.7, at + 0.1, 0.2); g.gain.setTargetAtTime(0, at + dur, 0.18);
+      for (const x of [o, o2]) { x.start(at); x.stop(at + dur + 1.2); } };
+    warm(523.3, t + 0.05, 0.25, 0.05, -0.2); warm(659.3, t + 0.05, 0.25, 0.04, 0.2);                           // C5 + E5...
+    warm(784, t + 0.2, 0.45, 0.055, 0); warm(1046.5, t + 0.2, 0.45, 0.03, 0.1);                               // ...settling on G5 + C6
+    chime(E, t + 0.04, ap, 2093, 0.045, 1.1, 0.1);                                                            // the 'ding' of approval
   },
 };
 Object.assign(SHOTS, fxShots);

@@ -51,6 +51,7 @@ let lastCopied = '';
 async function copyPoem(post, e) {
   const text = copyText(post); lastCopied = text;
   const ok = await writeClipboard(text);
+  if (ok) sfx('copyCharm');                          // round 15.3: a successful copy: a tiny glass charm
   if (!composing() && inky.visible && inky.mode === 'roam' && inky.mood !== 'splat') { inky.setMood(ok ? 'cheer' : 'worry'); inky.jump(.7); say(ok ? 'copied!' : 'could not copy', 1000); clock.wait(900).then(() => inky.mode === 'roam' && inky.setMood('happy')); }
   else floatNote(ok ? 'copied' : 'could not copy', e?.clientX ?? innerWidth / 2, e?.clientY ?? innerHeight / 2);
   return ok;
