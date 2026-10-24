@@ -32,6 +32,23 @@ export const CLOSE_LINE = 'tap anywhere to close';
 // the egg's poof (src/noren.js drawPoof) at three spots along the closed scroll: chunky grayscale puffs, a flash, a few dark flecks
 const PAL = { W: [250, 246, 236], g: [214, 208, 196], G: [150, 144, 150], D: [92, 88, 98], K: [26, 24, 28] };
 export const POOF_T = .5;
+// round 15.1: the credits fade. A mask image one Bayer period wide (4 cells) and as tall as the list: a cell is opaque (text shows) while the
+// fade's visibility there beats its threshold in the 4x4 ordered-dither matrix. st / sb: 0..1 strength of the top / bottom fade.
+export const FADE = 44, CELL = 2, BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+export function ditherCells(h, st, sb) {   // -> rows (cell rows) of 4 booleans (true = text visible); pure, for tests
+  const R = Math.ceil(h / CELL), out = [];
+  for (let r = 0; r < R; r++) {
+    const yc = r * CELL + CELL / 2, vt = 1 - st * (1 - Math.min(1, yc / FADE)), vb = 1 - sb * (1 - Math.min(1, (h - yc) / FADE)), v = Math.min(vt, vb);
+    out.push([0, 1, 2, 3].map(c => v * 16 > BAYER4[(r % 4) * 4 + c] + 0.5));
+  }
+  return out;
+}
+function ditherMask(h, st, sb, dpr) {
+  const rows = ditherCells(h, st, sb), cv = document.createElement('canvas'), k = CELL * dpr; cv.width = 4 * k; cv.height = Math.round(h * dpr);
+  const g = cv.getContext('2d'); g.fillStyle = '#000';
+  rows.forEach((row, r) => row.forEach((on, c) => { if (on) g.fillRect(c * k, r * k, k, k); }));
+  return cv.toDataURL('image/png');
+}
 export function drawPoofInto(D, w, h, cx, cy, q) {
   const put = (x, y, c) => { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= w || y >= h) return; const i = (y * w + x) * 4; D[i] = c[0]; D[i + 1] = c[1]; D[i + 2] = c[2]; D[i + 3] = 255; };
   const r = 1.5 + 8 * (1 - (1 - q) ** 2), col = [PAL.W, PAL.g, PAL.G, PAL.D][Math.min(3, Math.floor(q * 4))], sz = q < .55 ? 2 : 1;
@@ -84,8 +101,23 @@ export function mountCredits({ clock: clk = clock, reduced = false, root = docum
     if (!strip || strip.maxRows !== N || strip.W !== art.W) { if (!strip) strip = new ScrollArt(deco, { maxRows: N, seed: 4410, outline: 2, ribbon: false, strip: true }); else { strip.maxRows = N; strip.resize(); } }
     deco.style.top = '0px'; syncDeco();
   };
-  const syncDeco = () => { deco.style.transform = `translate3d(0, ${-list.scrollTop}px, 0)`; };
+  const syncDeco = () => { deco.style.transform = `translate3d(0, ${-list.scrollTop}px, 0)`; fade(); };
   list.addEventListener('scroll', syncDeco, { passive: true });
+  // round 15.1: the text dissolves into the paper at the top (under 'credits') and the bottom (above 'tap anywhere to close') through an ordered
+  // (Bayer 4x4) dither in chunky 2 px cells (the list font's own pixel) instead of a hard cut mid-line. It is a mask on the list box, so it stays put while the text scrolls
+  // through it; each side eases in over the first FADE px of scroll and is absent where there is nothing more to scroll on that side.
+  const masks = new Map(); let maskKey = '';
+  const fade = () => {
+    const h = list.offsetHeight, range = Math.max(0, list.scrollHeight - list.clientHeight);
+    if (!h || range < 2) { if (maskKey) { list.style.webkitMaskImage = list.style.maskImage = ''; maskKey = ''; } return; }
+    const lv = d => Math.round(4 * Math.min(1, Math.max(0, d) / FADE)), tl = lv(list.scrollTop), bl = lv(range - list.scrollTop), dpr = Math.min(3, Math.round(devicePixelRatio || 1) || 1), key = `${tl},${bl},${h},${dpr}`;
+    if (key === maskKey) return; maskKey = key;
+    let url = masks.get(key); if (!url) { if (masks.size > 40) masks.clear(); url = ditherMask(h, tl / 4, bl / 4, dpr); masks.set(key, url); }
+    list.style.webkitMaskImage = list.style.maskImage = `url(${url})`;
+    list.style.webkitMaskSize = list.style.maskSize = `${4 * CELL}px ${h}px`;
+    list.style.webkitMaskRepeat = list.style.maskRepeat = 'repeat-x';
+  };
+  api.fadeState = () => ({ key: maskKey });
   const setDim = v => { dim = v; ov.style.setProperty('--dim', v.toFixed(2)); };
   const tween = (from, to, ms, fn) => new Promise(res => { let t = 0; const off = clk.onTick(dt => { t += dt * 1000; const q = Math.min(1, t / ms); fn(from + (to - from) * q); if (q >= 1) { off(); res(); } }); });
   clk.onTick(() => { if (state !== 'closed') { paper.style.height = Math.max(0, art.openCss - 6) + 'px'; win.style.height = Math.max(0, art.openCss - 12) + 'px'; } });   // the DOM paper clip follows the canvas paper (same as the write scroll)

@@ -214,7 +214,7 @@ export class Inky {
     this.puddles.push({ x: this.x, y: this.fy, w: Math.round(this.R * 1.5), life: 1.2, color: WASH });
   }
   popUp() {
-    this.splatT = 0; this.sRest = 0; this.meter.revive(); this.onSfx?.('reform');
+    this.splatT = 0; this.sRest = 0; this.meter.revive(); this.onSfx?.('revive');   // round 15.1: the watery reform + a happy 'back!' chime
     this.s = this.reduced ? 0 : -.55; this.sv = this.reduced ? 0 : -6; this.wobble(1.3); this.setMood('happy'); this.giggle = .8;
     if (!this.reduced) { this.grounded = true; this.jump(.8); }
     this.onPopUp?.();

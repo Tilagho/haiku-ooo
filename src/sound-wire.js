@@ -1,21 +1,26 @@
 // round 15.0: the site's SOUND, wired to the board (all synthesized, src/sound.js; events come in through src/sfx.js).
 // - Nothing plays before an interaction: the AudioContext is created and resumed inside the first tap / key (browsers require it),
 //   and the reading BED (wind + the distant waterfall, slowly crossfading and drifting in pan) starts then, quietly.
-// - A waterfall on screen eases its near water (trickle patter) in over a few seconds; off screen it fades out slowly.
+// - (parked in 15.1, WATERFALL_SOUND) A waterfall on screen eases its near water in over a few seconds; off screen it fades out slowly.
+// - Credits list scrolling (15.1): a soft paper rustle following the scroll speed.
+// - Breezes (15.1): every 15-45 s a small airy breeze swells and dies over 4-10 s, drifting across the stereo field.
 // - The sound toggle (header, right of the 俳句の掲示板 line) mutes and SUSPENDS the context; the choice is kept in localStorage
 //   ('hb-sound-muted'). Hidden page: faded and suspended (src/sound.js). The iPhone silent switch is respected: no audio session
 //   is set (navigator.audioSession is never touched), so Web Audio stays in the ambient category the switch silences.
-import { SoundEngine } from './sound.js';
+import { SoundEngine, SITE_LEVELS } from './sound.js';
 import { setSfxSink, sfxLog, sfx } from './sfx.js';
 import { WATER_RE } from './waterfall.js';
 import { PX, SCROLL_W } from './scroll-engine2.js';
 
-// gentle site levels (the lab defaults are for auditioning): the bed sits well under reading
-export const SITE_LEVELS = { master: { volume: 0.6 }, wind: { volume: 0.24 }, waterfall: { volume: 0.24 }, inky: { volume: 0.6 }, scroll: { volume: 0.5 }, poof: { volume: 0.45 }, fx: { volume: 0.5 } };
+// gentle site levels live in src/sound.js (SITE_LEVELS); round 15.1: the ambience ~11 dB lower
+export { SITE_LEVELS };
+// round 15.1: the waterfall sound is PARKED (Tiago: revisit later). false = the bed is the wind + breezes only, and nothing checks
+// for waterfalls on screen. true brings back the 15.0 behaviour (wind + water bed, the near water easing in over a waterfall).
+export const WATERFALL_SOUND = false;
 const SPEAKER = ['....#......', '...##......', '#####......', '#####......', '#####......', '...##......', '....#......'];
 
 export function mountSound({ view, inky, clock, root = document } = {}) {
-  const snd = new SoundEngine({ settings: SITE_LEVELS });   // mute choice from localStorage; site levels (lab tweaks never leak in)
+  const snd = new SoundEngine({ settings: SITE_LEVELS, water: WATERFALL_SOUND });   // mute choice from localStorage; site levels (lab tweaks never leak in)
   const live = () => !!snd.ctx && snd.ctx.state === 'running';
   let lastImpact = -1e9, dragging = false, dragAcc = 0, near = false;
   setSfxSink((name, p) => {
@@ -23,6 +28,8 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
     if (!live()) return 'locked';
     if (name === 'dragStart') snd.startDrag();
     else if (name === 'dragEnd') snd.stopDrag();
+    else if (name === 'rustleStart') snd.startRustle();
+    else if (name === 'rustleEnd') snd.stopRustle();
     else if (name === 'impact') { const now = performance.now(); if (now - lastImpact < 140) return 'skipped'; lastImpact = now; snd.dragImpact(p.strength ?? 0.6); }
     else snd.play(name, p);
     return 'played';
@@ -48,7 +55,7 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
     }
     return false;
   };
-  setInterval(() => { if (!live() || snd.muted) return; const v = fallsOnScreen(); if (v !== near) { near = v; snd.setWaterfallVisible(v); } }, 500);
+  if (WATERFALL_SOUND) setInterval(() => { if (!live() || snd.muted) return; const v = fallsOnScreen(); if (v !== near) { near = v; snd.setWaterfallVisible(v); } }, 500);
   // Inky (board): pokes with anger, splat on death, reform, wall / ceiling / floor squishes (src/inky.js onSfx) + the drag churn
   if (inky) {
     inky.onSfx = (name, p) => sfx(name, p);
@@ -59,7 +66,18 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
       if (d && live() && (dragAcc += dt) >= 0.05) { dragAcc = 0; snd.updateDrag(Math.min(1, Math.hypot(inky.vx, inky.vy) / 260)); }   // 20 Hz, his speed in art px / s
     });
   }
-  const api = { engine: snd, log: sfxLog, get state() { return snd.ctx?.state ?? 'none'; }, get muted() { return snd.muted; }, get bed() { return snd.bedOn; }, get near() { return near; }, button: btn, fallsOnScreen };
+  // round 15.1: scrolling the credits list rustles the paper (speed-driven, updates throttled to ~20 Hz, fades ~150 ms after the scroll stops)
+  { let ly = null, lt = 0, lu = 0, on = false, idle = null;
+    addEventListener('scroll', e => {
+      const el = e.target; if (!el?.classList?.contains?.('cr-list')) return;
+      const t = performance.now(), y = el.scrollTop;
+      if (ly != null && t - lt < 250) { const v = Math.abs(y - ly) / Math.max(8, t - lt);   // css px / ms
+        if (!on) { on = true; sfx('rustleStart'); }
+        if (live() && !snd.muted && t - lu >= 50) { lu = t; snd.updateRustle(Math.min(1, v / 2.5)); } }
+      ly = y; lt = t; clearTimeout(idle);
+      idle = setTimeout(() => { ly = null; if (on) { on = false; snd.updateRustle(0); sfx('rustleEnd'); } }, 150);
+    }, { capture: true, passive: true }); }
+  const api = { waterfallSound: WATERFALL_SOUND, engine: snd, log: sfxLog, get state() { return snd.ctx?.state ?? 'none'; }, get muted() { return snd.muted; }, get bed() { return snd.bedOn; }, get near() { return near; }, button: btn, fallsOnScreen };
   return api;
 }
 

@@ -12,6 +12,9 @@ const BODY = [214, 58, 40], EDGE = [150, 34, 24], OUTLINE = [96, 20, 14],   // O
   OUT_R2 = 5, HI = [246, 136, 110], PAPER = [255, 250, 240], INK = [26, 24, 28];
 const CHEEK = [255, 182, 190], GOLD = [226, 167, 46], BLUE = [120, 170, 230], WHITE = [255, 250, 240];
 const G = 260, NR = 10;
+// round 15.1: the same held-dead time as board Inky (src/inky.js DEAD_HOLD / DEAD_HOLD_REDUCED; tests/round15_1.test.js keeps them equal)
+export const DEAD_HOLD = 3.4, DEAD_HOLD_REDUCED = 2.2;
+const REACT = new Set(['happy', 'think', 'worry', 'shout', 'angry', 'bored']);
 const ease = u => u < .5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
 function catmull(pts, u) {                     // centripetal-ish Catmull-Rom through pts at u in [0,1]
   const n = pts.length - 1, f = Math.min(n - 1e-6, Math.max(0, u * n)), i = Math.floor(f), t = f - i;
@@ -29,7 +32,7 @@ export class RedInky {
     this.cv = document.createElement('canvas'); this.cv.className = 'inky-canvas red'; this.cv.style.zIndex = z; this.cv.setAttribute('aria-hidden', 'true');
     document.body.appendChild(this.cv); this.ctx = this.cv.getContext('2d');
     this.R = R; this.x = 40; this.fy = 100; this.vx = 0; this.vy = 0; this.floor = null; this.grounded = false;
-    this.s = 0; this.sv = 0;
+    this.s = 0; this.sv = 0; this.splatT = 0;
     this.rim = Array.from({ length: NR }, (_, i) => ({ a: (i / NR) * Math.PI * 2, ox: 0, oy: 0, vx: 0, vy: 0 }));
     this.drops = []; this.puddles = []; this.sparks = []; this.trail = [];
     this.mood = 'happy'; this.look = 0; this.lookY = 0; this.blink = 0; this.nextBlink = 2; this.t = 0; this.spin = 0; this.shiver = 0;
@@ -58,11 +61,20 @@ export class RedInky {
   rayExit(x, y, dx, dy, max = 120) { let last = 0; for (let d = 0; d <= max && d - last <= 8; d += 2) if (this._op((x + dx * d) / P, (y + dy * d) / P)) last = d; return last; }   // stops at the first real gap (ignores loose drops)
   get pos() { return { x: this.x * P, y: (this.fy - this.R * 1.1) * P, top: (this.fy - this.R * 2.6) * P, foot: this.fy * P }; }
   setMood(m) {
+    if (this.splatT > 0 && m !== 'splat') { if (REACT.has(m)) return; this.splatT = 0; this.slump = 0; }   // dead: the little reactions wait; a flow (post / quit / close) picks him up
     if (this.mood === m) return; this.mood = m;
     if (m !== 'bored') this.tapping = false;
     if (m === 'cheer') this.jump(1.1); if (m === 'worry') this.shiver = .6; if (m === 'happy') this.wobble(.25);
   }
   placeAt(xcss, footCss) { this.x = xcss / P; this.fy = footCss / P; this.vx = this.vy = 0; }
+  // round 15.1: red Inky splats too, exactly like board Inky (src/inky.js splatDown / popUp): flat with X eyes for the same held-dead time, then
+  // pops back up, happy to be back (onRevive: compose plays the revive). Taps while dead do nothing (TapMeter.splatted).
+  splatDown(hold = matchMedia?.('(prefers-reduced-motion: reduce)').matches ? DEAD_HOLD_REDUCED : DEAD_HOLD) {
+    this.setMood('splat'); this.splatT = hold; this.slump = .8; this.s = .9; this.sv = 0; this.shiver = 0; this.tapping = false; this.splat(14, 1.3); this.wobble(1.6);
+  }
+  popUp() {
+    this.splatT = 0; this.slump = 0; this.setMood('happy'); this.s = -.3; this.sv = -6; this.wobble(1.2); this.sparkle(10); this.onRevive?.();
+  }
   wobble(k = .4) { this.sv += 9 * k; this.rim.forEach(r => { r.vx += Math.cos(r.a * 2 + this.t) * 18 * k; r.vy += Math.sin(r.a * 3) * 18 * k; }); }
   jump(k = 1, vx = 0) { if (!this.grounded || this.floor == null) return; this.g = 0; this.vy = -95 * k; this.vx = vx; this.grounded = false; this.s = -.25; this.sv = -4; }
   // ballistic hop that always lands on the way DOWN at (x, foot) css after ~T s: the apex sits `height` ink px above
@@ -121,6 +133,7 @@ export class RedInky {
   // ---------- simulation ----------
   step(dt) {
     this.t += dt; const R = this.R;
+    if (this.splatT > 0) { this.splatT -= dt; if (this.splatT <= 0) this.popUp(); }
     if (this.mode === 'coach' && this.dock) {
       const d = this.dock(); if (d) { this.floor = d.foot / P; if (this.grounded) { this.x += (d.x / P - this.x) * Math.min(1, dt * 8); this.fy = this.floor; } }
       if (this.grounded && this.mood === 'cheer' && Math.random() < dt * 1.5) this.jump(.8);
@@ -262,6 +275,12 @@ export class RedInky {
     if (!this.bigEyes && this.worried && ex[1] - ex[0] < 4) { ex[0] = Math.round(cx - 2.5 + lx * .6) - 1; ex[1] = ex[0] + 4; }   // small R: two 2 px eyes, 2 px apart
     if (this.bigEyes && ex[1] - ex[0] < 5) { const c0 = Math.round((ex[0] + ex[1]) / 2); ex[0] = c0 - 3; ex[1] = c0 + 2; }   // round 14.1: small R, still two separate 3 px eyes (2 px apart)
     const W = PAPER;
+    if (m === 'splat') {                                                                                    // round 15.1: X X, flat (as board Inky)
+      const y = Math.round(cy - R * .05 * sy);
+      for (const e of [Math.round(cx - 3.2 * k * sx), Math.round(cx + 1.8 * k * sx)]) { put(e, y - 1, W); put(e + 2, y - 1, W); put(e + 1, y, W); put(e, y + 1, W); put(e + 2, y + 1, W); }
+      put(cx - 1, y + 2, W); put(cx, y + 2, W); put(cx + 1, y + 2, W);
+      return;
+    }
     put(cx - R * .5, cy - R * .45, HI); put(cx - R * .5, cy - R * .3, HI); put(cx - R * .38, cy - R * .55, HI);
     for (const e of ex) {
       const big = this.bigEyes, left = e === ex[0];

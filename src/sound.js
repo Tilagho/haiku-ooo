@@ -6,7 +6,7 @@
 //
 //   const snd = new SoundEngine();               // settings + mute come from localStorage
 //   snd.unlock();                                // call inside the first touch / click handler (creates + resumes the AudioContext)
-//   snd.startBed();                              // the universal reading bed: wind + waterfall, slowly crossfading / pan-drifting (~1 min cycle)
+//   snd.startBed();                              // the universal reading bed: wind (+ waterfall unless new SoundEngine({ water: false })), slowly drifting, with breezes
 //   snd.setWaterfallVisible(true|false);         // eases the near-water detail in over a few s, fades it out slowly (~10 s)
 //   snd.startAmbient(['wind']); snd.stopAmbient(); snd.stopBed();
 //   snd.play('poke', { anger: 0..1 });           // anger >~.5 blends in the old-computer error beep (double at >.85)
@@ -22,7 +22,7 @@
 
 export const DEFAULTS = {
   master: { volume: 0.7 },
-  wind: { volume: 0.42, tone: 0.45, gust: 0.5, width: 0.7 },
+  wind: { volume: 0.42, tone: 0.45, gust: 0.5, width: 0.7, breeze: 0.5 },   // breeze: the ethereal little breezes that come and go (round 15.1)
   waterfall: { volume: 0.42, tone: 0.35, intensity: 0.5, drops: 0.35 },
   inky: { volume: 0.7, tone: 0.5, wet: 0.35 },
   scroll: { volume: 0.6, tone: 0.5, crackle: 0.5 },
@@ -30,6 +30,10 @@ export const DEFAULTS = {
   fx: { volume: 0.55, tone: 0.5 },          // the little moments: egg reveal, scurry, bird hit, sad notes, stamps
 };
 const KEY = 'hb-sound', MUTE_KEY = 'hb-sound-muted';
+// the SITE's levels (the lab DEFAULTS are for auditioning). Round 15.1: every ambient ~11 dB lower than 15.0 (wind .24 -> .068), one-shots unchanged
+export const SITE_LEVELS = { master: { volume: 0.6 }, wind: { volume: 0.068 }, waterfall: { volume: 0.068 }, inky: { volume: 0.6 }, scroll: { volume: 0.5 }, poof: { volume: 0.45 }, fx: { volume: 0.5 } };
+export const BREEZE_EVERY = [15, 45], BREEZE_LEN = [4, 10];   // a breeze starts every 15-45 s (random), each swells and dies over 4-10 s
+export const FLOOD_FILL = 0.9;    // s from the write tap's flood start until the black has filled the screen (measured 0.83 s in tools/e2e-round15_1-sound.mjs)
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a = 0, b = 1) => a + Math.random() * (b - a);
@@ -37,8 +41,8 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
 
 export class SoundEngine {
-  constructor({ settings, persist = true } = {}) {
-    this.persist = persist;
+  constructor({ settings, persist = true, water = true } = {}) {
+    this.persist = persist; this.bedWater = water;   // water: false = the bed is the wind alone (round 15.1 site: the waterfall sound is parked)
     let saved = null; if (persist && !settings) { try { saved = JSON.parse(ls.get(KEY) || 'null'); } catch {} }
     this.settings = clone(DEFAULTS);
     for (const src of [saved, settings]) if (src) for (const g in src) if (this.settings[g]) Object.assign(this.settings[g], src[g]);
@@ -58,6 +62,7 @@ export class SoundEngine {
         this.timer = setInterval(() => { if (this.ctx.state === 'running') this.pump(); }, 1000);   // nothing scheduled while suspended (hidden / muted)
         if (this.muted) { this.master.gain.value = 0; c.suspend?.(); }
         for (const f of this._queue.splice(0)) f();
+        setTimeout(() => this.prepareFlood(), 1200);   // round 15.1: the write-page flood buffer (+ its reverse), a moment after the bed is going
       });
     }
     const c = this.ctx || this._pending;
@@ -72,8 +77,8 @@ export class SoundEngine {
     const step = () => new Promise(r => setTimeout(r, 0)), out = { noise: {} };
     for (const k of ['white', 'pink', 'brown']) { await step(); out.noise[k] = makeNoise(c, k); }
     await step(); out.grain = makeNoise(c, 'white', 0.25);
-    for (let i = 0; i < 4; i++) { await step(); out.patterPart = makePatter(c, 8, 110, out.patterPart, i, 4); }
-    out.noise.patter = out.patterPart.buf; delete out.patterPart;
+    if (this.bedWater) { for (let i = 0; i < 4; i++) { await step(); out.patterPart = makePatter(c, 8, 110, out.patterPart, i, 4); }   // (15.1: only when the waterfall sound is on)
+      out.noise.patter = out.patterPart.buf; delete out.patterPart; }
     await step(); out.ir = makeIR(c, 1.6);
     await step(); return out;
   }
@@ -81,7 +86,7 @@ export class SoundEngine {
     this.ctx = ctx; const c = ctx, sr = c.sampleRate;
     this.noise = bufs?.noise ?? { white: makeNoise(c, 'white'), pink: makeNoise(c, 'pink'), brown: makeNoise(c, 'brown') };
     this.grain = bufs?.grain ?? makeNoise(c, 'white', 0.25);
-    if (!this.noise.patter) this.noise.patter = makePatter(c).buf;           // the in-view waterfall's shower patter (one 8 s buffer, built once)
+    if (!this.noise.patter && this.bedWater) this.noise.patter = makePatter(c).buf;           // the in-view waterfall's shower patter (one 8 s buffer, built once)
     this.master = c.createGain(); this.master.gain.value = this.muted ? 0 : this.settings.master.volume;
     const comp = c.createDynamicsCompressor(); comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.35;
     const out = c.createGain(); out.gain.value = 0.9;
@@ -130,6 +135,10 @@ export class SoundEngine {
   pump(ahead = 4) {
     if (!this.ctx) return; const to = (this.ctx instanceof OfflineAudioContext ? 0 : this.now) + ahead;
     for (const v of Object.values(this.amb)) v.schedule(to);
+    if (this.breezeOn && this.amb.wind) while (this.nextBreeze < to) {          // the breezes: scheduled like the gusts, a few nodes each, ~every 30 s
+      const t0 = this.nextBreeze, len = rnd(...BREEZE_LEN); (this.breezeLog ||= []).push([+t0.toFixed(2), +len.toFixed(2)]); if (this.breezeLog.length > 20) this.breezeLog.shift();
+      this.nextBreeze += rnd(...BREEZE_EVERY); breeze(this, t0, len);
+    }
     this.until = to;
   }
   // ---------- ambient ----------
@@ -143,18 +152,28 @@ export class SoundEngine {
     if (names.includes('wind') || names.includes('waterfall')) this._bedLfo(false);
   }
   // THE READING BED: wind + the distant waterfall together, slowly trading places (an equal-ish crossfade over ~56 s and an opposite pan drift over ~71 s)
-  startBed() { if (!this.ctx) return this._defer(() => this.startBed()); this.bedOn = true; this.startAmbient(['wind', 'waterfall']); this._bedLfo(true); }
-  stopBed() { this.bedOn = false; this.stopAmbient(this.near ? ['wind'] : ['wind', 'waterfall']); }
+  breezeNow(len = rnd(...BREEZE_LEN)) { if (!this.ctx) return this._defer(() => this.breezeNow(len)); if (this.amb.wind) breeze(this, this.now + 0.05, len); }   // lab: one breeze on demand
+  startBed() {
+    if (!this.ctx) return this._defer(() => this.startBed());
+    this.bedOn = true; this.breezeOn = true; this.nextBreeze = this.now + rnd(5, 15);   // the first breeze comes 5-15 s in
+    this.startAmbient(this.bedWater ? ['wind', 'waterfall'] : ['wind']); this._bedLfo(true);
+  }
+  stopBed() { this.bedOn = false; this.breezeOn = false; this.stopAmbient(this.near || !this.bedWater ? ['wind'] : ['wind', 'waterfall']); }
   _bedLfo(on) {
     const t = this.now;
     if (this.bedLfo) { for (const o of this.bedLfo) o.stop(t + 0.05); this.bedLfo = null; for (const g of ['wind', 'waterfall']) { this.mix[g].gain.setTargetAtTime(1, t, 2); this.bpan[g].pan.setTargetAtTime(0, t, 2); } }
     if (!on) return;
     const x = this.ctx.createOscillator(), pn = this.ctx.createOscillator(); x.frequency.value = 1 / 56; pn.frequency.value = 1 / 71;
-    const xw = this.gain(0.3), xf = this.gain(-0.3), pw = this.gain(0.35), pf = this.gain(-0.35);
-    x.connect(xw).connect(this.mix.wind.gain); x.connect(xf).connect(this.mix.waterfall.gain); pn.connect(pw).connect(this.bpan.wind.pan); pn.connect(pf).connect(this.bpan.waterfall.pan);
-    this.mix.wind.gain.setValueAtTime(0.75, t); this.mix.waterfall.gain.setValueAtTime(0.75, t);
+    if (this.bedWater) {                                                       // wind + water trade places
+      const xw = this.gain(0.3), xf = this.gain(-0.3), pw = this.gain(0.35), pf = this.gain(-0.35);
+      x.connect(xw).connect(this.mix.wind.gain); x.connect(xf).connect(this.mix.waterfall.gain); pn.connect(pw).connect(this.bpan.wind.pan); pn.connect(pf).connect(this.bpan.waterfall.pan);
+      this.mix.wind.gain.setValueAtTime(0.75, t); this.mix.waterfall.gain.setValueAtTime(0.75, t);
+    } else {                                                                   // the wind alone: a slow breathing (+-1.5 dB) and a gentle drift across the stereo field
+      x.connect(this.gain(0.16)).connect(this.mix.wind.gain); pn.connect(this.gain(0.25)).connect(this.bpan.wind.pan); this.mix.wind.gain.setValueAtTime(0.9, t);
+    }
     x.start(t); pn.start(t); this.bedLfo = [x, pn];
   }
+
   // a waterfall ON SCREEN: its near detail (trickles, burbles, droplets, a little more body) eases in over several seconds and fades out even more slowly
   setWaterfallVisible(v, when) {
     if (!this.ctx) return this._defer(() => this.setWaterfallVisible(v)); const t = when ?? this.now; this.near = v ? 1 : 0;
@@ -167,6 +186,18 @@ export class SoundEngine {
     if (!this.ctx) return this._defer(() => this.play(name, { ...p, when: undefined })); const t = p.when ?? this.now + 0.01;
     const f = SHOTS[name]; if (f) f(this, t, p);
   }
+  // round 15.1: the write-page ink flood: rendered ONCE offline (sharing this engine's noise buffers: no rebuild) into a forward + a reversed buffer
+  prepareFlood() {
+    if (this._floodP || !this.ctx) return this._floodP; const sr = this.ctx.sampleRate, L = FLOOD_FILL + 1.9;
+    const oc = new OfflineAudioContext(2, Math.ceil(sr * L), sr), E = new SoundEngine({ settings: { ...this.settings, master: { volume: 1 }, inky: { ...this.settings.inky, volume: 1 } }, persist: false, water: false });
+    E.muted = false; E.attach(oc, { noise: this.noise, grain: this.grain, ir: this.verb.buffer }); SHOTS.inkFlood(E, 0.01);
+    return (this._floodP = oc.startRendering().then(b => { const rev = this.ctx.createBuffer(2, b.length, sr); for (let c = 0; c < 2; c++) { const a = b.getChannelData(c), o = rev.getChannelData(c); for (let i = 0, n = a.length; i < n; i++) o[i] = a[n - 1 - i]; } this.flood = { fwd: b, rev }; return this.flood; }).catch(e => { console.warn('sound: flood render failed', e); this._floodP = null; }));
+  }
+  _playBuf(buf, t, offset = 0) { const s = this.ctx.createBufferSource(), g = this.gain(this.settings.inky.volume); s.buffer = buf; s.connect(g).connect(this.master); s.start(t, offset); return s; }
+  // round 15.1: the credits list being scrolled: a soft old-paper rustle that follows the scroll speed and fades when it stops
+  startRustle(when) { if (!this.ctx) return this._defer(() => this.startRustle()); this.stopRustle(when); this.rustle = rustleVoice(this, when ?? this.now); }
+  updateRustle(speed, when) { this.rustle?.update(clamp(speed), when ?? this.now); }
+  stopRustle(when) { this.rustle?.stop(when ?? this.now); this.rustle = null; }
   startDrag(inky = 'black', when) { if (!this.ctx) return this._defer(() => this.startDrag(inky)); this.stopDrag(when); this.drag = churnVoice(this, inky, when ?? this.now); }
   updateDrag(speed, when) { this.drag?.update(clamp(speed), when ?? this.now); }
   stopDrag(when) { this.drag?.stop(when ?? this.now); this.drag = null; }
@@ -225,6 +256,24 @@ function makeIR(c, sec) {
 }
 
 // ---------- WIND: two band-passed pink-noise layers wide in stereo, a faint whistle, a brown-noise body; slow LFO drift + scheduled gusts ----------
+// a BREEZE (round 15.1): a small ethereal gust that slowly picks up and dies back down in the background, len 4-10 s.
+// An airy whoosh (pink noise, a soft band sweeping up then back), a thin glassy whistle (a narrow band gliding a few semitones) and a
+// faint shimmer on top, all carried across the stereo field (left -> right or back) as it passes. ~8 nodes, gone when it ends.
+function breeze(E, t, len) {
+  const S = E.settings.wind, k = S.breeze ?? 0.5, dir = Math.random() < 0.5 ? -1 : 1, rise = len * rnd(0.4, 0.55);
+  const out = E.gain(0), p = E.pan(-dir * 0.7); out.connect(p).connect(E.bus.wind);
+  out.gain.setValueAtTime(0, t); out.gain.setTargetAtTime(1, t, rise / 2.2); out.gain.setTargetAtTime(0, t + rise, (len - rise) / 3);   // up slowly, down slower
+  p.pan.setValueAtTime(-dir * 0.7, t); p.pan.linearRampToValueAtTime(dir * 0.7, t + len);
+  const f0 = rnd(420, 700), whoosh = E.src('pink', t), wb = E.filt('bandpass', f0, 0.9), wg = E.gain(1.7 * k);
+  wb.frequency.setValueAtTime(f0, t); wb.frequency.exponentialRampToValueAtTime(f0 * rnd(1.6, 2.2), t + rise); wb.frequency.exponentialRampToValueAtTime(f0 * 1.1, t + len);
+  whoosh.connect(wb).connect(wg).connect(out);
+  const fw = rnd(1100, 1700), wh = E.src('white', t), hb = E.filt('bandpass', fw, 22), hg = E.gain(0.8 * k);            // the whistle
+  hb.frequency.setValueAtTime(fw, t); hb.frequency.linearRampToValueAtTime(fw * rnd(1.12, 1.3), t + rise); hb.frequency.linearRampToValueAtTime(fw * rnd(0.92, 1.02), t + len);
+  wh.connect(hb).connect(hg).connect(out);
+  const sh = E.src('pink', t), sb = E.filt('bandpass', rnd(2600, 3400), 3), sg = E.gain(0.17 * k);                       // the shimmer (kept soft: no hiss on phones)
+  sh.connect(sb).connect(sg).connect(out);
+  for (const n of [whoosh, wh, sh]) n.stop(t + len + 2);
+}
 function windVoice(E) {
   const c = E.ctx, S = E.settings.wind, t0 = E.now, nodes = [];
   const out = E.gain(0), lp = E.filt('lowpass', 1600, 0.5), env = E.gain(0.55);
@@ -375,6 +424,15 @@ const SHOTS = {
     bloop(E, t + 0.78, d, 210, 420, 0.2, 0.42, 'triangle');                            // the 'blup!' (rising: filling, not falling)
     plip(E, t + 0.86, d, { f: 900, amp: 0.1, dur: 0.06 });
   },
+  // round 15.1: back alive and HAPPY: the watery gather, then right as he pops back into shape a short bright 'ding-ding!' (a little up-skip
+  // and a sweet two-note bell chord, a pinch of glitter): pleased to be back. reform stays on its own; revive = reform + the chime.
+  revive(E, t) { SHOTS.reform(E, t); SHOTS.reviveChime(E, t + 0.84); },
+  reviveChime(E, t) {
+    const d = E.gain(1.5); d.connect(E.bus.inky);                                    // past Inky's dull lowpass: the bell stays bright
+    chime(E, t, d, 1174.7, 0.12, 0.5, -0.2);                                          // D6
+    chime(E, t + 0.085, d, 1568, 0.13, 1.0, 0.15); chime(E, t + 0.09, d, 1975.5, 0.08, 1.0, 0.3);   // G6 + B6 together: the happy landing
+    for (let i = 0; i < 5; i++) chime(E, t + 0.16 + i * 0.06 + Math.random() * 0.03, d, 3136 * Math.pow(2, [0, 4, 7, 12, 7][i] / 12), 0.016, 0.35, rnd(-0.6, 0.6));   // glitter
+  },
   wetSlap(E, t, p) {                                                                   // the squish into a wall: a short wet slap, scaled by strength (body 180-700 Hz so phones play it)
     const S = clamp(p.strength ?? 1), d = inkyOut(E), a = 0.25 + 0.75 * S;
     wash(E, t, d, { dur: 0.16 + 0.1 * S, f0: 2600, f1: 380, amp: 0.55 * a, type: 'white', Q: 1.2 });
@@ -481,6 +539,19 @@ const fxShots = {
       g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(a, t + 0.0007); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045); o.connect(g).connect(m); o.start(t); o.stop(t + 0.05); }
     const n = E.src('white', t, { loop: false }), nb = E.filt('bandpass', 2600, 1.3), ng = E.gain(0); ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.75, t + 0.0005); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.018); n.connect(nb).connect(ng).connect(m); n.stop(t + 0.03);
     bloop(E, t, m, 240, 140, 0.06, 0.55, 'sine');
+    // round 15.1: the comedy - a burst of feathers (quick papery wing flaps, slowing and scattering, over a soft feathery whoosh) and a little
+    // cartoon puff: the poof's family, but quicker and lighter (no bubble, no falling notes) so it never reads as the egg / credits poof
+    const f = E.gain(1); f.connect(d); const side = Math.random() < 0.5 ? -1 : 1;
+    for (let i = 0, x = 0.035; i < 9; i++) { const u = i / 8, T = t + x; x += lerp(0.028, 0.07, u) * rnd(0.85, 1.15);
+      const s = E.src('white', T, { loop: false }), b = E.filt('bandpass', rnd(1300, 2600) * (1 - 0.3 * u), 1.1), g = E.gain(0), pn = E.pan(side * (u - 0.3) * 0.9 + rnd(-0.2, 0.2));
+      g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(0.42 * (1 - 0.65 * u), T + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, T + rnd(0.03, 0.05));   // a flap: papery 'fft'
+      s.connect(b).connect(g).connect(pn).connect(f); s.stop(T + 0.07); }
+    { const s = E.src('pink', t + 0.03), b = E.filt('bandpass', 900, 0.8), g = E.gain(0), T = t + 0.03;         // the feathery whoosh under it
+      b.frequency.setValueAtTime(700, T); b.frequency.exponentialRampToValueAtTime(1500, T + 0.12); b.frequency.exponentialRampToValueAtTime(800, T + 0.45);
+      g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(0.22, T + 0.06); g.gain.setTargetAtTime(0, T + 0.1, 0.06); s.connect(b).connect(g).connect(f); s.stop(T + 0.5); }
+    { const T = t + 0.05, s = E.src('white', T), lp = E.filt('lowpass', 2600, 1), g = E.gain(0);               // the puff: a short, light 'pf'
+      lp.frequency.setValueAtTime(2600, T); lp.frequency.exponentialRampToValueAtTime(420, T + 0.16);
+      g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(0.3, T + 0.008); g.gain.setTargetAtTime(0, T + 0.02, 0.045); s.connect(lp).connect(g).connect(f); s.stop(T + 0.35); }
   },
   // backing out of quitting: the falling 'aww' played on BONES (original): hollow, clacky xylophone / woodblock strikes that walk the old wobbly slide
   // down an octave (slowing as they go), a hollow low 'bonk', then a little rattle of bones settling
@@ -493,6 +564,9 @@ const fxShots = {
   },
   // STAMP FAIL: a big heavy rubber stamp on a desk: a thick body thump (180 -> 70 Hz with a 300 Hz knock), a wooden 'tok', a paper slap, a dull rattle
   stampFail(E, t) { stampHit(E, t, fxOut(E), 1.25); },
+  // round 15.1: red Inky lands on the BACK stamp himself: a lighter, woodier thunk than stamp-fail (a small rubber stamp on a wooden block: a light
+  // stamp hit + a hollow wooden knock and its little after-knock). The sad notes follow ~1 s later (after the roll-up), so it rings out short.
+  backStamp(E, t) { const d = fxOut(E), w = E.gain(1.2); w.connect(d); stampHit(E, t, d, 0.5); bone(E, t + 0.004, w, 262, 0.34, 0, 0.16, true); bone(E, t + 0.05, w, 523, 0.1, 0.15, 0.06); },
   // STAMP SUCCESS: a firm, bright stamp, then the same rising arpeggio (C E G C) as a little brass fanfare (bright saw voices through an opening filter,
   // a bell on each note), a quick V chord pickup that RESOLVES on a held C major chord with a swell, and a sparkly shimmer falling over it
   stampSuccess(E, t) {
@@ -505,6 +579,28 @@ const fxShots = {
     for (let i = 0; i < 14; i++) { const u = i / 13; chime(E, C + 0.05 + u * 0.9 + rnd(0, 0.05), bus, lerp(4200, 2100, u) * rnd(0.95, 1.05), 0.022 * (1 - 0.5 * u), 0.35, rnd(-0.8, 0.8)); }   // shimmer cascading down
   },
   // the INK WASH on publish: a whole bucket of ink dumped: a rising surge (a lowpass opening over pink + brown), a big splash crest, the pour running out, spray falling back
+  // round 15.1: OPENING THE WRITE PAGE: a huge bucket of ink and water dumped over the whole screen, timed to the flood (src/ink-field.js flood: the
+  // geyser from the button, the black climbing the screen ~FLOOD_FILL s, then settling): the tip-over 'glunk', a roaring gush that swells as it
+  // climbs (two surges + glugging + a thousand droplets), sloshing, the crest as the screen fills, and a short settle so the unroll is heard.
+  // The site plays it from a buffer rendered once (engine.prepareFlood), so BACKING OUT can play the very same buffer REVERSED: it all sucks back in.
+  inkFlood(E, t) {
+    const d = E.gain(0.55); d.connect(E.bus.inky); const F = FLOOD_FILL;
+    bloop(E, t, d, 210, 140, 0.18, 0.5, 'triangle'); bone(E, t, d, 180, 0.2, 0, 0.2, true);                       // the bucket tips: a hollow glunk
+    const surge = (type, f0, f1, amp, pan, at) => { const T = t + at, s = E.src(type, T), lp = E.filt('lowpass', f0, 0.7), g = E.gain(0), p = E.pan(pan);
+      lp.frequency.setValueAtTime(f0, T); lp.frequency.exponentialRampToValueAtTime(f1, T + F * 0.7); lp.frequency.exponentialRampToValueAtTime(700, T + F + 0.9);
+      g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(amp * 0.6, T + 0.12); g.gain.linearRampToValueAtTime(amp, T + F * 0.85); g.gain.setTargetAtTime(0, T + F, 0.32);
+      s.connect(lp).connect(g).connect(p).connect(d); s.stop(T + F + 2.2); };
+    surge('pink', 500, 3000, 0.5, -0.45, 0.05); surge('pink', 560, 2600, 0.45, 0.45, 0.07); surge('brown', 300, 1100, 0.3, 0, 0.05);
+    glug(E, t + 0.08, d, { dur: F, f: 300, rate: 6, amp: 0.7, rise: 1.6 }); glug(E, t + 0.15, d, { dur: F * 0.9, f: 640, rate: 9.5, amp: 0.45, rise: 1.4 });
+    glug(E, t + 0.25, d, { dur: F, f: 230, rate: 3.2, amp: 0.45, rise: 1.3 });                                     // the slosh of the climbing surface
+    for (let i = 0; i < 70; i++) { const u = Math.random(); plip(E, t + 0.05 + u * (F + 0.3), d, { f: rnd(300, 1400), amp: rnd(0.03, 0.08) * (0.5 + 0.5 * u), dur: rnd(0.03, 0.08), rise: Math.random() < 0.7 ? rnd(1.3, 1.8) : 0.7, pan: rnd(-0.9, 0.9) }); }
+    wash(E, t + F - 0.1, d, { dur: 0.7, f0: 3600, f1: 500, amp: 0.4, type: 'white', Q: 0.8 }); bloop(E, t + F - 0.05, d, 230, 100, 0.35, 0.45, 'triangle');   // the crest: full
+    gurgle(E, t + F + 0.1, d, 0.6, 700, 220, 4, 0.5, 0.05);                                                         // settling
+  },
+  inkFloodIn(E, t) { if (E.flood) E._playBuf(E.flood.fwd, t); else SHOTS.inkFlood(E, t); },
+  inkFloodOut(E, t, p) { if (!E.flood) return; const L = E.flood.rev.duration; E._playBuf(E.flood.rev, t, Math.max(0, L - ((p.dur ?? 1.3) + 0.35))); },   // its peak (the tip-over, reversed) lands as the black closes into Inky
+  // round 15.1: red Inky swooshing in (compose): board Inky's drag churn, swelled in and out along the swoop (fast in the middle of the whip)
+  swooshIn(E, t, p) { const T = p.dur ?? 0.95, v = churnVoice(E, 'red', t); for (let x = 0; x <= T; x += 0.04) v.update(Math.pow(Math.sin(Math.PI * x / T), 0.7) * 0.95, t + x); v.stop(t + T); },
   inkWash(E, t) {
     const d = E.gain(0.62); d.connect(E.bus.inky);
     const surge = (type, f0, f1, amp, pan) => { const s = E.src(type, t), lp = E.filt('lowpass', f0, 0.8), g = E.gain(0), p = E.pan(pan);
@@ -567,6 +663,24 @@ function mapPaper(E, t, { dur, open }) {
   if (!open) { const T = t + dur * 0.9; wash(E, T, d, { dur: 0.12, f0: 900, f1: 250, amp: 0.5, type: 'brown', attack: 0.003 }); }   // the roll settles: a soft paper 'flup'
 }
 function lfoOn(E, f, depth, param) { const o = E.ctx.createOscillator(), g = E.gain(depth); o.frequency.value = f; o.connect(g).connect(param); o.start(E.now); o.stop(E.now + 30); }
+// ---------- round 15.1: the credits-scroll rustle (the scroll open / close family, quieter): a fluttering paper band + crisp ticks, both
+// following the scroll speed; ticks are scheduled only ~80 ms ahead from each update (no timers of its own), so it stops when the updates do ----------
+function rustleVoice(E, t0) {
+  const S = E.settings.scroll, d0 = E.filt('lowpass', 3400 + 1400 * S.tone, 0.5), out = E.gain(0), tk = E.gain(3.3); out.connect(d0).connect(E.bus.scroll); tk.connect(d0);
+  const bed = E.src('white', t0), bb = E.filt('bandpass', 1600, 0.8), am = E.gain(0.6), lf = [[11, 0.35], [17, 0.25]].map(([f, dp]) => { const o = E.ctx.createOscillator(), g = E.gain(dp); o.frequency.value = f; o.connect(g).connect(am.gain); o.start(t0); return o; });
+  bed.connect(bb).connect(am).connect(out);
+  const tick = (T, a, f, len, pan) => { const s = E.src('grain', T, { loop: false, rate: rnd(0.8, 1.4) }), b = E.filt('bandpass', f, 0.9), h = E.filt('highpass', 700, 0.7), g = E.gain(0), p = E.pan(pan);
+    g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(a, T + 0.0004); g.gain.exponentialRampToValueAtTime(0.0001, T + len); s.connect(b).connect(h).connect(g).connect(p).connect(tk); s.stop(T + len + 0.01); };
+  let next = t0, sp = 0;
+  return {
+    update(v, t) {
+      sp = v; out.gain.setTargetAtTime(1.65 * Math.pow(v, 0.8), t, 0.06); bb.frequency.setTargetAtTime(1400 + 1000 * v, t, 0.1);
+      if (next < t) next = t; const until = t + 0.08;
+      while (v > 0.04 && next < until) { tick(next, rnd(0.12, 0.3) * (0.4 + 0.6 * v), rnd(1200, 3000), rnd(0.001, 0.004), rnd(-0.5, 0.5)); next += rnd(0.015, 0.06) / (0.3 + v); }
+    },
+    stop(t) { out.gain.setTargetAtTime(0, t, 0.09); bed.stop(t + 0.8); for (const o of lf) o.stop(t + 0.8); },
+  };
+}
 // ---------- the drag churn: two resonant noise bands wobbling faster / louder with the finger speed, bubbles popping at a speed-driven rate ----------
 function churnVoice(E, inky, t0) {
   const k = K(), d = inkyOut(E), out = E.gain(0), dk = E.gain(1); out.connect(dk).connect(d);

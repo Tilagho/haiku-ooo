@@ -8,6 +8,7 @@ import { countLine, checkHaiku, PATTERN } from './haiku.js';
 import { clock } from './clock.js';
 import { springAnimate, springEasing, SPRINGS, JELLY } from './spring.js';
 import { RedInky } from './inky-red.js';
+import { TapMeter } from './inky-mind.js';   // round 15.1: red Inky gets fed up and splats, like board Inky
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { InkField } from './ink-field.js';
 import { ScrollArt, SP, RH } from './scroll-art.js';
@@ -634,10 +635,16 @@ export function mountCompose(deps) {
   const nextBug = () => { if (!bugBag.length) { bugBag = BUG_POOL.filter(t => t !== bugLast); for (let i = bugBag.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [bugBag[i], bugBag[j]] = [bugBag[j], bugBag[i]]; } } return (bugLast = bugBag.pop()); };
   const hit = document.createElement('div'); hit.className = 'rihit'; hit.setAttribute('aria-hidden', 'true'); root.appendChild(hit);
   for (const ev of ['pointerdown', 'mousedown', 'touchstart']) hit.addEventListener(ev, e => { if (e.cancelable) e.preventDefault(); if (ev === 'pointerdown') bugInky(); }, { passive: false });
+  // round 15.1: the board's TapMeter decides when he has had enough (a random 6-12 taps): the same anger escalation, splat, dead time, reform +
+  // revive chime. While he is flat, taps do nothing; posting / quitting / closing picks him straight up (RedInky.setMood).
+  const bugMeter = new TapMeter();
+  inky.onRevive = () => { bugMeter.revive(); bugTaps = 0; bugAt = -1e9; sfx('revive'); };
   function bugInky() {
-    if (!opened || !inky.visible || inky.mode !== 'coach') return;
-    const now = clock.now(); bugTaps = now - bugAt < 2200 ? bugTaps + 1 : 1; bugAt = now;
-    sfx('poke', { anger: Math.min(1, (bugTaps - 1) / 6) });   // red Inky: the same poke, crosser with each tap in a row
+    if (!opened || !inky.visible || inky.mode !== 'coach' || inky.splatT > 0) return;
+    const now = clock.now(), r = bugMeter.tap(now); bugTaps = now - bugAt < 2200 ? bugTaps + 1 : 1; bugAt = now;
+    if (r.kind === 'ignored') return;
+    if (r.kind === 'splat') { sfx('splat'); inky.splatDown(); pending = null; bubble.hidden = true; bubbleUntil = 0; return; }   // he's had it: flat, X eyes, no words
+    sfx('poke', { anger: Math.min(1, r.taps / (bugMeter.splatAt || 8)) });   // red Inky: the same poke, angrier toward the splat (as board Inky)
     inky.s = .55 + Math.min(.15, bugTaps * .04); inky.sv = 0; inky.wobble(.9 + Math.min(.8, bugTaps * .15));   // squish + wobble
     if (busy || denied) return;                    // mid-post / mid-denial: only the squish, no face or words over it
     inky.tapping = false;
@@ -662,7 +669,7 @@ export function mountCompose(deps) {
   // `gate` keeps idle / progress / tap comments out until 'tap to write' has been shown and the first tap landed (or its minimum hold passed).
   let sess = 0, gate = 'open', gateShown = -1e9;
   const gateOpen = () => gate === 'open' || (gate === 'shown' && clock.now() - gateShown >= HOLD_MIN);
-  function resetSpeech() { body.classList.remove('await-tap'); sess++; pending = null; bubble.hidden = true; bubbleUntil = 0; bubbleFrom = -1e9; bubbleOpacity = ''; bubble.style.opacity = '0'; tapBubble = false; idleAt = 0; bugTaps = 0; bugAt = -1e9; inky.tapping = false; gate = KB_MODE === 'late' && coarse ? 'wait' : 'open'; gateShown = -1e9; }
+  function resetSpeech() { bugMeter.revive(); if (inky.splatT > 0) { inky.splatT = 0; inky.slump = 0; inky.setMood('happy'); } body.classList.remove('await-tap'); sess++; pending = null; bubble.hidden = true; bubbleUntil = 0; bubbleFrom = -1e9; bubbleOpacity = ''; bubble.style.opacity = '0'; tapBubble = false; idleAt = 0; bugTaps = 0; bugAt = -1e9; inky.tapping = false; gate = KB_MODE === 'late' && coarse ? 'wait' : 'open'; gateShown = -1e9; }
   const bubbleLog = [];   // measured by the tests / captures: every bubble shown (when, text, hold ms)
   function say(text, ms = 1800, big = false) {   // raw: shows now (state changes: open / post / deny). Idle chatter and taps go through chat()
     if (text !== 'tap to write') tapBubble = false;
@@ -693,7 +700,7 @@ export function mountCompose(deps) {
   }
   clock.onTick(() => {
     const now = clock.now();
-    if (opened && !busy && !denied && body.classList.contains('composing') && !allOk && !body.classList.contains('await-tap') && now - lastInput > IDLE_FIRST && now >= idleAt) {
+    if (opened && !busy && !denied && !(inky.splatT > 0) && body.classList.contains('composing') && !allOk && !body.classList.contains('await-tap') && now - lastInput > IDLE_FIRST && now >= idleAt) {
       if (chat('idle', () => NO_RUSH[idleN++ % NO_RUSH.length])) { inky.setMood('bored'); inky.tapping = true; idleAt = now + IDLE_GAP[0] + Math.random() * (IDLE_GAP[1] - IDLE_GAP[0]); }
     }
     pump();
@@ -749,7 +756,7 @@ export function mountCompose(deps) {
     deps.hideBoardBubble?.();
     await bi.hopTo(fx, fab.top + 8, .26, 12);
     bi.visible = false;
-    const fl = field.flood(fx, { speed: 1.8 });
+    const fl = field.flood(fx, { speed: 1.8 }); sfx('inkFloodIn');   // round 15.1: the bucket of ink dumps over the screen
     fabAnim([{ transform: 'translateX(-50%) scale(1)' }, { transform: 'translateX(-50%) scale(1.25,.7)', offset: .3 }, { transform: 'translateX(-50%) translateY(140px) scale(.8,1.2)' }], { duration: 360, easing: 'ease-in', fill: 'forwards' });
     await fl;
     body.classList.add('washed'); html.classList.add('washed');   // the flood has filled the screen: now a solid wash far past every edge
@@ -770,6 +777,7 @@ export function mountCompose(deps) {
     const done = art.setTarget(rowsNow(), { k: 95, c: 11 });
     await clock.wait(380);
     const d = dock(); inky.visible = true; inky.setMood('cheer'); inky.look = -1;
+    sfx('swooshIn', { dur: .95 });                  // round 15.1: his swoop in: the drag churn, swelling with it
     await inky.whip([[innerWidth + 90, vvt + vvh * .56], [innerWidth * .62, vvt + vvh * .74], [innerWidth * .36, vvt + vvh * .9], [innerWidth * .48, vvt + vvh * .8], [innerWidth * .26, vvt + vvh * .76], [d.x, d.foot]], .95, { splash: 10 });
     await done; busyScroll = false; unrolling = false;
     inky.mode = 'coach'; inky.dock = dock; inky.setMood('happy'); inky.look = 1;
@@ -815,6 +823,7 @@ export function mountCompose(deps) {
     await inky.hopTo(tx, ty - 60, .4, 40); inky.s = -.35; await clock.wait(90);
     inky.floor = (ty + 8) / 4; inky.grounded = false; inky.vy = 330; inky.vx = 0;
     await new Promise(res => inky.onLand = () => { inky.onLand = null; res(); });
+    sfx('backStamp');                               // round 15.1: he hits the back stamp: a light wooden thunk (the sad notes follow after the roll-up)
     anim($('#cback .blot'), [{ transform: 'scale(1.35,.62)' }, { transform: 'scale(1)' }], { stiffness: 520, damping: 14 }); shake(.45);
     inky.splat(7, 1.1); inky.setMood('sad');
     await clock.wait(160);
@@ -825,6 +834,7 @@ export function mountCompose(deps) {
     await clock.wait(600);
     await inky.sadRunOff(-1, { pace: .7 });
     bubble.hidden = true;
+    sfx('inkFloodOut', { dur: 1.3 });                // round 15.1: the opening flood, REVERSED: it all sucks back into board Inky (drainHome's 1.3 s iris)
     await drainHome();
     deps.inky.setMood('sad'); clock.wait(700).then(() => deps.inky.setMood('happy'));
     restoreBoard();
@@ -926,6 +936,7 @@ export function mountCompose(deps) {
   $('#cpost').addEventListener('pointerdown', e => e.preventDefault());
   update();
   return {
+    bugMeter,   /* round 15.1: red Inky's TapMeter (tests can raise splatAt to measure his speech without a splat) */
     open, cancel, submit, say: (t, hold) => say(t, hold), get inkBg() { return html.classList.contains('inkbg'); }, update, inputs, bubbleLog, poem: ta, nameIn, openName, focusLine, safeWidth: () => safeWidth(), inky, field, art, root,
     get opened() { return opened; }, get busy() { return busy; }, get denied() { return denied; }, get kbUp() { return kbUp; }, get ruleSpecs() { return ruleSpecs; },
     fill(lines, name) { if (denied) clearDenied(); ta.value = clampLines(lines.map(l => String(l).replace(/\n/g, ' ')).join('\n')); if (name != null) { nameIn.value = cleanName(name); fitName(); } update(); },

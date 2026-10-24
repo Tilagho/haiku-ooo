@@ -190,6 +190,7 @@ export function stepNoren(N, dt, wind = idleWind) {
   while (N.acc >= h) {
     N.acc -= h; N.t += h; stepGust(N, h);
     for (const F of N.flags) F.step(h, N.t, wind, N.gustHist[Math.min(63, F.k * GUST_LAG)]);
+    if (N.egg) N.egg.touch = N.egg.F?.grab ? TOUCH_GRACE : Math.max(0, (N.egg.touch || 0) - h);   // round 15.1: the egg's own flag is in the user's hand (or just was)
     N.egg?.step(h);
   }
 }
@@ -420,15 +421,20 @@ export function nextEgg(cur, rand = cryptoRand) {
   const ks = CHARS.map((_, k) => k).filter(k => k !== cur?.flag), flag = ks[Math.floor(rand() * ks.length) % ks.length];
   return { name, flag };
 }
+const TOUCH_GRACE = 0.8;   // s after letting go of the egg's flag that its fling can still reveal it (the cloth keeps rising a beat)
 export class Egg {
-  constructor(name, F, reduced) { this.name = name; this.F = F; this.state = 'sleep'; this.t = 0; this.cover = 0; this.reduced = reduced; this.exposed = 0; this.seen = 0; this.disc = false; this.found = 0; this.hold = FOUND_HOLD; this.end = null; }
+  constructor(name, F, reduced) { this.name = name; this.F = F; this.state = 'sleep'; this.t = 0; this.cover = 0; this.reduced = reduced; this.exposed = 0; this.seen = 0; this.disc = false; this.found = 0; this.hold = FOUND_HOLD; this.end = null; this.touch = 0; this.peeks = 0; this._peek = false; }
   step(h) {
     this.t += h; const ex = this.exposed;
     if (this.state === 'gone') return;
     if (this.state === 'flee') { if (this.t >= (this.reduced ? .01 : FLEE_T)) { this.end = this.runPos(this.reduced ? 0 : FLEE_T); this.state = 'poof'; this.t = 0; sfx('poof'); } return; }
     if (this.state === 'poof') { if (this.t >= POOF_T) { this.state = 'gone'; this.t = 0; } return; }
     if (this.disc && (this.found += h) >= this.hold) { this.state = 'flee'; this.t = 0; sfx('scurry'); return; }   // found ~1 s ago: off it goes
-    if (this.state === 'sleep' && ex > .38) { this.state = 'startle'; this.t = 0; this.seen++; if (!this.disc) { this.disc = true; this.found = 0; sfx('eggReveal'); } }
+    // round 15.1: only a DIRECT touch lift reveals it (the host sets .touch while the user holds this egg's flag, + a short grace after letting
+    // go). Scroll wind lifting the cloth only gives a quick PEEK: the sleeper is glimpsed, stays asleep, no reveal / scurry / poof.
+    if (this.state === 'sleep' && ex > .38 && !(this.touch > 0)) { if (!this._peek) { this._peek = true; this.peeks++; } }
+    else if (this.state === 'sleep' && ex < .12) this._peek = false;
+    if (this.state === 'sleep' && ex > .38 && this.touch > 0) { this.state = 'startle'; this.t = 0; this.seen++; if (!this.disc) { this.disc = true; this.found = 0; sfx('eggReveal'); } }
     else if (this.state === 'startle' && this.t > .9) { this.state = 'awake'; this.t = 0; }
     else if ((this.state === 'awake' || this.state === 'startle') && ex < .12) { this.cover += h; if (this.cover > .6) { this.state = 'settle'; this.t = 0; } }
     else if (this.state === 'settle' && this.t > .7) { this.state = 'sleep'; this.t = 0; }
@@ -693,7 +699,7 @@ export function mountNoren(host, { reduced = typeof matchMedia !== 'undefined' &
   });
   paint();
   // hooks for captures / tests (art-px coordinates)
-  const api = { canvas: cv, sim: N, paint, gust: v => { N.gustIn = v; }, egg: { name: egg.name, flag: egg.flag + 1, found: 0, get state() { return N.egg.state; }, get exposed() { return N.egg.exposed; } },
+  const api = { canvas: cv, sim: N, paint, gust: v => { N.gustIn = v; }, egg: { name: egg.name, flag: egg.flag + 1, found: 0, get state() { return N.egg.state; }, get exposed() { return N.egg.exposed; }, get peeks() { return N.egg.peeks; }, get touch() { return N.egg.touch; } },
     flagCenter: k => { const F = N.flags[k], r = cv.getBoundingClientRect(); return { x: r.left + (F.x0 + F.w / 2) / NW * r.width, hem: r.top + (TOP + F.h - 2) / NH * r.height, top: r.top + TOP / NH * r.height, w: F.w / NW * r.width }; },
     rotate, grab: (x, y) => tryGrab({ x, y, t: clock.now() }), drag: (x, y) => drag({ x, y, t: clock.now() }), release };
   return api;
