@@ -33,7 +33,8 @@ const KEY = 'hb-sound', MUTE_KEY = 'hb-sound-muted';
 // the SITE's levels (the lab DEFAULTS are for auditioning). Round 15.1: every ambient ~11 dB lower than 15.0 (wind .24 -> .068), one-shots unchanged.
 // Round 15.2 (Tiago: 'even lower ... the wind softer with occasional passing gusts a little more pronounced'): the ambient buses another -6 dB
 // (.068 -> .034), the steady wind bed a further -3 dB under that (bed .708), and the passing gusts pushed up (breeze 1.1) so they rise ~4-6 dB over it
-export const SITE_LEVELS = { master: { volume: 0.6 }, wind: { volume: 0.034, bed: 0.708, breeze: 1.0, gust: 0.3 }, waterfall: { volume: 0.034 }, inky: { volume: 0.6 }, scroll: { volume: 0.5 }, poof: { volume: 0.45 }, fx: { volume: 0.5 } };
+// Round 15.4 (Tiago t175u: 'atmosphere a little quiet'): wind bus +3 dB (.034 -> .048); bed/gust ratios unchanged, waterfall still off
+export const SITE_LEVELS = { master: { volume: 0.6 }, wind: { volume: 0.048, bed: 0.708, breeze: 1.0, gust: 0.3 }, waterfall: { volume: 0.034 }, inky: { volume: 0.6 }, scroll: { volume: 0.5 }, poof: { volume: 0.45 }, fx: { volume: 0.5 } };
 export const BREEZE_EVERY = [15, 45], BREEZE_LEN = [5, 10];   // a gust starts every 15-45 s (random), each swells (2-4 s) and dies away over 5-10 s in all
 export const FLOOD_FILL = 0.9;    // s from the write tap's flood start until the black has filled the screen (measured 0.83 s in tools/e2e-round15_1-sound.mjs)
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
@@ -61,6 +62,10 @@ export class SoundEngine {
       this.ready = this._build(c).then(bufs => {
         this.attach(c, bufs); this._pending = null;
         document.addEventListener('visibilitychange', this._vis);
+        // round 15.4 (Tiago t176u): coming back to the page must bring the sound back with no reload. Safari's bfcache / iOS background
+        // don't always fire visibilitychange, so pageshow + focus wake it too; and the context's own statechange (iOS 'interrupted' -> back)
+        addEventListener('pageshow', this._vis); addEventListener('focus', this._vis);
+        c.onstatechange = () => { if (c.state === 'running' && !this.muted && !document.hidden) this._restoreGain(); };
         this.timer = setInterval(() => { if (this.ctx.state === 'running') this.pump(); }, 1000);   // nothing scheduled while suspended (hidden / muted)
         if (this.muted) { this.master.gain.value = 0; c.suspend?.(); }
         for (const f of this._queue.splice(0)) f();
@@ -69,7 +74,8 @@ export class SoundEngine {
       });
     }
     const c = this.ctx || this._pending;
-    if (c.state !== 'running' && !(this.muted && this.ctx)) c.resume?.().catch?.(() => {});
+    if (c.state !== 'running' && !(this.muted && this.ctx)) { const p = c.resume?.(); if (this.ctx) p?.then?.(() => this._wake()); p?.catch?.(() => {}); }
+    else if (this.ctx && !this.muted) this._restoreGain();   // running but faded out by an earlier hide whose resume never came back
     const b = c.createBuffer(1, 1, c.sampleRate), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start();   // iOS: a sound inside the gesture
     return true;
   }
@@ -132,8 +138,11 @@ export class SoundEngine {
   _visibility() {
     if (!this.ctx || !this._live()) return;
     if (document.hidden) { this.master.gain.setTargetAtTime(0, this.now, 0.08); clearTimeout(this._susT); this._susT = setTimeout(() => document.hidden && this.ctx.suspend(), 400); }   // hidden: fade, then suspend
-    else if (!this.muted) { clearTimeout(this._susT); this.ctx.resume().then(() => { this.master.gain.setTargetAtTime(this.settings.master.volume, this.now, 0.3); this.pump(); }).catch(() => {}); }   // (iOS may refuse until the next tap: the wiring re-unlocks then)
+    else if (!this.muted) { clearTimeout(this._susT); this.ctx.resume().then(() => this._wake()).catch(() => {}); }   // (iOS may refuse until the next tap: unlock() resumes AND restores the level then)
   }
+  // back on the page and running again: the level the hide faded to 0 comes back (before 15.4 a tap-resume left it at 0 = silent until reload)
+  _restoreGain() { if (!this.master || this.muted || document.hidden) return; const g = this.master.gain; g.cancelScheduledValues(this.now); g.setValueAtTime(g.value, this.now); g.setTargetAtTime(this.settings.master.volume, this.now, 0.3); }
+  _wake() { if (this.ctx?.state !== 'running') return; this._restoreGain(); this.pump(); }
   // the scheduler: ambient voices schedule their slow changes / gusts / droplets ahead of time (realtime: every second, 4 s ahead; offline: pump(duration))
   pump(ahead = 4) {
     if (!this.ctx) return; const to = (this.ctx instanceof OfflineAudioContext ? 0 : this.now) + ahead;
@@ -690,7 +699,7 @@ const fxShots = {
   // round 15.3 (Tiago: 'when text is copied there needs to be a little tiny charm sound'): a successful copy: three tiny glass tinks
   // rising (B6, E7, G#7: an E-major sparkle), soft and close, with a faint high shimmer; ~0.35 s. Quiet: well under the other one-shots.
   copyCharm(E, t) {
-    const d = fxOut(E), g = E.gain(17.5); g.connect(d);   // round 15.3 ship (Tiago t174u): +18 dB (was 2.2) to match the loud preview
+    const d = fxOut(E), g = E.gain(7.8); g.connect(d);   // round 15.4 (Tiago t175u: 'too loud, lower it a bit'): -7 dB from 15.3's 17.5 (15.2 was 2.2)
     [[1975.5, 0, 0.05, -0.25], [2637, 0.065, 0.042, 0.05], [3322.4, 0.13, 0.036, 0.3]].forEach(([f, at, a, pan]) => chime(E, t + at, g, f, a, 0.24, pan));
     for (let i = 0; i < 5; i++) chime(E, t + 0.09 + i * 0.035 + rnd(0, 0.01), g, rnd(5200, 6400), 0.006, 0.12, rnd(-0.6, 0.6));
   },

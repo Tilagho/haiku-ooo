@@ -42,7 +42,7 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
     snd.unlock();
     snd.whenReady(() => { if (!snd.bedOn && !snd.muted) snd.startBed(); });   // (the graph is built a moment after the tap)
   }
-  const onGesture = e => { if (e.target?.closest?.('#snd')) return; if (!snd.muted && (!live() || !snd.bedOn)) start(); };
+  const onGesture = e => { if (e.target?.closest?.('#snd')) return; if (!snd.muted && (!live() || !snd.bedOn || snd.master?.gain.value < 0.01)) start(); };   // 15.4: also a faded-out-by-hide level
   for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) addEventListener(ev, onGesture, { capture: true, passive: true });
   // the waterfall in view (checked twice a second, only while sound runs; never while the write page covers the board)
   const fallsOnScreen = () => {
@@ -82,25 +82,27 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
   return api;
 }
 
-// the toggle: a chunky pixel speaker (waves when on, a little x when off) in the board's ink grey, a >= 44 px hit area
+// round 15.4: the toggle is ASCII in the header's own pixel font, inline right after 俳句の掲示板. It shows the REAL state:
+// "<x" (off) until sound is actually running (the site always starts silent until the first tap), "<))" once it plays.
 function mountToggle(root, snd, start) {
   const host = root.querySelector('#noren .jp') || root.querySelector('#noren') || root.body;
   const b = document.createElement('button'); b.id = 'snd'; b.type = 'button'; b.className = 'snd-btn';
-  const cv = document.createElement('canvas'); cv.width = 12; cv.height = 9; cv.className = 'snd-art'; cv.setAttribute('aria-hidden', 'true'); b.append(cv);
+  const t = document.createElement('span'); t.className = 'snd-art'; t.setAttribute('aria-hidden', 'true'); b.append(t);
+  let shown = null;
   const draw = () => {
-    const g = cv.getContext('2d'); g.clearRect(0, 0, 12, 9); const on = !snd.muted;
-    g.fillStyle = '#6b6670'; SPEAKER.forEach((r, y) => [...r].forEach((c, x) => c === '#' && g.fillRect(x, y + 1, 1, 1)));
-    if (on) { g.fillRect(7, 3, 1, 3); g.fillRect(9, 1, 1, 1); g.fillRect(10, 2, 1, 5); g.fillRect(9, 7, 1, 1); }
-    else { g.fillStyle = '#c8402f'; for (let i = 0; i < 4; i++) { g.fillRect(7 + i, 2 + i + 1, 1, 1); g.fillRect(10 - i, 2 + i + 1, 1, 1); } }
+    const on = !snd.muted && !!snd.ctx && snd.ctx.state === 'running';
+    if (on === shown) return; shown = on;
+    t.textContent = on ? '<))' : '<x';
     b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.setAttribute('aria-label', on ? 'sound on (tap to mute)' : 'sound off (tap to turn on)'); b.title = on ? 'sound on' : 'sound off';
     b.classList.toggle('off', !on);
   };
   b.addEventListener('click', e => {
     e.preventDefault(); e.stopPropagation();
-    if (snd.muted) { snd.setMuted(false); snd.unlock(); start(); snd.whenReady(() => snd.play('bubble', { f: 620 })); }   // on: inside this tap (iOS), a tiny blip to confirm
+    if (snd.muted || !snd.ctx || snd.ctx.state !== 'running') { snd.setMuted(false); snd.unlock(); start(); snd.whenReady(() => { snd.play('bubble', { f: 620 }); draw(); }); }   // on: inside this tap (iOS), a tiny blip to confirm
     else snd.setMuted(true);
     draw();
   });
-  draw(); host.append(b);
+  setInterval(draw, 250);   // cheap: follows unlock on the first tap, hide/suspend, iOS interruptions
+  b._draw = draw; draw(); host.append(b);
   return b;
 }
