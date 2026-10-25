@@ -929,8 +929,12 @@ export function mountCompose(deps) {
     await drained;
     restoreBoard();
     window.dispatchEvent(new CustomEvent('haiku:composeclosed', { detail: { posted: true, post } }));
-    await Promise.race([added?.played ?? Promise.resolve(), clock.wait(14000)]);
-    deps.inky.setMood('cheer'); deps.inky.jump?.(1); clock.wait(800).then(() => deps.inky.setMood('happy'));
+    // round 15.10: board Inky's celebration starts the moment the new poem's number seal SETTLES (haiku:sealed, ~0.4 s after the stamp's
+    // impact, as its approval tone resolves) rather than at `played` (which waits another 0.8 s for the ink bleed to clear)
+    const sealed = new Promise(res => { const on = e => { if (e.detail?.id === post.id) { removeEventListener('haiku:sealed', on); res(); } }; addEventListener('haiku:sealed', on); clock.wait(15000).then(() => { removeEventListener('haiku:sealed', on); res(); }); });
+    await Promise.race([sealed, (added?.played ?? Promise.resolve()), clock.wait(14000)]);
+    if (deps.celebrate) deps.celebrate(post);
+    else { deps.inky.setMood('cheer'); deps.inky.jump?.(1); clock.wait(800).then(() => deps.inky.setMood('happy')); }
     return added?.node;
   }
 

@@ -4,7 +4,7 @@ import { ScrollView } from './scroll-view.js';
 import { loadLibrary } from './scroll-engine2.js';
 import SPRITES from './sprites6.js';
 import { Inky } from './inky.js';
-import { SpeechScheduler, readMs } from './inky-mind.js';
+import { SpeechScheduler, readMs, CheerBag } from './inky-mind.js';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { clock } from './clock.js';
 import { copyText } from './share.js';
@@ -207,10 +207,23 @@ async function writeTapped() {
 const openCompose = () => compose?.open();
 $('#fab')?.addEventListener('click', writeTapped);
 
+// round 15.10 (Tiago t204u, t208u): YOUR poem has landed and its number seal just settled: board Inky celebrates (src/inky.js celebrate:
+// excited hops, ^ ^ grin, confetti, music notes; no arms), the triumphant chime plays (src/sound.js inkyCelebrate) and he cheers a line from a
+// shuffle bag (src/inky-mind.js CHEERS). Busy elsewhere (held, splatted, asking about a report, compose open again): just the old little cheer hop.
+const cheers = new CheerBag();
+function celebratePost() {
+  if (!composing() && inkyFree() && !asking && inky.celebrate()) {
+    sfx('inkyCelebrate');
+    const line = cheers.next(); say(line, Math.max(2200, readMs(line) - 300));
+    return line;
+  }
+  if (inky.mode === 'roam' && inky.splatT <= 0) { inky.setMood('cheer'); inky.jump(1); clock.wait(800).then(() => inky.mood === 'cheer' && inky.setMood('happy')); }
+  return null;
+}
 function addNewPost(post) {
   const { node, played } = view.add(post, { animate: true });      // the poem types in, then its kanji seal is stamped
   requestAnimationFrame(() => view.scrollToPoem(node, reduced ? 'auto' : 'smooth'));
-  played.then(() => { inky.setMood('cheer'); inky.jump(1); clock.wait(800).then(() => inky.setMood('happy')); });
+  played.then(() => celebratePost());
   return node;
 }
 
@@ -237,7 +250,7 @@ const wind = mountWind({ view, reduced });            // the leaf-blower gust fo
 const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl, { wind: () => wind.at(.92) }) : null;
 const norenEl = $('#noren'), noren = norenEl ? mountNoren(norenEl) : null;
 const credits = mountCredits({ clock, reduced });   // round 14.5: the © line's 'credits' scroll (src/credits.js)
-const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; } });
+const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; }, celebrate: celebratePost });
 const sound = mountSound({ view, inky, clock });
 // round 15.6: reports. Inky thanks whoever reported (or a small float note if he is busy elsewhere)
 // round 15.6b: the shared scroll (src/feed.js) and reports (src/report.js: Inky asks, then thanks whoever reported)
@@ -265,4 +278,5 @@ window.HB = { feed, ask, asking: () => asking, sound, reports, credits, view, in
   rollUpButton: ms => fabArt?.rollUp(ms) ?? Promise.resolve(), unrollButton: ms => fabArt?.unroll(ms) ?? Promise.resolve(), copyText, copyPoem, lastCopied: () => lastCopied, stampDemo,
   typePoem: (el, o) => view.typePoem(el, o), stampSeal: (el, o) => view.stampSeal(el, o), addPost: addNewPost,
   openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say, speech, popBubble,
+  celebratePost, cheers,
   isBusy: () => !!compose?.busy, fill: (lines, name) => compose.fill(lines, name), submit: () => compose.submit() };
