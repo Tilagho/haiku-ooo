@@ -1,5 +1,5 @@
 // Round 15.6 (Tiago, t181u) + 15.6b (t183u): hold down on a user-submitted poem to report it. There is no report UI of
-// its own: INKY asks ("通報する？ report?") in his speech bubble with a simple ✕ / ✔ inside it, so the whole flow is
+// its own: INKY asks ("report") in his speech bubble with a simple ✕ / ✔ inside it, so the whole flow is
 // his (app.js `ask`). ✔ files the report; enough unique reporters (TAKEDOWN_REPORTS, src/moderation.js) take the poem
 // down for everyone. Whoever reported it sees a plain 通報 ('reported') beside that poem's number seal, in the same
 // face, size and grey as the 俳句の掲示板 at the top of the page, so they know they helped keep the scroll clean.

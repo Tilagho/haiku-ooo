@@ -141,32 +141,38 @@ function placeBubble() {
   }
 }
 // ---------- round 15.6b (Tiago, t183u): Inky handles reports ----------
-// Hold a user poem: Inky asks "通報する？ report?" in an extended bubble with a ✕ and a ✔ in it. ✕ (or ignoring him,
+// Hold a user poem: Inky asks "report" in an extended bubble with a ✕ and a ✔ in it. ✕ (or ignoring him,
 // or scrolling away) = nothing happens; ✔ = report it (src/report.js does the rest). If he is off screen, picked up
 // or splatted, the same bubble hangs off the poem itself. Hidden UI we hope is rarely needed.
-const ICON = { no: ['1.....1', '11...11', '.11.11.', '..111..', '.11.11.', '11...11', '1.....1'],
-  yes: ['.......1', '......11', '.....11.', '1...11..', '11.11...', '.111....', '..1.....'] };
+// round 15.6e (Tiago, t194u + his inspiration image): chunky solid-black 8-bit ✕ / ✔, traced cell-for-cell from the
+// bottom row of his reference (22x22 and 26x22 art px, thick blocky strokes, aliased steps; no outline, no shadow).
+// Both solid ink. Drawn at IU = 30/22 css px per art px, so the ✕ is 30x30 and the ✔ 35x30, centred in a 44 px tap target.
+const IU = 30 / 22, IC_INK = '#1a181c';
+const ICON = {
+  no: ['...................###', '.................#####', '...............#######', '.###..........########', '#####........########.', '######.....#########..', '.######...#########...', '.#######.########.....', '..##############......', '...############.......', '....##########........', '....#########.........', '.....########.........', '....##########........', '...############.......', '...#############......', '..#####.#########.....', '..#####...#######.....', '.######.....######....', '.#####.......######...', '.#####........#####...', '.####..........####...'],
+  yes: ['......................###.', '....................######', '...................#######', '..................########', '................#########.', '...............#########..', '..............#########...', '.............#########....', '...##........########.....', '.#####......########......', '#######....########.......', '########..########........', '#########.#######.........', '.################.........', '.###############..........', '..#############...........', '...###########............', '....#########.............', '.....########.............', '......######..............', '.......####...............', '........###...............'] };
 function iconCanvas(rows, color) {
   const cv = document.createElement('canvas'); cv.width = rows[0].length; cv.height = rows.length; cv.className = 'ask-ic';
-  const g = cv.getContext('2d'); g.fillStyle = color; rows.forEach((r, y) => [...r].forEach((c, x) => c === '1' && g.fillRect(x, y, 1, 1)));
-  Object.assign(cv.style, { width: cv.width * BU + 'px', height: cv.height * BU + 'px' }); return cv;
+  const g = cv.getContext('2d'), fill = { '#': color };
+  rows.forEach((r, y) => [...r].forEach((c, x) => { if (fill[c]) { g.fillStyle = fill[c]; g.fillRect(x, y, 1, 1); } }));
+  Object.assign(cv.style, { width: cv.width * IU + 'px', height: cv.height * IU + 'px' }); return cv;
 }
 let lastPointer = ''; addEventListener('pointerdown', e => { lastPointer = e.pointerType; }, { capture: true, passive: true });
 const inkyFree = () => inky.entered && inky.visible && inky.mode === 'roam' && inky.mood !== 'splat';
 function ask(el, { already = false } = {}) {
   const anchor = inkyFree() ? null : el;
-  if (already) { if (anchor === null) inky.setMood('happy'); say('通報済み\nyou reported this one', 1800, false, anchor); return Promise.resolve(false); }
+  if (already) { if (anchor === null) inky.setMood('happy'); say('you reported this one', 1800, false, anchor); return Promise.resolve(false); }
   return new Promise(resolve => {
     const row = document.createElement('span'); row.className = 'ask-row';
     const btn = (k, label, color) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ask-' + k; b.setAttribute('aria-label', label); b.appendChild(iconCanvas(ICON[k], color)); row.appendChild(b); return b; };
-    const no = btn('no', 'no, do not report', '#1a181c'), yes = btn('yes', 'yes, report this haiku', '#d63a28');
+    const no = btn('no', 'no, do not report', IC_INK), yes = btn('yes', 'yes, report this haiku', IC_INK);   // both solid ink (t194u)
     const y0 = scrollY, onScroll = () => { if (Math.abs(scrollY - y0) > 80) end(false); };
     const key = e => { if (e.key === 'Escape') { e.preventDefault(); end(false); } };
     const end = ans => { if (asking !== st) return; asking = null; removeEventListener('scroll', onScroll); removeEventListener('keydown', key, true); bubble.classList.remove('asking');
       if (!ans && anchor === null && inky.mode === 'roam') inky.setMood('happy');
       popBubble(); resolve(ans); };
     const st = { el, end }; asking = st;
-    say('通報する？\nreport?', 15000, false, anchor, row);
+    say('report', 15000, false, anchor, row);
     bubble.classList.add('asking'); bubble.setAttribute('role', 'dialog'); bubble.setAttribute('aria-label', 'report this haiku?');
     if (anchor === null) { inky.setMood('worry'); inky.jump(.35); }
     no.addEventListener('click', e => { e.stopPropagation(); end(false); });

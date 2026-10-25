@@ -153,7 +153,7 @@ export class SoundEngine {
   rebuild() {                                    // inside a tap: throw away the dead context and build a fresh one (the wire restarts the bed)
     const old = this.ctx; if (!old || !this._live()) return this.unlock();
     clearInterval(this.timer); clearTimeout(this._susT); clearTimeout(this._watchT); try { old.onstatechange = null; old.close?.(); } catch {}
-    this.ctx = null; this.amb = {}; this.drag = null; this.bedOn = false; this.breezeOn = false; this._floodP = null; this._babbleP = null; this.flood = null; this.babbleBank = null; this._dead = false; this._kick = false;
+    this.ctx = null; this.amb = {}; this.drag = null; this.bedOn = false; this.breezeOn = false; this._floodP = null; this._babbleP = null; this.flood = null; this.babbleBank = null; this.babbleOut = null; this._babLive = []; this._dead = false; this._kick = false;
     return this.unlock();
   }
   _wake() { if (this.ctx?.state !== 'running') return; this._restoreGain(); this.pump(); }
@@ -221,13 +221,15 @@ export class SoundEngine {
   }
   // round 15.3: the typing babble's syllable bank: 30 tiny syllables rendered once offline (sharing this engine's noise), sliced into buffers
   prepareBabble() {
-    if (this._babbleP || !this.ctx) return this._babbleP; const sr = this.ctx.sampleRate, S = BABBLE.slot, keys = [];
+    if (this._babbleP || !this.ctx) return this._babbleP; const ctx = this.ctx, sr = ctx.sampleRate, S = BABBLE.slot, keys = [];
     for (const v of Object.keys(BABBLE_VOWELS)) for (const o of BABBLE_ONSETS) keys.push([o, v]);
     const t0 = performance.now(), oc = new OfflineAudioContext(1, Math.ceil(sr * S * keys.length), sr), E = new SoundEngine({ settings: { ...this.settings, master: { volume: 1 } }, persist: false, water: false });
     E.muted = false; E.attach(oc, { noise: this.noise, grain: this.grain, ir: this.verb.buffer }); keys.forEach(([o, v], k) => babbleVoice(E, k * S + 0.002, o, v));
-    return (this._babbleP = oc.startRendering().then(b => { const all = b.getChannelData(0), n = Math.round(sr * S), bank = {};
-      keys.forEach(([o, v], k) => { const buf = this.ctx.createBuffer(1, n, sr), d = buf.getChannelData(0); d.set(all.subarray(k * n, k * n + n)); let pk = 0; for (const x of d) pk = Math.max(pk, Math.abs(x)); const g = pk > 0 ? 0.5 / pk : 1; for (let i = 0; i < n; i++) d[i] *= g; bank[o + v] = buf; });
-      this.babbleBank = bank; this._babbleBus(); this.babbleMs = Math.round(performance.now() - t0); return bank; }).catch(e => { console.warn('sound: babble render failed', e); this._babbleP = null; }));
+    const P = this._babbleP = oc.startRendering().then(b => { if (this.ctx !== ctx) return null;   // round 15.7: the context was rebuilt meanwhile (its own render runs)
+      const all = b.getChannelData(0), n = Math.round(sr * S), bank = {};
+      keys.forEach(([o, v], k) => { const buf = ctx.createBuffer(1, n, sr), d = buf.getChannelData(0); d.set(all.subarray(k * n, k * n + n)); let pk = 0; for (const x of d) pk = Math.max(pk, Math.abs(x)); const g = pk > 0 ? 0.5 / pk : 1; for (let i = 0; i < n; i++) d[i] *= g; bank[o + v] = buf; });
+      this.babbleBank = bank; this._babbleBus(); this.babbleMs = Math.round(performance.now() - t0); return bank; }).catch(e => { console.warn('sound: babble render failed', e); if (this._babbleP === P) this._babbleP = null; });
+    return P;
   }
   // one typed character (p: { line, i, u: 0..1 position in the line }); returns what happened (for the log / tests)
   babble(p = {}, when) {
@@ -245,7 +247,8 @@ export class SoundEngine {
     while (live.length > BABBLE.poly) { const old = live.shift(); try { old.stop(t); } catch {} }
     return 'played';
   }
-  _babbleBus() { if (this.babbleOut) return; const o = this.babbleOut = this.gain(1), lv = this.gain(BABBLE.level * this.settings.inky.volume), pn = this.pan(-0.1), s = this.gain(0.12);
+  _babbleBus() { if (this.babbleOut && (this.babbleOut.context ?? this.ctx) === this.ctx) return;   // round 15.7: a bus left from a context rebuild() threw away is replaced
+    const o = this.babbleOut = this.gain(1), lv = this.gain(BABBLE.level * this.settings.inky.volume), pn = this.pan(-0.1), s = this.gain(0.12);
     o.connect(lv).connect(pn).connect(this.master); pn.connect(s).connect(this.verb); this._babLive = []; }
   babbleDuck(t = this.now) { const g = this.babbleOut?.gain; if (!g) return; g.cancelScheduledValues(t); g.setTargetAtTime(0.25, t, 0.01); g.setTargetAtTime(1, t + 0.5, 0.25); }   // a stamp landing over the typing
   _playBuf(buf, t, offset = 0) { const s = this.ctx.createBufferSource(), g = this.gain(this.settings.inky.volume); s.buffer = buf; s.connect(g).connect(this.master); s.start(t, offset); return s; }
@@ -256,7 +259,7 @@ export class SoundEngine {
   startDrag(inky = 'black', when) { if (!this.ctx) return this._defer(() => this.startDrag(inky)); this.stopDrag(when); this.drag = churnVoice(this, inky, when ?? this.now); }
   updateDrag(speed, when) { this.drag?.update(clamp(speed), when ?? this.now); }
   stopDrag(when) { this.drag?.stop(when ?? this.now); this.drag = null; }
-  dragImpact(strength = 1, when) { if (!this.ctx) return this._defer(() => this.dragImpact(strength)); const t = when ?? this.now; this.drag?.duck(t, clamp(strength)); SHOTS.jelloBoing(this, t, { strength: clamp(strength) }); }   // round 15.5: a jiggly jello spring boing when he squishes into a wall / the ceiling / the floor
+  dragImpact(strength = 1, when) { if (!this.ctx) return this._defer(() => this.dragImpact(strength)); const t = when ?? this.now; this.drag?.duck(t, clamp(strength)); SHOTS.wetBoing(this, t, { strength: clamp(strength) }); }   // round 15.7: a muffled, wet spring boing when he squishes into a wall / the ceiling / the floor (supersedes 15.5's jello boing)
   // helpers used by the voices
   src(type, when, { loop = true, rate = 1 } = {}) {
     const s = this.ctx.createBufferSource(); s.buffer = type === 'grain' ? this.grain : this.noise[type]; s.loop = loop; s.playbackRate.value = rate;
@@ -277,7 +280,9 @@ export class SoundEngine {
 // syllables are rendered ONCE offline (a ~2.5 s OfflineAudioContext, after the audio unlock), and each letter only starts one buffer source
 // (pitch varied by its playback rate: a little random per syllable + a gentle rise-and-fall over each line). Polyphony is capped at 3, and
 // letters arriving faster than ~15 / s are merged (the typewriter's 24 / s voices every other letter, Animal Crossing style).
-export const BABBLE = { maxRate: 15, poly: 3, level: 0.35, f0: 300, slot: 0.1 };
+// round 15.7 (Tiago t193u: 'not hearing it yet'): measured at -25 dBFS peak / -41 dB RMS on the board, ~9 dB under the stamps and masked by the
+// ink wash's tail, so on a phone speaker it vanished: now +9 dB (level 1.0), a little brighter (more F2 / F3, the soft lowpass opened) and 60 ms long.
+export const BABBLE = { maxRate: 15, poly: 3, level: 1.0, f0: 300, slot: 0.1, dur: 0.06 };
 export const BABBLE_VOWELS = { a: [900, 1450, 3000], e: [580, 2300, 3100], i: [380, 2800, 3500], o: [620, 1050, 2900], u: [420, 1100, 2800], '@': [650, 1600, 2900] };
 const ONSET_OF = {}; for (const [k, s] of [['plosive', 'pbtdkgcq'], ['fric', 'fvszhxj'], ['nasal', 'mn'], ['liquid', 'lrwy']]) for (const ch of s) ONSET_OF[ch] = k;
 export const BABBLE_ONSETS = ['none', 'plosive', 'fric', 'nasal', 'liquid'];
@@ -291,12 +296,12 @@ export function babbleSyl(line, i) {
   return { onset: ONSET_OF[ch] || 'plosive', vowel: ch === 'y' ? 'i' : '@' };
 }
 function babbleVoice(E, t, onset, vowel) {
-  const c = E.ctx, F = BABBLE_VOWELS[vowel], f0 = BABBLE.f0, out = E.gain(1), soft = E.filt('lowpass', 3600, 0.5); soft.connect(E.master); out.connect(soft);
-  const V = t + ({ none: 0, plosive: 0.012, fric: 0.026, nasal: 0.022, liquid: 0.006 })[onset], dur = 0.05;
+  const c = E.ctx, F = BABBLE_VOWELS[vowel], f0 = BABBLE.f0, out = E.gain(1), soft = E.filt('lowpass', 5200, 0.5); soft.connect(E.master); out.connect(soft);
+  const V = t + ({ none: 0, plosive: 0.012, fric: 0.026, nasal: 0.022, liquid: 0.006 })[onset], dur = BABBLE.dur;
   const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f0, V); o.frequency.linearRampToValueAtTime(f0 * 1.06, V + dur * 0.35); o.frequency.linearRampToValueAtTime(f0 * 0.97, V + dur);
   const vg = E.gain(0); o.connect(vg);
   vg.gain.setValueAtTime(0, V); vg.gain.linearRampToValueAtTime(0.5, V + 0.008); vg.gain.setValueAtTime(0.5, V + dur * 0.55); vg.gain.linearRampToValueAtTime(0, V + dur);
-  const fb = F.map((f, k) => { const Q = [5, 8, 10][k], a = [1, 0.5, 0.18][k]; const b = E.filt('bandpass', f, Q), g = E.gain(a); vg.connect(b).connect(g).connect(out); return b; });
+  const fb = F.map((f, k) => { const Q = [5, 8, 10][k], a = [1, 0.7, 0.32][k]; const b = E.filt('bandpass', f, Q), g = E.gain(a); vg.connect(b).connect(g).connect(out); return b; });
   if (onset === 'liquid') fb.forEach((b, k) => { b.frequency.setValueAtTime([330, 900, 2500][k], V); b.frequency.exponentialRampToValueAtTime(F[k], V + 0.03); });
   const hiss = (T, d, f, Q, a) => { const s = E.src('white', T, { loop: false }), b = E.filt('bandpass', f, Q), g = E.gain(0);
     g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(a, T + Math.min(0.004, d / 3)); g.gain.linearRampToValueAtTime(0, T + d); s.connect(b).connect(g).connect(out); s.stop(T + d + 0.02); };
@@ -536,28 +541,36 @@ const SHOTS = {
     bloop(E, t, d, 320, 170, 0.12, 0.35 * a, 'triangle');
     for (let i = 0; i < Math.round(2 + 4 * S); i++) plip(E, t + rnd(0.03, 0.22), d, { f: rnd(350, 1000), amp: rnd(0.03, 0.08) * a, dur: rnd(0.04, 0.07), pan: rnd(-0.6, 0.6) });
   },
-  // round 15.5 (Tiago: 'jiggly jello spring boing'): a soft rubbery 'bwup', then a springy pitched boing whose pitch wobbles
-  // and decays (a decaying vibrato + tremolo = the jiggle), and a tiny higher secondary jiggle. Pitch varies a little per hit.
-  jelloBoing(E, t, p) {
-    const S = clamp(p.strength ?? 1), d = inkyOut(E), a = 0.3 + 0.7 * S, f = (330 + 90 * S) * rnd(0.94, 1.06);
-    bloop(E, t, d, 300, 150, 0.07, 0.22 * a, 'sine');                                 // soft rubbery contact
+  // round 15.7 (Tiago: 'a more muffled boing wet sound when you bounce Inky on the borders'): supersedes 15.5's jello boing.
+  // Still a cartoon spring 'boyoyoing', but heard through a wet pillow: a soft squelchy contact (a closing low-passed brown splash + a
+  // resonant gloop), then a sine-only spring (no bright triangle / octave partial) with a softer 25 ms swell and the same decaying
+  // wobble, all through its own dark 900 -> 520 Hz resonant lowpass that sags as it rings (the 'muffle'); a slow 'gel' wobble on that
+  // filter + two or three low rising bubble plips and a gloopy after-jiggle make it damp and gelatinous. Same ~0.5 s length as 15.5.
+  wetBoing(E, t, p) {
+    const S = clamp(p.strength ?? 1), d = inkyOut(E), a = 0.3 + 0.7 * S, f = (250 + 70 * S) * rnd(0.94, 1.06);
+    const muf = E.filt('lowpass', 900 + 300 * S, 2.2), out = E.gain(0.6); muf.connect(out).connect(d);   // the pillow: a dark, slightly resonant lowpass
+    muf.frequency.setValueAtTime(900 + 300 * S, t); muf.frequency.exponentialRampToValueAtTime(520, t + 0.45);
+    { const gl = E.ctx.createOscillator(), gg = E.gain(140); gl.frequency.value = 7; gl.connect(gg).connect(muf.frequency); gl.start(t); gl.stop(t + 0.6); }   // gel wobble on the muffle
+    wash(E, t, muf, { dur: 0.09 + 0.05 * S, f0: 1100, f1: 240, amp: 0.5 * a, type: 'brown', Q: 1.6, attack: 0.006 });   // the squelch of contact
+    gurgle(E, t + 0.004, muf, 0.12, 520, 200, 5, 0.9 * a, 0.006);                                                       // the gloop
+    bloop(E, t, muf, 260, 130, 0.08, 0.28 * a, 'sine');                                                                 // a soft padded 'bwup'
     const boing = (t0, f0, amp, dur, rate, depth) => {
-      const o = E.ctx.createOscillator(), o2 = E.ctx.createOscillator(), g = E.gain(0), g2 = E.gain(0);
-      o.type = 'triangle'; o2.type = 'sine';
-      o.frequency.setValueAtTime(f0 * 0.62, t0); o.frequency.exponentialRampToValueAtTime(f0, t0 + 0.035);   // the spring stretching up
-      const lfo = E.ctx.createOscillator(), lg = E.gain(f0 * depth); lfo.frequency.setValueAtTime(rate, t0); lfo.frequency.linearRampToValueAtTime(rate * 1.35, t0 + dur);
-      lg.gain.setValueAtTime(f0 * depth, t0 + 0.03); lg.gain.exponentialRampToValueAtTime(f0 * 0.004, t0 + dur);   // wobble settles
-      lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency);
-      o2.frequency.setValueAtTime(f0 * 1.24, t0); o2.frequency.exponentialRampToValueAtTime(f0 * 2, t0 + 0.035);
-      const trem = E.gain(1), tl = E.ctx.createOscillator(), tg = E.gain(0.35); tl.frequency.value = rate; tl.connect(tg).connect(trem.gain);
-      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(amp, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
-      g2.gain.setValueAtTime(0, t0); g2.gain.linearRampToValueAtTime(amp * 0.25, t0 + 0.012); g2.gain.exponentialRampToValueAtTime(0.0008, t0 + dur * 0.6);
-      o.connect(g).connect(trem); o2.connect(g2).connect(trem); trem.connect(d);
-      for (const x of [o, o2, lfo, tl]) { x.start(t0); x.stop(t0 + dur + 0.05); }
+      const o = E.ctx.createOscillator(), g = E.gain(0); o.type = 'sine';
+      o.frequency.setValueAtTime(f0 * 0.6, t0); o.frequency.exponentialRampToValueAtTime(f0, t0 + 0.05);                // the spring stretching up (slower, rounder)
+      const lfo = E.ctx.createOscillator(), lg = E.gain(f0 * depth); lfo.frequency.setValueAtTime(rate, t0); lfo.frequency.linearRampToValueAtTime(rate * 1.3, t0 + dur);
+      lg.gain.setValueAtTime(f0 * depth, t0 + 0.04); lg.gain.exponentialRampToValueAtTime(f0 * 0.004, t0 + dur);          // wobble settles
+      lfo.connect(lg).connect(o.frequency);
+      const trem = E.gain(1), tl = E.ctx.createOscillator(), tg = E.gain(0.3); tl.frequency.value = rate; tl.connect(tg).connect(trem.gain);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(amp, t0 + 0.025); g.gain.setTargetAtTime(0, t0 + 0.06, dur * 0.19);   // soft swell, damped ring
+      const o2 = E.ctx.createOscillator(), g2 = E.gain(0); o2.type = 'sine';                                           // a soft 2nd harmonic, kept under the muffle, so phone speakers still hear the boing
+      o2.frequency.setValueAtTime(f0 * 1.2, t0); o2.frequency.exponentialRampToValueAtTime(f0 * 2, t0 + 0.05); lg.connect(o2.frequency);
+      g2.gain.setValueAtTime(0, t0); g2.gain.linearRampToValueAtTime(amp * 0.3, t0 + 0.025); g2.gain.setTargetAtTime(0, t0 + 0.05, dur * 0.12);
+      o.connect(g).connect(trem).connect(muf); o2.connect(g2).connect(trem);
+      for (const x of [o, o2, lfo, tl]) { x.start(t0); x.stop(t0 + dur + 0.25); }
     };
-    boing(t + 0.008, f, 0.42 * a, 0.42 + 0.12 * S, 13, 0.09);                           // the main boing
-    boing(t + 0.13, f * 1.5, 0.12 * a, 0.22, 17, 0.06);                                 // the little after-jiggle
-    wash(E, t, d, { dur: 0.06, f0: 1800, f1: 500, amp: 0.12 * a, type: 'white', Q: 1 });   // a hint of wet
+    boing(t + 0.012, f, 0.5 * a, 0.42 + 0.1 * S, 11, 0.1);                               // the main muffled boing
+    boing(t + 0.14, f * 1.33, 0.14 * a, 0.22, 14, 0.07);                                 // the gloopy after-jiggle
+    for (let i = 0; i < Math.round(2 + S); i++) plip(E, t + 0.05 + i * rnd(0.06, 0.1), muf, { f: rnd(260, 420), amp: rnd(0.05, 0.09) * a, dur: rnd(0.05, 0.08), rise: 1.8, pan: rnd(-0.4, 0.4) });   // wet bubbles
   },
   scrollOpen(E, t) { mapPaper(E, t, { dur: 1.3, open: true }); },
   scrollClose(E, t) { mapPaper(E, t, { dur: 0.95, open: false }); },
