@@ -70,3 +70,19 @@ export class SpeechScheduler {
     const line = this.pick(); this.schedule(now); return line;
   }
 }
+
+// round 15.10 (Tiago t204u: 'I want the black inky to be happy after the user posts a haiku ... celebrate ... say different things in this
+// text bubble like "I love it" or "you are a poet!" or "how about another?"'): what board Inky cheers when YOUR poem lands. In his board voice
+// (lowercase, like 'copied!' / 'a new haiku!'). Drawn from a shuffle bag: every line once before any repeats, never the same line twice in a row.
+export const CHEERS = ['i love it!', 'you are a poet!', 'how about another?', 'beautiful!', 'ink well spent!', 'that one sings!', 'wow. just wow.'];
+export class CheerBag {
+  constructor({ lines = CHEERS, rand = Math.random } = {}) { this.lines = lines; this.rand = rand; this.bag = []; this.last = null; }
+  next() {
+    if (!this.bag.length) {
+      this.bag = [...this.lines];
+      for (let i = this.bag.length - 1; i > 0; i--) { const j = Math.floor(this.rand() * (i + 1)); [this.bag[i], this.bag[j]] = [this.bag[j], this.bag[i]]; }
+      if (this.bag.length > 1 && this.bag[this.bag.length - 1] === this.last) [this.bag[0], this.bag[this.bag.length - 1]] = [this.bag[this.bag.length - 1], this.bag[0]];   // (pop() takes from the end)
+    }
+    return (this.last = this.bag.pop());
+  }
+}

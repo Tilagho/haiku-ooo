@@ -814,8 +814,46 @@ const fxShots = {
     warm(784, t + 0.2, 0.45, 0.055, 0); warm(1046.5, t + 0.2, 0.45, 0.03, 0.1);                               // ...settling on G5 + C6
     chime(E, t + 0.04, ap, 2093, 0.045, 1.1, 0.1);                                                            // the 'ding' of approval
   },
+  // round 15.10 (Tiago t204u: 'I want the black inky to be happy after the user posts a haiku ... celebrate and give off a celebration or
+  // triumphant chime!'): board Inky's PARTY when your poem lands, played as its number seal settles (src/compose.js installPost -> app.js
+  // celebratePost), ~0.4 s after the numberStamp's approval tone, which resolved on G5 + C6: so this picks the key up and finishes the phrase.
+  // Not brass (that is the wax-seal stampSuccess) and not a rising glass run (that is red Inky's flyaway): a bright toy music-box / kalimba
+  // 'ta-da-da-DAAA!' (G5 C6 E6 -> G6 held), the held note crowned by a C-major bell chord over a warm swell, a glitter sweep up, and a little
+  // 'ting-ting!' button on top. ~1.5 s + tail. His hops add their own bouncy bloops (celebrateHop), so the chime stays clean.
+  inkyCelebrate(E, t) {
+    const d0 = fxOut(E), d = E.gain(1.25); d.connect(d0);
+    [[783.99, 0, 0.07, -0.3], [1046.5, 0.095, 0.07, -0.1], [1318.5, 0.19, 0.075, 0.1]].forEach(([f, at, a, pan]) => mallet(E, t + at, d, f, a, 0.16, pan));   // ta-da-da...
+    const T = t + 0.31;
+    mallet(E, T, d, 1568, 0.11, 0.55, 0); chime(E, T, d, 1568, 0.05, 1.3, 0);                                                    // ...DAAA (G6)
+    [[1046.5, -0.45], [1318.5, -0.15], [2093, 0.2], [2637, 0.45]].forEach(([f, pan], i) => chime(E, T + 0.012 * i, d, f, 0.03, 1.2, pan));   // the C-major bell crown
+    const sw = E.gain(1); sw.connect(d);
+    [[523.3, -0.3], [659.3, 0.3], [784, 0]].forEach(([f, pan]) => { const o = E.ctx.createOscillator(), g = E.gain(0), p = E.pan(pan); o.type = 'triangle'; o.frequency.value = f;   // the warm swell under it
+      g.gain.setValueAtTime(0, T); g.gain.linearRampToValueAtTime(0.045, T + 0.08); g.gain.setTargetAtTime(0.03, T + 0.12, 0.2); g.gain.setTargetAtTime(0, T + 0.75, 0.2); o.connect(g).connect(p).connect(sw); o.start(T); o.stop(T + 2); });
+    for (let i = 0; i < 9; i++) { const u = i / 8; chime(E, T + 0.06 + u * 0.42, d, lerp(3136, 6272, u) * rnd(0.97, 1.03), 0.014, 0.25, lerp(-0.7, 0.7, u)); }   // the glitter sweep
+    mallet(E, T + 0.62, d, 2093, 0.05, 0.2, 0.35); mallet(E, T + 0.74, d, 3136, 0.05, 0.4, 0.5); chime(E, T + 0.74, d, 3136, 0.02, 0.8, 0.5);   // ting-ting!
+  },
+  // ...and each of his celebration hops (src/inky.js celebrate: the onSfx 'celebrateHop' at take-off): a rubbery ink 'boing' that RISES
+  // (he is light with joy) + two bubbly plips; the last hop (spin: true) is a twirl: a quick upward 'whee' of plips spinning across the pan.
+  celebrateHop(E, t, p) {
+    const d = inkyOut(E), k = 1 + 0.12 * (p.i ?? 0);
+    bloop(E, t, d, 240 * k, 560 * k, 0.16, 0.32, 'triangle');
+    plip(E, t + 0.05, d, { f: 700 * k, amp: 0.1, dur: 0.05, rise: 1.8 }); plip(E, t + 0.1, d, { f: 980 * k, amp: 0.07, dur: 0.05, rise: 1.7, pan: rnd(-0.3, 0.3) });
+    if (p.spin) for (let i = 0; i < 8; i++) { const u = i / 7; plip(E, t + 0.08 + u * 0.4, d, { f: lerp(600, 1500, u), amp: 0.07, dur: 0.045, rise: 1.6, pan: Math.sin(u * Math.PI * 4) * 0.6 }); }
+  },
+  // OPTION for Tiago (not on the site): a tiny squeaky 'ya-ay!' from Inky on the first hop (the egg-reveal voice, a touch lower)
+  inkyYay(E, t) {
+    const d0 = fxOut(E), v = E.gain(1.3); v.connect(d0);
+    voiceSyl(E, t, v, { f0: 560, f1: 760, dur: 0.1, amp: 0.2 });
+    voiceSyl(E, t + 0.12, v, { f0: 780, f1: 1120, dur: 0.24, amp: 0.21, h: true });
+  },
 };
 Object.assign(SHOTS, fxShots);
+// round 15.10: a toy music-box / kalimba strike: a sine with a quick metallic 4x 'tine' partial and a soft octave, short and bright
+function mallet(E, t, d, f, amp, dec = 0.3, pan = 0) {
+  const p = E.pan(pan); p.connect(d);
+  for (const [m, a, dk] of [[1, 1, 1], [2, 0.18, 0.5], [3.98, 0.32, 0.18]]) { const o = E.ctx.createOscillator(), g = E.gain(0); o.frequency.value = f * m;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(amp * a, t + 0.002); g.gain.setTargetAtTime(0, t + 0.004, dec * dk * 0.45); o.connect(g).connect(p); o.start(t); o.stop(t + dec * dk * 4 + 0.05); }
+}
 // a little brass voice: two detuned saws through a lowpass that opens with the note (the 'blat' of a horn), optional swell + vibrato for held notes
 function brass(E, T, dest, f, dur, amp, pan = 0, held = false) {
   const g = E.gain(0), lp = E.filt('lowpass', f * 1.5, 1.2), p = E.pan(pan); g.connect(lp).connect(p).connect(dest);

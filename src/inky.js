@@ -22,7 +22,10 @@ import { clock } from './clock.js';
 import { TapMeter } from './inky-mind.js';
 
 const P = 4;                                         // css px per ink pixel
-const INK = [26, 24, 28], WASH = [74, 70, 82], TRAIL = [120, 116, 124], PAPER = [255, 250, 240], RED = [214, 52, 40], SOFT = [150, 146, 156], GOLD = [226, 167, 46], BLUE = [120, 170, 230];
+const INK = [26, 24, 28], WASH = [74, 70, 82], TRAIL = [120, 116, 124], PAPER = [255, 250, 240], RED = [214, 52, 40], SOFT = [150, 146, 156], GOLD = [226, 167, 46], BLUE = [120, 170, 230], GREEN = [96, 178, 110];
+const CONFETTI = [GOLD, RED, BLUE, GREEN, SOFT];
+// round 15.10: a pixel eighth note (he's singing): [x, y] offsets from its top-left
+const NOTE = [[2, 0], [3, 0], [2, 1], [4, 1], [2, 2], [0, 3], [1, 3], [2, 3], [0, 4], [1, 4]];
 const G = 260;                                       // gravity, ink px / s^2
 // a 2-D squash: compress offset (x, y) by a along unit normal n, bulge it by .6a across n (a < 0: stretch along n)
 export const aniso = (x, y, nx, ny, a) => { const dn = x * nx + y * ny, tx = x - nx * dn, ty = y - ny * dn; return [nx * dn * (1 - a) + tx * (1 + a * .6), ny * dn * (1 - a) + ty * (1 + a * .6)]; };
@@ -43,7 +46,8 @@ export class Inky {
     this.x = -20; this.fy = 100; this.vx = 0; this.vy = 0; this.floor = null; this.grounded = false;
     this.s = 0; this.sv = 0; this.sRest = 0;          // squash spring (+ = squashed flat); sRest > 0 while splatted
     this.rim = Array.from({ length: NR }, (_, i) => ({ a: (i / NR) * Math.PI * 2, ox: 0, oy: 0, vx: 0, vy: 0 }));
-    this.drops = []; this.puddles = []; this.sparks = []; this.trail = []; this.steam = [];
+    this.drops = []; this.puddles = []; this.sparks = []; this.trail = []; this.steam = []; this.notes = [];
+    this.party = 0; this.partyT = 0; this.hops = [];   // round 15.10: the post celebration (celebrate())
     this.mood = 'happy'; this.look = 0; this.lookY = 0; this.eye = { x: 0, y: 0 }; this.blink = 0; this.nextBlink = 2; this.t = 0; this.spin = 0; this.shiver = 0;
     this.visible = true; this.mode = 'roam'; this.dock = null; this.hanko = false; this.flood = null; this.gather = null;
     this.roamT = reduced ? Infinity : rnd(9, 16); this.readT = rnd(4, 9); this.reading = 0; this.targetX = null; this.bodyAlpha = 1;
@@ -219,6 +223,22 @@ export class Inky {
     if (!this.reduced) { this.grounded = true; this.jump(.8); }
     this.onPopUp?.();
   }
+  // round 15.10 (Tiago t204u): YOUR poem just landed on the board and he is over the moon. ~2.4 s of party: ^ ^ eyes, a big open grin
+  // (sumi grays only), no arms (he is a limbless ink blob: Tiago t208u), three happy hops (the last and biggest one a double spin) with a burst of confetti
+  // at every take-off, and pixel music notes floating up off him. A hop waits for him to be back on his float line (so they never cut each
+  // other short). Reduced motion: one small hop, no spin, no notes. Only from 'roam' (not while he is splatted, held or in compose).
+  celebrate() {
+    if (!this.visible || this.mode !== 'roam' || this.splatT > 0 || this.drag) return false;
+    this.reading = 0; this.targetX = null; this._slid = null; this.mood = 'cheer'; this.puff = 0; this.shiver = 0; this.giggle = 0;
+    this.party = this.reduced ? 1.6 : 2.4; this.partyT = 0; this.hopN = 0;
+    this.hops = this.reduced ? [[.1, .45, 0]] : [[.1, .9, 0], [.72, .75, 0], [1.3, 1.1, .9]];   // [not before (s), height, spin]
+    this.roamT = Math.max(this.roamT, 5); this.readT = Math.max(this.readT, 5);
+    this.s = this.reduced ? .15 : .35; this.sv = 0; this.wobble(.8);                                  // the wind-up squash
+    return true;
+  }
+  confetti(n = 14, x = this.x, y = this.fy - this.R * 2.5) {
+    for (let k = 0; k < n; k++) { const a = -Math.PI / 2 + rnd(-1.1, 1.1), sp = rnd(50, 110); this.sparks.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: rnd(.8, 1.4), color: CONFETTI[k % CONFETTI.length] }); }
+  }
   // ---------- ink flood (older compose path): rises, sloshes, then gathers into a ball at (gx,gy) css ----------
   startFlood(xcss, levelCss) {
     const n = this.cw + 1, h = new Float32Array(n).fill(this.ch + 4), v = new Float32Array(n);
@@ -263,6 +283,13 @@ export class Inky {
   step(dt) {
     dt = Math.min(dt, 1 / 20); this.t += dt; const R = this.R;
     if (this.mode === 'roam') this.roam(dt);
+    if (this.party > 0) {                                        // round 15.10: the celebration (celebrate())
+      this.party -= dt; this.partyT += dt; this.reading = 0;
+      const h = this.hops[0];
+      if (h && this.partyT >= h[0] && this.grounded && this.mode === 'roam') { this.hops.shift(); this.jump(h[1]); this.onSfx?.('celebrateHop', { i: this.hopN++, spin: !!h[2] }); if (h[2]) this.spin = h[2]; this.confetti(this.reduced ? 6 : h[2] ? 20 : 12); this.wobble(.6); }
+      if (!this.reduced && Math.random() < dt * 3.2) this.notes.push({ x: this.x + rnd(-this.R, this.R), y: this.fy - this.R * 2.3, vx: rnd(-6, 6), vy: -rnd(16, 24), life: rnd(.9, 1.3), color: Math.random() < .5 ? INK : GOLD });
+      if (this.party <= 0 || this.mode !== 'roam' || this.splatT > 0) { this.party = 0; this.hops = []; if (this.mood === 'cheer') { this.mood = 'happy'; this.giggle = .6; this.wobble(.3); } }
+    }
     if (this.mode === 'coach' && this.dock) {                    // follow the dock (older compose path)
       const d = this.dock(); if (d) { this.floor = d.foot / P; if (this.grounded) { this.x += (d.x / P - this.x) * Math.min(1, dt * 8); this.fy = this.floor; } }
       if (this.grounded && this.mood === 'cheer' && Math.random() < dt * 1.5) this.jump(.8);
@@ -351,6 +378,7 @@ export class Inky {
     this.puddles.forEach(p => p.life -= dt); this.puddles = this.puddles.filter(p => p.life > 0);
     this.trail.forEach(p => p.life -= dt); this.trail = this.trail.filter(p => p.life > 0);
     this.steam.forEach(s => { s.y += s.vy * dt; s.x += s.side * 6 * dt; s.life -= dt; }); this.steam = this.steam.filter(s => s.life > 0);
+    this.notes.forEach(o => { o.x += (o.vx + Math.sin(o.life * 9) * 6) * dt; o.y += o.vy * dt; o.life -= dt; }); this.notes = this.notes.filter(o => o.life > 0);
     this.sparks.forEach(s => { s.vy += G * .4 * dt; s.x += s.vx * dt; s.y += s.vy * dt; s.life -= dt; }); this.sparks = this.sparks.filter(s => s.life > 0);
     const F = this.flood;
     if (F) {
@@ -382,7 +410,7 @@ export class Inky {
   // ---------- rendering on the pixel grid ----------
   render() {
     const { cw, ch, img } = this, D = img.data;
-    const idle = !(this.visible && this.bodyAlpha > 0) && !this.drops.length && !this.puddles.length && !this.sparks.length && !this.trail.length && !this.flood && !this.gather;
+    const idle = !(this.visible && this.bodyAlpha > 0) && !this.drops.length && !this.puddles.length && !this.sparks.length && !this.notes.length && !this.trail.length && !this.flood && !this.gather;
     if (idle && this._blank) return;                               // nothing to draw: leave the cleared canvas alone
     D.fill(0); this._blank = idle;
     const put = (x, y, c, a = 255) => { x = Math.round(x); y = Math.round(y); if (x < 0 || y < 0 || x >= cw || y >= ch) return; const i = (y * cw + x) * 4; D[i] = c[0]; D[i + 1] = c[1]; D[i + 2] = c[2]; D[i + 3] = a; };
@@ -427,6 +455,7 @@ export class Inky {
     if (showBody && this.hanko) this.drawHanko(cx, cy - R * 1.3 * this.sy, put);
     if (showBody && this.mood === 'mad') this.drawAnger(cx, cy, put);
     for (const s of this.steam) { const k = s.life; put(s.x, s.y, SOFT); if (k > .35) put(s.x + s.side, s.y - 1, SOFT); }
+    for (const o of this.notes) if (o.life > .25 || (Math.floor(o.life * 20) & 1)) for (const [i, j] of NOTE) put(o.x + i, o.y + j, o.color);   // round 15.10: music notes
     for (const s of this.sparks) { put(s.x, s.y, s.color); if (s.life > .5 && !s.small) { put(s.x + 1, s.y, s.color); put(s.x - 1, s.y, s.color); put(s.x, s.y + 1, s.color); put(s.x, s.y - 1, s.color); } }
     this.ctx.putImageData(img, 0, 0);
   }
@@ -470,7 +499,11 @@ export class Inky {
       if (m === 'worry' || m === 'sad') put(e - (e === ex[0] ? 0 : -1), ey - 2, W);
     }
     const my = Math.round(cy + R * .32 * sy), mx = Math.round(cx - .5 + lx * .5);
-    if (this.reading > 0 && m === 'happy') { put(mx, my, W); put(mx + 1, my, W); }                         // concentrating
+    if (this.party > 0 && m === 'cheer') {                                                                 // round 15.10: a big open grin (grayscale: board ink has no pink)
+      for (let i = -1; i <= 2; i++) put(mx + i, my, W); put(mx - 1, my + 1, W); put(mx, my + 1, WASH); put(mx + 1, my + 1, WASH); put(mx + 2, my + 1, W); put(mx, my + 2, W); put(mx + 1, my + 2, W);
+      put(ex[0] - 2, my - 1, SOFT); put(ex[1] + 3, my - 1, SOFT);
+    }
+    else if (this.reading > 0 && m === 'happy') { put(mx, my, W); put(mx + 1, my, W); }                         // concentrating
     else if (m === 'happy' || m === 'cheer' || this.giggle > 0) { put(mx - 1, my, W); put(mx, my + 1, W); put(mx + 1, my + 1, W); put(mx + 2, my, W); put(ex[0] - 2, my - 1, SOFT); put(ex[1] + 3, my - 1, SOFT); }
     else if (m === 'mad') { for (let i = -1; i <= 2; i++) put(mx + i, my + (i === -1 || i === 2 ? 1 : 0), W); put(mx, my + 1, W); put(mx + 1, my + 1, W); }   // gritted
     else if (m === 'annoyed') { put(mx - 1, my + 1, W); put(mx, my + 1, W); put(mx + 1, my + 1, W); }
