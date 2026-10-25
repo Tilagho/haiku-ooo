@@ -192,3 +192,8 @@ body.composing .snd-btn, body.capture-clean .snd-btn { visibility: hidden; }
 .bubble .ask-row button:active { transform: translateY(4px); }
 .bubble .ask-row button:focus-visible { outline: 4px solid #6b6670; outline-offset: -2px; }
 .bubble .ask-ic { image-rendering: pixelated; pointer-events: none; display: block; }
+
+/* round 15.10 (t205u): "report?" 2x (32px = exactly twice ChiKareGo's 16px grid, stays crisp) and filling the bubble's
+   height above the ✕ / ✔: tighter top padding, line-height 1, the icon row tucked up under the word */
+.bubble.px .bt:has(> .ask-row) { font-size: 32px; line-height: 1; padding: 6px 12px 6px; text-align: center; }
+.bubble.px .bt:has(> .ask-row) .ask-row { margin: 2px -6px -4px; }
