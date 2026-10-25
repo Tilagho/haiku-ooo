@@ -30,6 +30,8 @@ export class ScrollView {
     this.pix = [];   // pixel-art nodes sized in font px: [el, fontW, fontH, box, pad]
   }
   get art() { return this.composer.art; }
+  // round 15.6b (src/feed.js): a block of the shared scroll is composed from its own seed; only before the first poem
+  reseed(seed) { if (this.composer.poems.length) throw new Error('reseed: not empty'); this.composer = new ScrollComposer({ seed, lib: this.composer.art.lib }); }
   // CSS px (= scroll units) per font pixel, chosen so one font pixel is an integer number of DEVICE pixels
   // (crisp, no smoothing) and never larger than the U the layout reserved.
   fontScale(u = U) {

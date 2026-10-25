@@ -39,10 +39,10 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
   // first tap / key anywhere: unlock + the bed. Keeps listening (cheaply) so an iOS interruption (call, Siri) recovers on the next tap.
   function start() {
     if (snd.muted || document.hidden) return;
-    snd.unlock();
+    if (snd._dead) snd.rebuild(); else snd.unlock();   // round 15.5: a frozen-after-background context is replaced inside the tap
     snd.whenReady(() => { if (!snd.bedOn && !snd.muted) snd.startBed(); });   // (the graph is built a moment after the tap)
   }
-  const onGesture = e => { if (e.target?.closest?.('#snd')) return; if (!snd.muted && (!live() || !snd.bedOn || snd.master?.gain.value < 0.01)) start(); };   // 15.4: also a faded-out-by-hide level
+  const onGesture = e => { if (e.target?.closest?.('#snd')) return; if (!snd.muted && (!live() || !snd.bedOn || snd.needsGesture)) start(); };   // 15.5: any tap after a hide re-kicks   // 15.4: also a faded-out-by-hide level
   for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) addEventListener(ev, onGesture, { capture: true, passive: true });
   // the waterfall in view (checked twice a second, only while sound runs; never while the write page covers the board)
   const fallsOnScreen = () => {
@@ -84,6 +84,9 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
 
 // round 15.4: the toggle is ASCII in the header's own pixel font, inline right after 俳句の掲示板. It shows the REAL state:
 // "<x" (off) until sound is actually running (the site always starts silent until the first tap), "<))" once it plays.
+// round 15.5: a pixel speaker drawn on DotGothic16's own 16x16 dot grid at 1em, so each pixel = one stroke dot of 俳句の掲示板, same ink colour.
+const SPK_ON = 'M6 2h1v1h-1zM5 3h1v1h-1zM6 3h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM12 4h1v1h-1zM0 5h1v1h-1zM1 5h1v1h-1zM2 5h1v1h-1zM3 5h1v1h-1zM6 5h1v1h-1zM13 5h1v1h-1zM0 6h1v1h-1zM6 6h1v1h-1zM9 6h1v1h-1zM13 6h1v1h-1zM0 7h1v1h-1zM6 7h1v1h-1zM10 7h1v1h-1zM14 7h1v1h-1zM0 8h1v1h-1zM6 8h1v1h-1zM10 8h1v1h-1zM14 8h1v1h-1zM0 9h1v1h-1zM6 9h1v1h-1zM9 9h1v1h-1zM13 9h1v1h-1zM0 10h1v1h-1zM1 10h1v1h-1zM2 10h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM13 10h1v1h-1zM4 11h1v1h-1zM6 11h1v1h-1zM12 11h1v1h-1zM5 12h1v1h-1zM6 12h1v1h-1zM6 13h1v1h-1z', SPK_OFF = 'M6 2h1v1h-1zM5 3h1v1h-1zM6 3h1v1h-1zM4 4h1v1h-1zM6 4h1v1h-1zM0 5h1v1h-1zM1 5h1v1h-1zM2 5h1v1h-1zM3 5h1v1h-1zM6 5h1v1h-1zM9 5h1v1h-1zM14 5h1v1h-1zM0 6h1v1h-1zM6 6h1v1h-1zM10 6h1v1h-1zM13 6h1v1h-1zM0 7h1v1h-1zM6 7h1v1h-1zM11 7h1v1h-1zM12 7h1v1h-1zM0 8h1v1h-1zM6 8h1v1h-1zM11 8h1v1h-1zM12 8h1v1h-1zM0 9h1v1h-1zM6 9h1v1h-1zM10 9h1v1h-1zM13 9h1v1h-1zM0 10h1v1h-1zM1 10h1v1h-1zM2 10h1v1h-1zM3 10h1v1h-1zM6 10h1v1h-1zM9 10h1v1h-1zM14 10h1v1h-1zM4 11h1v1h-1zM6 11h1v1h-1zM5 12h1v1h-1zM6 12h1v1h-1zM6 13h1v1h-1z';
+const spkSvg = d => '<svg viewBox="0 0 16 16" width="1em" height="1em" shape-rendering="crispEdges" aria-hidden="true"><path fill="currentColor" d="' + d + '"/></svg>';
 function mountToggle(root, snd, start) {
   const host = root.querySelector('#noren .jp') || root.querySelector('#noren') || root.body;
   const b = document.createElement('button'); b.id = 'snd'; b.type = 'button'; b.className = 'snd-btn';
@@ -92,7 +95,7 @@ function mountToggle(root, snd, start) {
   const draw = () => {
     const on = !snd.muted && !!snd.ctx && snd.ctx.state === 'running';
     if (on === shown) return; shown = on;
-    t.textContent = on ? '<))' : '<x';
+    t.innerHTML = spkSvg(on ? SPK_ON : SPK_OFF);
     b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.setAttribute('aria-label', on ? 'sound on (tap to mute)' : 'sound off (tap to turn on)'); b.title = on ? 'sound on' : 'sound off';
     b.classList.toggle('off', !on);
   };

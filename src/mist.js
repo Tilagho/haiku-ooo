@@ -154,6 +154,7 @@ export function mountMist(view, { clock, reduced = false } = {}) {
   ctl.time = () => t;
   clock.onTick(dt => {
     if (document.hidden || globalThis.HB?.compose?.opened) return;
+    { const r = view.host.getBoundingClientRect(); if (r.bottom < -400 || r.top > innerHeight + 400) return; }   // round 15.6b: a block of the scroll far off screen (src/feed.js) rests
     const v = viewWin(), moved = !win || v.lo < win.lo + 30 || v.hi > win.hi - 30;
     if (moved) { place(v); key = ''; }
     if (!reduced) { t += dt * MIST_SPEED; acc += dt; }

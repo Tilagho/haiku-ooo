@@ -1,0 +1,106 @@
+// Round 15.6b (Tiago, t183u): THE SHARED SCROLL. Everyone's poems, newest at the top; the further you swipe down, the
+// further back in time you go, and older poems are fetched as you get near the end (infinite scroll).
+//
+// Why blocks: a scroll's painting is composed bottom-up (art row 0 = its oldest poem, src/scroll-engine2.js), so poems
+// can only ever be added on TOP of a painting. To add OLDER poems underneath without repainting what is on screen, the
+// scroll is cut into fixed blocks by poem number (block b = poems b*BLOCK+1 .. (b+1)*BLOCK, src/config.js). Every block
+// is its own painting (its own ScrollView, seeded by its block number, so a block looks the same on every phone and on
+// every visit). The newest block is the main view (Inky, birds, the stamp, new posts); older blocks are stacked below it
+// as you swipe. A poem's kanji seal is its permanent number (seq); a taken-down poem's number is simply skipped.
+import { BLOCK, POLL_MS } from './config.js';
+
+export const blockOf = (seq, K = BLOCK) => Math.floor((Math.max(1, seq) - 1) / K);
+export const blockSeed = (base, b) => b === 0 ? base : (Math.imul(base + 1, 2654435761) ^ Math.imul(b + 7, 40503)) >>> 0 & 0x7fffffff;
+// pure: which loaded posts can be painted now. posts: newest first. `low` = lowest seq fetched so far, `done` = nothing
+// older exists. Block b is complete once everything down to its first number has been fetched (or nothing is older).
+export function readyBlocks(posts, { low, done, K = BLOCK, skip = new Set() } = {}) {
+  const by = new Map();
+  for (const p of posts) { const b = blockOf(p.seq, K); if (!skip.has(b)) (by.get(b) || by.set(b, []).get(b)).push(p); }
+  return [...by.keys()].sort((a, b) => b - a).filter(b => done || low <= b * K + 1).map(b => ({ b, posts: by.get(b).sort((x, y) => x.seq - y.seq) }));
+}
+
+export class Feed {
+  // main: the ScrollView already mounted in #scroll (it becomes the newest block). makeSegment(b, seed) -> a new ScrollView
+  // mounted below the others. onIncoming(post): someone else's poem appeared at the top (polling).
+  constructor({ main, store, seed = 31, K = BLOCK, makeSegment, onIncoming = () => {}, onPainted = () => {}, busy = () => false, sentinel = null, pollMs = POLL_MS }) {
+    Object.assign(this, { main, store, seed, K, makeSegment, onIncoming, onPainted, busy, sentinel, pollMs });
+    const add = main.add.bind(main); main.add = (p, o) => { this.noteAdded(p); return add(p, o); };   // every poem put on the main view (compose too)
+    this.segments = [];            // [{ b, view }] newest first; segments[0].view === main
+    this.pending = []; this.low = Infinity; this.done = false; this.loading = null; this.maxSeq = 0; this.ids = new Set();
+    this.painted = new Set();      // block numbers already on screen
+  }
+  get views() { return this.segments.map(s => s.view); }
+  recOf(el) { for (const v of this.views) { const r = v.byEl.get(el); if (r) return r; } return null; }
+  viewOf(el) { return this.views.find(v => v.byEl.has(el)) || null; }
+  get count() { return this.ids.size; }
+
+  async boot() {
+    const page = await this.store.list({ limit: this.K * 2 });
+    this.maxSeq = page.maxSeq || page.posts[0]?.seq || 0;
+    const top = blockOf(this.maxSeq || 1, this.K);
+    this.main.reseed(blockSeed(this.seed, top));
+    this.segments.push({ b: top, view: this.main });
+    this.take(page); this.flush(top);
+    // a nearly empty newest block: paint the next one straight away so the first screen is full
+    if (this.main.composer.poems.length < 6 && !this.done) await this.more();
+    this.watch();
+    return this;
+  }
+  take(page) {
+    for (const p of page.posts) if (!this.ids.has(p.id)) { this.ids.add(p.id); this.pending.push(p); this.low = Math.min(this.low, p.seq); }
+    if (!page.posts.length || page.nextBeforeSeq == null) this.done = true;
+  }
+  // paint every block that is complete: the newest one into the main view, older ones as new segments below
+  flush(top = this.segments[0].b) {
+    let made = 0;
+    for (const { b, posts } of readyBlocks(this.pending, { low: this.low, done: this.done, K: this.K, skip: this.painted })) {
+      if (b > top) continue;                              // (newer than the main block: only via add())
+      const view = b === top ? this.main : this.makeSegment(b, blockSeed(this.seed, b));
+      if (b !== top) this.segments.push({ b, view });
+      posts.forEach(p => view.add(p));
+      this.painted.add(b); made++;
+      const keep = new Set(posts.map(p => p.id)); this.pending = this.pending.filter(p => !keep.has(p.id));
+    }
+    if (this.done && !this.pending.length) this.sentinel?.classList.add('end');
+    if (made) this.onPainted(made);
+    return made;
+  }
+  // fetch older poems until at least one more block is painted (or the scroll's very first poem is reached)
+  more() {
+    if (this.loading || this.done) return this.loading || Promise.resolve(0);
+    this.loading = (async () => {
+      let made = 0;
+      try { while (!made && !this.done) { this.take(await this.store.list({ beforeSeq: this.low, limit: this.K * 2 })); made = this.flush(); } }
+      catch (e) { console.warn('feed: could not load older poems', e); setTimeout(() => { if (this.near()) this.more(); }, 5000); }   // (try again while the reader is still near the end)
+      finally { this.loading = null; }
+      if (made) this.watch();
+      return made;
+    })();
+    return this.loading;
+  }
+  watch() {
+    if (!this.sentinel || typeof IntersectionObserver === 'undefined') return;
+    this.io ||= new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) this.more().then(n => { if (n && this.near()) this.more(); }); }, { rootMargin: '0px 0px 2400px 0px' });
+    this.io.disconnect(); this.io.observe(this.sentinel);
+  }
+  near() { const r = this.sentinel?.getBoundingClientRect(); return !!r && r.top < innerHeight + 2400; }
+  // my own new poem (or one polled in): remember it so polling does not add it twice
+  noteAdded(post) { if (post?.id) this.ids.add(post.id); if (post?.seq > this.maxSeq) this.maxSeq = post.seq; }
+  // other people's new poems: ask for anything newer than the newest we know about
+  async poll() {
+    if (!this.store.shared || (typeof document !== 'undefined' && document.hidden) || this.busy()) return 0;
+    let got = 0;
+    try {
+      for (let i = 0; i < 4; i++) {
+        const { posts } = await this.store.list({ afterSeq: this.maxSeq, limit: this.K });
+        const fresh = posts.filter(p => !this.ids.has(p.id)).sort((a, b) => a.seq - b.seq);
+        for (const p of fresh) { this.noteAdded(p); this.onIncoming(p); got++; }
+        posts.forEach(p => { if (p.seq > this.maxSeq) this.maxSeq = p.seq; });
+        if (posts.length < this.K) break;
+      }
+    } catch {}
+    return got;
+  }
+  startPolling() { if (!this.store.shared || this.timer) return; this.timer = setInterval(() => this.poll(), this.pollMs);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.poll(); }); }
+}

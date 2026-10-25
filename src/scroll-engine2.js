@@ -372,7 +372,7 @@ export class ScrollComposer {
   get height() { return Math.ceil(((this.poems.length ? this.prevTop : 120) + 240) / PX) * PX; }
   clear(x, y, w, h, pad, own) { return !this.rects.some(r => r !== own && x < r.x + r.w + pad && x + w > r.x - pad && y < r.y + r.h + pad && y + h > r.y - pad); }
   addPost(post) {
-    const n = ++this.n, R = rng(hash(this.seed, 'poem', n, post.id)), style = poemStyle(this.seed, n, post.id), A = this.art;
+    const n = post.seq > 0 ? (this.n = Math.max(this.n, post.seq), post.seq) : ++this.n, R = rng(hash(this.seed, 'poem', n, post.id)), style = poemStyle(this.seed, n, post.id), A = this.art;
     if (this.lastAlign) style.align = ALIGNS[(ALIGNS.indexOf(this.lastAlign) + 1 + (hash(this.seed, 'realign', n, post.id) % 2)) % 3];   // never the same twice running
     this.lastAlign = style.align; style.sealOrder = sealOrder(n, post.id, this.lastSealPos); style.sealAvoid = this.lastSealPos;
     const layouts = poemLayouts(post, n, style); this.lastSealPos = layouts[0].sealPos;

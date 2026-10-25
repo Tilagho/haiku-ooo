@@ -172,8 +172,23 @@ body.capture-clean .fab, body.capture-clean .float-note, body.capture-clean .ink
 
 /* round 15.0: the sound toggle, a small pixel speaker at the right end of the 俳句の掲示板 line (scrolls away with the header) */
 .snd-btn { display: inline-block; vertical-align: baseline; position: relative; z-index: 3; min-width: 44px; height: 44px; margin: -12px 0 -12px -2px; padding: 0 4px; border: 0; background: none; cursor: pointer; font: inherit; color: inherit; line-height: 44px; -webkit-tap-highlight-color: transparent; }
-.snd-art { font-family: 'ChiKareGo2', monospace; white-space: pre; letter-spacing: 0; display: inline-block; min-width: 2.2ch; text-align: left; }   /* round 15.4: ASCII "<x" off / "<))" on, inline next to the Japanese */
-.snd-btn.off .snd-art { color: #c8402f; }
-.snd-btn:active .snd-art { transform: translateY(3px); }
+.snd-art { display: inline-block; font: 400 18px/1 var(--text); color: #4a4550; vertical-align: -2px; }   /* round 15.5: pixel speaker on the DotGothic16 dot grid, same size/colour as the .jp title */
+.snd-art svg { display: block; width: 1em; height: 1em; }
+.snd-btn.off .snd-art { display: inline-block; font: 400 18px/1 var(--text); color: #4a4550; vertical-align: -2px; }   /* round 15.5: pixel speaker on the DotGothic16 dot grid, same size/colour as the .jp title */
+.snd-art svg { display: block; width: 1em; height: 1em; }
+.snd-btn:active .snd-art { display: inline-block; font: 400 18px/1 var(--text); color: #4a4550; vertical-align: -2px; }   /* round 15.5: pixel speaker on the DotGothic16 dot grid, same size/colour as the .jp title */
+.snd-art svg { display: block; width: 1em; height: 1em; }
 .snd-btn:focus-visible { outline: 3px solid #6b6670; outline-offset: -3px; }
 body.composing .snd-btn, body.capture-clean .snd-btn { visibility: hidden; }
+
+/* round 15.6b: the shared scroll's older blocks (src/feed.js) and Inky's report ask (src/app.js `ask`) */
+.archive { position: relative; }
+.archive .scroll.seg { position: relative; }
+.feed-more { height: 1px; }
+.bubble.px.asking { pointer-events: auto; }
+.bubble .ask-row { display: flex; justify-content: space-between; gap: 8px; margin: 6px -6px -4px; }
+.bubble .ask-row button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; margin: 0; border: 0; background: none; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.bubble .ask-row button:active { transform: translateY(4px); }
+.bubble .ask-row button:focus-visible { outline: 4px solid #6b6670; outline-offset: -2px; }
+.bubble .ask-ic { image-rendering: pixelated; pointer-events: none; display: block; }

@@ -15,10 +15,15 @@ import { mountNoren } from './noren.js';
 import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
+import { mountReports } from './report.js';     // round 15.6: hold a user poem, Inky asks to report it; TAKEDOWN_REPORTS take it down (src/moderation.js)
+import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js';   // round 15.0: synthesized sound (starts on the first tap; toggle in the header)
 
 const $ = s => document.querySelector(s);
-const store = createStore();
+// round 15.6b: one store handle for everything (compose, reports, the feed); `cur` swaps to this device's own board if the
+// shared scroll cannot be reached (see `booted` below)
+const store = { cur: createStore(), get shared() { return this.cur.shared; }, list(o) { return this.cur.list(o); }, create(t, o) { return this.cur.create(t, o); },
+  report(id, o) { return this.cur.report(id, o); }, count() { return this.cur.count(); } };
 const bubble = $('#bubble'), bcv = document.createElement('canvas'); bcv.className = 'bcv';
 const reduced = prefersReducedMotion();
 
@@ -32,7 +37,19 @@ const anim = (el, k, sp, o) => reduced ? null : springAnimate(el, k, sp, o);
 
 
 // ---------- the scroll: art + poems composed together ----------
-const view = new ScrollView($('#scroll'), { seed: 31, lib: await loadLibrary(SPRITES) });   // decode the art once (async inflate)
+const LIB = await loadLibrary(SPRITES);                                                       // decode the art once (async inflate)
+const view = new ScrollView($('#scroll'), { seed: 31, lib: LIB });
+// round 15.6b: older blocks of the shared scroll stack below the newest one (src/feed.js), each its own painting
+const archive = document.createElement('div'); archive.id = 'archive'; archive.className = 'archive';
+const sentinel = document.createElement('div'); sentinel.className = 'feed-more'; sentinel.setAttribute('aria-hidden', 'true');
+$('#scroll').after(archive, sentinel);
+function makeSegment(b, seed) {
+  const host = document.createElement('div'); host.className = 'scroll seg'; host.dataset.block = b; archive.appendChild(host);
+  const v = new ScrollView(host, { seed, lib: LIB, onTapPoem: (rec, el, e) => rec && copyPoem(rec.post, e) });
+  import('./mist.js').then(m => m.mountMist(v, { clock, reduced }));
+  import('./waterfall.js').then(m => m.mountWaterfalls(v, { clock, reduced }));
+  return v;
+}
 // tap a poem: no highlight (the scroll stays one painting); it is copied, with the site URL, and Inky says so
 view.onTapPoem = (rec, el, e) => rec && copyPoem(rec.post, e);
 import('./mist.js').then(m => m.mountMist(view, { clock, reduced }));     // round 14 rolling sumi mist (src/mist.js): over the ink, under the birds + poems
@@ -63,11 +80,14 @@ function floatNote(text, x, y) {
   d.animate([{ transform: 'translate(-50%, 0)', opacity: 1 }, { transform: 'translate(-50%, -8px)', opacity: 1, offset: .6 }, { transform: 'translate(-50%, -14px)', opacity: 0 }], { duration: 1000, easing: 'steps(6)', fill: 'both' })
     .finished.then(() => d.remove(), () => d.remove());
 }
-async function loadAll() {
-  // the layout is a pure function of (seed, chronological post list), so build oldest -> newest
-  const all = []; let before = Infinity;
-  for (;;) { const { posts, nextBefore } = await store.list({ before, limit: 200 }); all.push(...posts); if (nextBefore === null) break; before = nextBefore; }
-  all.sort((a, b) => a.createdAt - b.createdAt).forEach(p => view.add(p));
+// round 15.6b: someone else's poem arrived (polling). At the top of the scroll and free: it types in and is stamped like
+// your own; otherwise it is added quietly and the page is held still so nothing jumps under the reader's finger.
+function incoming(post) {
+  if (!reduced && scrollY < innerHeight * .6 && !composing() && !rolling && !document.hidden) {
+    const { played } = view.add(post, { animate: true });
+    played.then(() => { if (inky.mode === 'roam' && inky.visible && bubble.hidden && !asking) { say('a new haiku!', 1400); } });
+  } else { const h0 = document.documentElement.scrollHeight; view.add(post); const d = document.documentElement.scrollHeight - h0; if (d && scrollY > 0) scrollBy({ top: d, behavior: 'instant' }); }
+  reports?.markAll();
 }
 
 // ---------- Inky: the ink-drop mascot (canvas overlay) + his pixel speech bubble ----------
@@ -75,12 +95,15 @@ async function loadAll() {
 // little away from him). One bubble at a time; it stays readMs(text) (2.5 s + 60 ms a character), then POPS.
 const inky = new Inky({ R: 7 });
 inky.placeAt(-80, innerHeight - 78); inky.entered = false; inky.floor = inky.pageFloor(); inky.fy = inky.floor; inky.grounded = true;
-let bubbleUntil = 0, bubbleAnchor = null, popping = false;
+let bubbleUntil = 0, bubbleAnchor = null, popping = false, popTok = 0;   // popTok: a new bubble voids a pop still in flight (round 15.6b)
 const speech = new SpeechScheduler();
-function say(text, ms = readMs(String(text)), big = false, anchor = null) {
-  bubbleAnchor = anchor; popping = false; bubble.getAnimations?.().forEach(a => a.cancel());
+let asking = null;      // round 15.6b: Inky is asking whether to report a poem; nothing else talks over him
+function say(text, ms = readMs(String(text)), big = false, anchor = null, extra = null) {
+  if (asking && !extra) return;
+  bubbleAnchor = anchor; bubble.classList.remove('asking'); popTok++; popping = false; bubble.getAnimations?.().forEach(a => a.cancel());
   bubble.classList.add('px'); bubble.innerHTML = ''; const t = document.createElement('span'); t.className = 'bt';
   String(text).split('\n').forEach((l, i) => { if (i) t.appendChild(document.createElement('br')); t.appendChild(document.createTextNode(l)); });
+  if (extra) t.appendChild(extra);
   bubble.append(bcv, t); bubble.hidden = false; bubble.classList.toggle('big', big);
   bubble.style.width = bubble.style.height = '';
   const r = t.getBoundingClientRect(); bubble._bw = Math.ceil(r.width / BU); bubble._bh = Math.ceil(r.height / BU); bubble._key = '';
@@ -91,7 +114,8 @@ function say(text, ms = readMs(String(text)), big = false, anchor = null) {
 // it POPS: a quick swell, gone, and a ring of ink specks where it was
 function popBubble() {
   if (bubble.hidden || popping) return; popping = true;
-  const r = bubble.getBoundingClientRect(), done = () => { bubble.hidden = true; popping = false; speech.bubbleEnded(clock.now()); };
+  const tok = ++popTok, r = bubble.getBoundingClientRect(), done = () => { if (tok !== popTok) return; bubble.hidden = true; popping = false; speech.bubbleEnded(clock.now()); };
+  if (asking) asking.end(false);            // the ask bubble popped without an answer (timed out, Inky picked up, compose opened): no report
   if (reduced) return done();
   inky.pop(r.left + r.width / 2, r.top + r.height / 2, r.width);
   const a = bubble.animate([{ transform: 'none', opacity: 1 }, { transform: 'scale(1.14)', opacity: 1, offset: .5 }, { transform: 'scale(1.3)', opacity: 0 }], { duration: 130, easing: 'steps(2, end)', fill: 'forwards' });
@@ -116,6 +140,42 @@ function placeBubble() {
     Object.assign(bcv.style, { left: r.ox * BU + 'px', top: r.oy * BU + 'px', width: r.W * BU + 'px', height: r.H * BU + 'px' });
   }
 }
+// ---------- round 15.6b (Tiago, t183u): Inky handles reports ----------
+// Hold a user poem: Inky asks "通報する？ report?" in an extended bubble with a ✕ and a ✔ in it. ✕ (or ignoring him,
+// or scrolling away) = nothing happens; ✔ = report it (src/report.js does the rest). If he is off screen, picked up
+// or splatted, the same bubble hangs off the poem itself. Hidden UI we hope is rarely needed.
+const ICON = { no: ['1.....1', '11...11', '.11.11.', '..111..', '.11.11.', '11...11', '1.....1'],
+  yes: ['.......1', '......11', '.....11.', '1...11..', '11.11...', '.111....', '..1.....'] };
+function iconCanvas(rows, color) {
+  const cv = document.createElement('canvas'); cv.width = rows[0].length; cv.height = rows.length; cv.className = 'ask-ic';
+  const g = cv.getContext('2d'); g.fillStyle = color; rows.forEach((r, y) => [...r].forEach((c, x) => c === '1' && g.fillRect(x, y, 1, 1)));
+  Object.assign(cv.style, { width: cv.width * BU + 'px', height: cv.height * BU + 'px' }); return cv;
+}
+let lastPointer = ''; addEventListener('pointerdown', e => { lastPointer = e.pointerType; }, { capture: true, passive: true });
+const inkyFree = () => inky.entered && inky.visible && inky.mode === 'roam' && inky.mood !== 'splat';
+function ask(el, { already = false } = {}) {
+  const anchor = inkyFree() ? null : el;
+  if (already) { if (anchor === null) inky.setMood('happy'); say('通報済み\nyou reported this one', 1800, false, anchor); return Promise.resolve(false); }
+  return new Promise(resolve => {
+    const row = document.createElement('span'); row.className = 'ask-row';
+    const btn = (k, label, color) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ask-' + k; b.setAttribute('aria-label', label); b.appendChild(iconCanvas(ICON[k], color)); row.appendChild(b); return b; };
+    const no = btn('no', 'no, do not report', '#1a181c'), yes = btn('yes', 'yes, report this haiku', '#d63a28');
+    const y0 = scrollY, onScroll = () => { if (Math.abs(scrollY - y0) > 80) end(false); };
+    const key = e => { if (e.key === 'Escape') { e.preventDefault(); end(false); } };
+    const end = ans => { if (asking !== st) return; asking = null; removeEventListener('scroll', onScroll); removeEventListener('keydown', key, true); bubble.classList.remove('asking');
+      if (!ans && anchor === null && inky.mode === 'roam') inky.setMood('happy');
+      popBubble(); resolve(ans); };
+    const st = { el, end }; asking = st;
+    say('通報する？\nreport?', 15000, false, anchor, row);
+    bubble.classList.add('asking'); bubble.setAttribute('role', 'dialog'); bubble.setAttribute('aria-label', 'report this haiku?');
+    if (anchor === null) { inky.setMood('worry'); inky.jump(.35); }
+    no.addEventListener('click', e => { e.stopPropagation(); end(false); });
+    yes.addEventListener('click', e => { e.stopPropagation(); end(true); });
+    addEventListener('scroll', onScroll, { passive: true }); addEventListener('keydown', key, true);
+    if (lastPointer !== 'touch' && lastPointer !== 'pen') no.focus({ preventScroll: true });   // keyboard / mouse: ✕ takes focus (Escape cancels); a finger: no focus ring
+  });
+}
+
 clock.onTick(() => {
   const now = clock.now();
   // ambient speech: every 25-60 s, never while composing, one bubble at a time, a cooldown after any bubble
@@ -173,14 +233,29 @@ const norenEl = $('#noren'), noren = norenEl ? mountNoren(norenEl) : null;
 const credits = mountCredits({ clock, reduced });   // round 14.5: the © line's 'credits' scroll (src/credits.js)
 const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; } });
 const sound = mountSound({ view, inky, clock });
-// springy press: squash on touch, spring back on release
-const booted = loadAll();
+// round 15.6: reports. Inky thanks whoever reported (or a small float note if he is busy elsewhere)
+// round 15.6b: the shared scroll (src/feed.js) and reports (src/report.js: Inky asks, then thanks whoever reported)
+let reports = null;
+const feed = new Feed({ main: view, store, seed: 31, makeSegment, sentinel, busy: () => composing() || rolling,
+  onIncoming: incoming, onPainted: () => reports?.markAll() });
+reports = mountReports({ feed, store, ask, reduced, busy: () => composing() || !!asking, onReported: ({ removed, el, error }) => {
+  const r = el?.getBoundingClientRect?.(), text = error ? 'hm, that did not go through.\ntry again?' : removed ? 'poof! it is gone' : 'thank you!\nreported';
+  if (!composing() && inkyFree()) { inky.setMood(error ? 'worry' : 'cheer'); if (!error) inky.jump(.6); say(text, 1600); clock.wait(1200).then(() => inky.mode === 'roam' && inky.setMood('happy')); }
+  else floatNote(error ? 'could not report' : removed ? 'removed' : 'reported', r ? r.left + r.width / 2 : innerWidth / 2, r ? r.top : innerHeight / 2);
+} });
+// the shared scroll unreachable (offline, server down): fall back to this device's own board so the page still works
+const booted = feed.boot().catch(async e => {
+  console.warn('feed: shared scroll unreachable, using this device only', e);
+  const { LocalStore } = await import('./store.js'); store.cur = new LocalStore();
+  feed.segments.length = 0; feed.done = false; feed.low = Infinity; feed.pending = []; feed.painted.clear();
+  return feed.boot();
+}).then(() => { reports.markAll(); feed.startPolling(); store.cur.warm?.(); });   // 15.6c: Firestore signs this phone in anonymously in the background
 // he slips in from off-screen once the board is up
 booted.then(() => clock.wait(reduced ? 0 : 450)).then(() => { if (!composing()) inky.enter(); else inky.entered = true; });
 
 // test hooks for screenshots / e2e
 // Public hooks (see README, "Seal-stamp hook"): the compose flow calls HB.addPost(post) or the pieces directly.
-window.HB = { sound, credits, view, inky, clock, booted, fabArt, noren, compose, wind, writeTapped, onWrite: null,
+window.HB = { feed, ask, asking: () => asking, sound, reports, credits, view, inky, clock, booted, fabArt, noren, compose, wind, writeTapped, onWrite: null,
   rollUpButton: ms => fabArt?.rollUp(ms) ?? Promise.resolve(), unrollButton: ms => fabArt?.unroll(ms) ?? Promise.resolve(), copyText, copyPoem, lastCopied: () => lastCopied, stampDemo,
   typePoem: (el, o) => view.typePoem(el, o), stampSeal: (el, o) => view.stampSeal(el, o), addPost: addNewPost,
   openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say, speech, popBubble,

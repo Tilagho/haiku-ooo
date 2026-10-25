@@ -61,10 +61,10 @@ export class SoundEngine {
       const c = this._pending = new AC({ latencyHint: 'playback' });
       this.ready = this._build(c).then(bufs => {
         this.attach(c, bufs); this._pending = null;
-        document.addEventListener('visibilitychange', this._vis);
+        if (!this._listening) { this._listening = true; document.addEventListener('visibilitychange', this._vis);
         // round 15.4 (Tiago t176u): coming back to the page must bring the sound back with no reload. Safari's bfcache / iOS background
         // don't always fire visibilitychange, so pageshow + focus wake it too; and the context's own statechange (iOS 'interrupted' -> back)
-        addEventListener('pageshow', this._vis); addEventListener('focus', this._vis);
+        addEventListener('pageshow', this._vis); addEventListener('focus', this._vis); }
         c.onstatechange = () => { if (c.state === 'running' && !this.muted && !document.hidden) this._restoreGain(); };
         this.timer = setInterval(() => { if (this.ctx.state === 'running') this.pump(); }, 1000);   // nothing scheduled while suspended (hidden / muted)
         if (this.muted) { this.master.gain.value = 0; c.suspend?.(); }
@@ -74,8 +74,10 @@ export class SoundEngine {
       });
     }
     const c = this.ctx || this._pending;
+    if (this.ctx && !this.muted) this._kick = false;   // round 15.5: a gesture after a hide: resume + level + (wire) bed, every time
     if (c.state !== 'running' && !(this.muted && this.ctx)) { const p = c.resume?.(); if (this.ctx) p?.then?.(() => this._wake()); p?.catch?.(() => {}); }
-    else if (this.ctx && !this.muted) this._restoreGain();   // running but faded out by an earlier hide whose resume never came back
+    if (this.ctx && !this.muted) this._watch();
+    if (c.state === 'running' && this.ctx && !this.muted) this._restoreGain();   // running but faded out by an earlier hide whose resume never came back
     const b = c.createBuffer(1, 1, c.sampleRate), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start();   // iOS: a sound inside the gesture
     return true;
   }
@@ -137,11 +139,23 @@ export class SoundEngine {
   _save() { if (this.persist) ls.set(KEY, JSON.stringify(this.settings)); }
   _visibility() {
     if (!this.ctx || !this._live()) return;
-    if (document.hidden) { this.master.gain.setTargetAtTime(0, this.now, 0.08); clearTimeout(this._susT); this._susT = setTimeout(() => document.hidden && this.ctx.suspend(), 400); }   // hidden: fade, then suspend
-    else if (!this.muted) { clearTimeout(this._susT); this.ctx.resume().then(() => this._wake()).catch(() => {}); }   // (iOS may refuse until the next tap: unlock() resumes AND restores the level then)
+    if (document.hidden) { this.master.gain.setTargetAtTime(0, this.now, 0.08); clearTimeout(this._susT); this._susT = setTimeout(() => document.hidden && this.ctx.suspend(), 400); this._kick = true; }   // hidden: fade, then suspend
+    else if (!this.muted) { clearTimeout(this._susT); this.ctx.resume().then(() => this._wake()).catch(() => {}); this._watch(); }   // (iOS may refuse until the next tap: unlock() resumes AND restores the level then)
   }
   // back on the page and running again: the level the hide faded to 0 comes back (before 15.4 a tap-resume left it at 0 = silent until reload)
   _restoreGain() { if (!this.master || this.muted || document.hidden) return; const g = this.master.gain; g.cancelScheduledValues(this.now); g.setValueAtTime(g.value, this.now); g.setTargetAtTime(this.settings.master.volume, this.now, 0.3); }
+  // round 15.5 (Tiago t180u): iOS Safari can come back from the background with the context saying 'running' while its clock is frozen
+  // (no output at all), or stuck 'interrupted'/'suspended' with resume() never settling. The 15.4 tap path saw 'running' + full level +
+  // bed on and did NOTHING -> silent until reload. Now: on return we check the clock really moves; a dead context is replaced on the next tap.
+  _watch() { const c = this.ctx; if (!c || !this._live()) return; const t0 = c.currentTime; clearTimeout(this._watchT);
+    this._watchT = setTimeout(() => { if (document.hidden || this.muted || this.ctx !== c) return; if (c.state === 'running' && c.currentTime === t0) this._dead = true; if (c.state !== 'running') this._kick = true; }, 700); }
+  get needsGesture() { return !!this.ctx && !this.muted && (this._dead || this._kick || this.ctx.state !== 'running' || (this.master?.gain.value ?? 1) < 0.01); }
+  rebuild() {                                    // inside a tap: throw away the dead context and build a fresh one (the wire restarts the bed)
+    const old = this.ctx; if (!old || !this._live()) return this.unlock();
+    clearInterval(this.timer); clearTimeout(this._susT); clearTimeout(this._watchT); try { old.onstatechange = null; old.close?.(); } catch {}
+    this.ctx = null; this.amb = {}; this.drag = null; this.bedOn = false; this.breezeOn = false; this._floodP = null; this._babbleP = null; this.flood = null; this.babbleBank = null; this._dead = false; this._kick = false;
+    return this.unlock();
+  }
   _wake() { if (this.ctx?.state !== 'running') return; this._restoreGain(); this.pump(); }
   // the scheduler: ambient voices schedule their slow changes / gusts / droplets ahead of time (realtime: every second, 4 s ahead; offline: pump(duration))
   pump(ahead = 4) {
@@ -242,7 +256,7 @@ export class SoundEngine {
   startDrag(inky = 'black', when) { if (!this.ctx) return this._defer(() => this.startDrag(inky)); this.stopDrag(when); this.drag = churnVoice(this, inky, when ?? this.now); }
   updateDrag(speed, when) { this.drag?.update(clamp(speed), when ?? this.now); }
   stopDrag(when) { this.drag?.stop(when ?? this.now); this.drag = null; }
-  dragImpact(strength = 1, when) { if (!this.ctx) return this._defer(() => this.dragImpact(strength)); const t = when ?? this.now; this.drag?.duck(t, clamp(strength)); SHOTS.wetSlap(this, t, { strength: clamp(strength) }); }   // he squishes into a wall / the ceiling / the floor
+  dragImpact(strength = 1, when) { if (!this.ctx) return this._defer(() => this.dragImpact(strength)); const t = when ?? this.now; this.drag?.duck(t, clamp(strength)); SHOTS.jelloBoing(this, t, { strength: clamp(strength) }); }   // round 15.5: a jiggly jello spring boing when he squishes into a wall / the ceiling / the floor
   // helpers used by the voices
   src(type, when, { loop = true, rate = 1 } = {}) {
     const s = this.ctx.createBufferSource(); s.buffer = type === 'grain' ? this.grain : this.noise[type]; s.loop = loop; s.playbackRate.value = rate;
@@ -521,6 +535,29 @@ const SHOTS = {
     gurgle(E, t, d, 0.18, 700, 220, 3, 0.9 * a, 0.004);
     bloop(E, t, d, 320, 170, 0.12, 0.35 * a, 'triangle');
     for (let i = 0; i < Math.round(2 + 4 * S); i++) plip(E, t + rnd(0.03, 0.22), d, { f: rnd(350, 1000), amp: rnd(0.03, 0.08) * a, dur: rnd(0.04, 0.07), pan: rnd(-0.6, 0.6) });
+  },
+  // round 15.5 (Tiago: 'jiggly jello spring boing'): a soft rubbery 'bwup', then a springy pitched boing whose pitch wobbles
+  // and decays (a decaying vibrato + tremolo = the jiggle), and a tiny higher secondary jiggle. Pitch varies a little per hit.
+  jelloBoing(E, t, p) {
+    const S = clamp(p.strength ?? 1), d = inkyOut(E), a = 0.3 + 0.7 * S, f = (330 + 90 * S) * rnd(0.94, 1.06);
+    bloop(E, t, d, 300, 150, 0.07, 0.22 * a, 'sine');                                 // soft rubbery contact
+    const boing = (t0, f0, amp, dur, rate, depth) => {
+      const o = E.ctx.createOscillator(), o2 = E.ctx.createOscillator(), g = E.gain(0), g2 = E.gain(0);
+      o.type = 'triangle'; o2.type = 'sine';
+      o.frequency.setValueAtTime(f0 * 0.62, t0); o.frequency.exponentialRampToValueAtTime(f0, t0 + 0.035);   // the spring stretching up
+      const lfo = E.ctx.createOscillator(), lg = E.gain(f0 * depth); lfo.frequency.setValueAtTime(rate, t0); lfo.frequency.linearRampToValueAtTime(rate * 1.35, t0 + dur);
+      lg.gain.setValueAtTime(f0 * depth, t0 + 0.03); lg.gain.exponentialRampToValueAtTime(f0 * 0.004, t0 + dur);   // wobble settles
+      lfo.connect(lg); lg.connect(o.frequency); lg.connect(o2.frequency);
+      o2.frequency.setValueAtTime(f0 * 1.24, t0); o2.frequency.exponentialRampToValueAtTime(f0 * 2, t0 + 0.035);
+      const trem = E.gain(1), tl = E.ctx.createOscillator(), tg = E.gain(0.35); tl.frequency.value = rate; tl.connect(tg).connect(trem.gain);
+      g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(amp, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0008, t0 + dur);
+      g2.gain.setValueAtTime(0, t0); g2.gain.linearRampToValueAtTime(amp * 0.25, t0 + 0.012); g2.gain.exponentialRampToValueAtTime(0.0008, t0 + dur * 0.6);
+      o.connect(g).connect(trem); o2.connect(g2).connect(trem); trem.connect(d);
+      for (const x of [o, o2, lfo, tl]) { x.start(t0); x.stop(t0 + dur + 0.05); }
+    };
+    boing(t + 0.008, f, 0.42 * a, 0.42 + 0.12 * S, 13, 0.09);                           // the main boing
+    boing(t + 0.13, f * 1.5, 0.12 * a, 0.22, 17, 0.06);                                 // the little after-jiggle
+    wash(E, t, d, { dur: 0.06, f0: 1800, f1: 500, amp: 0.12 * a, type: 'white', Q: 1 });   // a hint of wet
   },
   scrollOpen(E, t) { mapPaper(E, t, { dur: 1.3, open: true }); },
   scrollClose(E, t) { mapPaper(E, t, { dur: 0.95, open: false }); },
