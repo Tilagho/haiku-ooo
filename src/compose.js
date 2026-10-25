@@ -595,8 +595,8 @@ export function mountCompose(deps) {
   $('#cnamebtn').addEventListener('click', e => { e.preventDefault(); openName(); });
   nameIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== nameIn) closeName(); }, 0));
   nameIn.addEventListener('input', () => { const c = cleanName(nameIn.value); if (c !== nameIn.value) nameIn.value = c; fitName(); poke(); });
-  function fitName() {                          // round 15.10f4: exact same ChiKareGo size as poem line 3; shrink only if the name won't fit; never below 16px (iOS focus zoom)
-    const nm = nameNm, mm = nm.querySelector('.nmm'), v = nameIn.value;
+  function fitName() {                          // round 15.10f5c: typed name = poem line 3; placeholder ~75% so "Sign? (optional)" fits clear of stamps; never below 16px
+    const nm = nameNm, mm = nm.querySelector('.nmm'), ph = nm.querySelector('.nph'), v = nameIn.value;
     mm.textContent = v; nm.classList.toggle('has', !!v); nm.style.removeProperty('--nfs');
     const mirrors = [...linesEl.querySelectorAll('.field .mirror')];
     const last = mirrors[mirrors.length - 1];
@@ -607,6 +607,15 @@ export function mountCompose(deps) {
     }
     const base = Math.max(16, Math.round(poemFs));
     nm.style.setProperty('--nfs', base + 'px');
+    // pretext: ~3/4 of typed size (a touch under the stamps), then shrink only if it won't fit
+    let phFs = Math.max(16, Math.round(base * 0.75));
+    nm.style.setProperty('--phfs', phFs + 'px');
+    if (ph) {
+      const room = nm.clientWidth - 2;
+      ph.style.width = 'max-content';
+      while (phFs > 16 && ph.scrollWidth > room) { phFs -= 1; nm.style.setProperty('--phfs', phFs + 'px'); }
+      ph.style.width = '';
+    }
     if (!v) return;
     const room = nm.clientWidth - 2; let fs = base;
     mm.style.width = 'max-content';   // scrollWidth must be the glyphs, not the stretched absolute box
