@@ -235,7 +235,7 @@ ok('round 15.10g: no 5-7-5 chips; the board ends with おわり / The End + inqu
   assert.ok(/<p class="end-jp" lang="ja">おわり<\/p>[\s\S]{0,300}<p class="end-en">The End<\/p>[\s\S]*href="mailto:contact@haiku\.ooo"/.test(html), 'round 15.10g4: The End / おわり (periods dropped so both lines read centred)');
   assert.ok(!/おわり。|The End\./.test(html.replace(/<!--[\s\S]*?-->/g, '')), 'round 15.10g4: no trailing periods in the end copy');
   assert.ok(!/（おわり）|\(the end\)/.test(html), 'no parenthesised end copy');
-  assert.ok(/style\.css\?v=15\.10g4/.test(html) && /app\.js\?v=15\.10g4/.test(html));
+  assert.ok(/style\.css\?v=15\.10(g4|h)/.test(html) && /app\.js\?v=15\.10(g4|h)/.test(html));   // 15.10h bumped both
   assert.ok(/\.scroll-end \.end-jp \{[^}]*font: 400 var\(--crfs\)\/1 'FindersKeepers', 'DotGothic16'[^}]*letter-spacing: normal[^}]*color: #6b6670/.test(css), 'jp: FindersKeepers first, DotGothic16 kana fallback, © grey');
   assert.ok(/\.scroll-end \.end-en \{[^}]*font: 400 var\(--crfs\)\/1 var\(--small\)[^}]*color: #6b6670/.test(css), 'en: © row voice');
   assert.ok(/\.scroll-end \.end-mail \{[^}]*font: 400 var\(--crfs\)\/1 var\(--small\)[^}]*color: #6b6670/.test(css), 'mail: © row voice');
@@ -247,10 +247,39 @@ ok('round 15.10g: no 5-7-5 chips; the board ends with おわり / The End + inqu
   assert.ok(/getElementById\('end-mail-a'\)\?\.addEventListener\('click'[\s\S]{0,200}writeClipboard\('contact@haiku\.ooo'\)/.test(src('src/app.js')), 'tap also copies');
   assert.ok(/\.scroll-end \{ display: none;/.test(css) && /\.feed-more\.end ~ \.scroll-end \{ display: block; \}/.test(css), 'hidden until sentinel.end');
 });
-ok('round 15.10g: a tiny boot Inky shows only while the feed loads (delayed fade-in), app.js drops it once booted settles', () => {
+ok('round 15.10g/h: a tiny boot Inky shows while the feed loads; app.js hands off to the staged boot once booted settles', () => {
   const html = src('index.html'), css = src('src/style.css'), js = src('src/app.js');
   assert.ok(/<div id="boot-inky" class="boot-inky" role="status"[^>]*><svg class="bi-blob"[^>]*shape-rendering="crispEdges"/.test(html));
-  assert.ok(/\.boot-inky \{[^}]*animation: bi-in \.2s steps\(2\) \.4s both/.test(css) && /\.boot-inky\.gone \{ animation: bi-out/.test(css));
-  assert.ok(/booted\.then\(dropBootInky, dropBootInky\)/.test(js));
+  assert.ok(/\.boot-inky \{[^}]*animation: bi-in \.16s steps\(2\) both/.test(css) && /\.boot-inky\.gone \{ animation: bi-out/.test(css), 'on from first paint (no .4 s delay)');
+  assert.ok(/const bootDone = booted\.catch\(\(\) => \{\}\)\.then\(\(\) => window\.HBBoot \? window\.HBBoot\.done\(\{ sfx \}\) : dropBootInky\(\)\)/.test(js), 'boot hand-off on success or failure');
+});
+ok('round 15.10h: staged boot — fill bar, ~1 s minimum beat, board fades in, boot Inky whips off, then the board Inky enters', () => {
+  const html = src('index.html'), css = src('src/style.css'), js = src('src/app.js'), boot = src('src/boot-inky.js');
+  assert.ok(/<html lang="en" class="hb-booting">/.test(html), 'board starts hidden');
+  assert.ok(/<span class="bi-bar" aria-hidden="true"><i class="bi-fill"><\/i><\/span><\/div>\s*<script src="src\/boot-inky\.js\?v=15\.10h2"><\/script>/.test(html), 'fill bar + classic boot script right after the loader');
+  assert.ok(!/bi-puddle/.test(html + css), 'old puddle gone');
+  assert.ok(/src\/style\.css\?v=15\.10h2"/.test(html) && /src\/app\.js\?v=15\.10h2"/.test(html) && /src\/boot-inky\.js\?v=15\.10h2"/.test(html), 'cache-bust (15.10h2)');
+  assert.ok(/html\.hb-booting body > :not\(#boot-inky\):not\(\.bi-cv\):not\(script\) \{ opacity: 0 !important;/.test(css), 'board hidden while booting');
+  // round 15.10h2 (t235u): only the sumi background fades; everything else just appears
+  assert.ok(/html\.hb-reveal \.art-layer \.bg6, html\.hb-reveal #ink-layer \{ animation: hb-bg-in var\(--hb-fade, 560ms\) steps\(7\) both/.test(css), 'background-only stepped fade');
+  assert.ok(!/html\.hb-reveal body > [^{]*\{[^}]*(transition|animation)/.test(css), 'no whole-board fade');
+  assert.ok(/\.boot-inky \.bi-fill \{[^}]*transform-origin: 0 50%; transform: scaleX\(0\)/.test(css) && /\.boot-inky \.bi-bar \{[^}]*width: 48px/.test(css), '48 px bar, 12 x 4 px cells');
+  assert.ok(/MIN: reduced \? 0 : 1000/.test(boot) && /SWOOSH: 760/.test(boot) && /FADE: reduced \? 200 : 560/.test(boot) && /AFTER: reduced \? 0 : 500/.test(boot) && /SAFE: 15000/.test(boot), 'timings');
+  assert.ok(/const STEPS = 12, PX = 4, FPS = 30/.test(boot), 'pixel-stepped');
+  // round 15.10h2 (t233u): crisp pixels on a low-res canvas, no CSS rotate on the SVG; a ribbon trail like red Inky's
+  assert.ok(/\.bi-cv \{[^}]*image-rendering: pixelated/.test(css) && /cv\.className = 'bi-cv'/.test(boot) && !/blob\.style\.transform/.test(boot), 'canvas pixels, no smoothed SVG transform');
+  assert.ok(/const trail = \[\], drops = \[\]/.test(boot) && /disc\(ctx, t\.x, t\.y, rr\)/.test(boot) && /Math\.hypot\(x - lx, y - ly\) \/ \.7/.test(boot), 'gap-filled ink ribbon');
+  // round 15.10h2 (t234u): the write button boots shut and opens as rollUp reversed, with the close's fabRoll sound
+  const sb = src('src/scroll-button.js');
+  assert.ok(/api\.rollUp = \(ms = 540\)[^\n]*tween\(1, ms, ROLL_EASE\)/.test(sb) && /api\.openReverse = \(ms = 540\)[^\n]*tween\(0, ms, k => 1 - ROLL_EASE\(1 - k\)\)/.test(sb), 'open = reverse(close)');
+  assert.ok(/fabArt\.p = 1; fabArt\.paint\(0\);/.test(js) && /addEventListener\('hb:bootgone', \(\) => \{[^\n]*sfx\('fabRoll'\); fabArt\.openReverse\(\);/.test(js), 'boots shut; opens on hb:bootgone with fabRoll');
+  assert.ok(/const ease = u => u < \.5 \? 4 \* u \* u \* u/.test(boot) && /function catmull\(pts, u\)/.test(boot), 'red Inky whip curve + ease');
+  assert.ok(/sfx\?\.\('swooshIn', \{ dur: T\.SWOOSH \/ 1000 \}\)/.test(boot), 'watery swoosh');
+  assert.ok(/u \/= sx; v \/= sy;/.test(boot) && /paint\(u < 1 \? \[c0x \+ x, c0y \+ y, s, 1 \/ Math\.sqrt\(s\), a, lean\]/.test(boot), 'stretch along velocity (nearest-neighbour inverse map)');
+  assert.ok(/if \(reduced\) \{ reveal\(\); el\.classList\.add\('gone'\)/.test(boot), 'reduced motion: quick fade, no swoosh');
+  assert.ok(/window\.HBBoot = \{ T, STEPS, done, mark:/.test(boot) && /window\.HBBoot\?\.mark\(\.5\)/.test(js), 'hooks');
+  assert.ok(/booted\.then\(\(\) => bootDone\)\.then\(\(\) => \{ if \(!composing\(\)\) inky\.enter\(\)/.test(js), 'board Inky enters after the hand-off');
+  // the bar's maths: eases toward 88 %, never full on its own, ~77 % at the 1 s beat
+  const curve = t => .88 * (1 - Math.exp(-t / 420)); assert.ok(curve(1000) > .7 && curve(1000) < .8 && curve(60000) < .9);
 });
 console.log(`${n} board checks passed`);

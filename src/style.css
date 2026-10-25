@@ -93,18 +93,34 @@ main { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding
 #sentinel { height: 1px; }
 
 /* round 15.10g (t222u): boot Inky, a little pixel ink drop that squishes in place until the first poems are painted.
-   Fades in only after .4 s (fast loads never see it); app.js adds .gone then removes it once feed.boot() settles. */
+   round 15.10h (t230u/t231u): staged boot. He is on from first paint (no .4 s delay) over a pixel fill bar (12 x 4 px cells, src/boot-inky.js
+   drives .bi-fill), stays at least ~1 s, then swooshes away like red Inky's whip while the board fades in under him. */
 .boot-inky { position: fixed; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; pointer-events: none;
-  animation: bi-in .2s steps(2) .4s both; }
+  animation: bi-in .16s steps(2) both; }
 .boot-inky .bi-blob { display: block; transform-origin: 50% 100%; animation: bi-squish 1.2s steps(1) infinite; }
 .boot-inky .bi-eyes { animation: bi-blink 3.2s steps(1) infinite; }
-.boot-inky .bi-puddle { display: block; width: 44px; height: 4px; margin-top: 4px; background: rgba(26,24,28,.22); animation: bi-puddle 1.2s steps(1) infinite; }
+.boot-inky .bi-bar { display: block; width: 48px; height: 6px; margin-top: 10px; background: var(--paper-hi);
+  box-shadow: 0 -2px 0 0 var(--ink), 0 2px 0 0 var(--ink), -2px 0 0 0 var(--ink), 2px 0 0 0 var(--ink), 4px 4px 0 0 rgba(26,24,28,.22); }
+.boot-inky .bi-fill { display: block; width: 100%; height: 100%; background: var(--ink); transform-origin: 0 50%; transform: scaleX(0); }
+.boot-inky.full .bi-blob { animation: bi-full .24s steps(2) both; }
+.boot-inky.swoosh .bi-blob { animation: none; }
+.boot-inky .bi-bar.popped { animation: bi-pop .1s steps(2) both; }
 .boot-inky.gone { animation: bi-out .2s steps(2) both; }
+.bi-cv { position: fixed; z-index: 5; pointer-events: none; image-rendering: pixelated; }   /* round 15.10h2: the swoosh, crisp 4 px pixels (src/boot-inky.js) */
 @keyframes bi-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes bi-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes bi-squish { 0% { transform: none; } 25% { transform: scale(1.08, .93); } 50% { transform: translateY(-8px) scale(.95, 1.06); } 75% { transform: translateY(-4px); } }
-@keyframes bi-puddle { 0% { transform: none; } 25% { transform: scaleX(1.1); } 50% { transform: scaleX(.7); opacity: .6; } 75% { transform: scaleX(.85); } }
+@keyframes bi-full { 0% { transform: translateY(-8px) scale(.92, 1.1); } 100% { transform: none; } }
+@keyframes bi-pop { to { transform: scale(1.3, 0); opacity: 0; } }
 @keyframes bi-blink { 0%, 92% { opacity: 1; } 94% { opacity: 0; } }
+/* the board under him: hidden until boot-inky.js reveals it. round 15.10h2 (t235u): poems, header and chrome just appear at the reveal;
+   only the sumi background art (.bg6 tiles, #ink-layer) fades in, stepped. The write button appears rolled shut and unrolls once he is gone
+   (app.js: the reverse of its roll-up, with the same fabRoll sound). body keeps its plain paper so he always has something to sit on. */
+html.hb-booting body > :not(#boot-inky):not(.bi-cv):not(script) { opacity: 0 !important; pointer-events: none !important; }
+html.hb-booting .art-layer .bg6, html.hb-booting #ink-layer { opacity: 0; }
+html.hb-reveal .art-layer .bg6, html.hb-reveal #ink-layer { animation: hb-bg-in var(--hb-fade, 560ms) steps(7) both; }
+@keyframes hb-bg-in { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { html.hb-reveal .art-layer .bg6, html.hb-reveal #ink-layer { animation: hb-bg-in var(--hb-fade, 200ms) linear both; } }
 /* ---------- floating action button ---------- */
 .fab { position: fixed; z-index: 30; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); transform-origin: 50% 100%;
   padding: 0; border: 0; background: none; cursor: pointer; line-height: 0; outline: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
