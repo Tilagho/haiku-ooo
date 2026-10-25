@@ -157,8 +157,11 @@ export function mountScrollButton(button, { label = 'write a haiku', wind = () =
     const step = () => { const k = Math.min(1, (clock.now() - t0) / ms); api.p = from + (to - from) * ease(k); api.paint(); if (k >= 1) { off(); api.rolling = null; res(); } };
     off = clock.onTick(step); api.rolling = () => { off(); res(); }; step();
   });
+  const ROLL_EASE = k => k < .62 ? (k / .62) ** 2 : 1 - .025 * Math.sin((k - .62) / .38 * Math.PI * 2) * (1 - (k - .62) / .38) ** 1.5;
   // accelerate inward, meet at k = .62, then a springy bump: the rolls knock apart a hair and settle together
-  api.rollUp = (ms = 540) => reduced ? (api.p = 1, api.paint(), Promise.resolve()) : tween(1, ms, k => k < .62 ? (k / .62) ** 2 : 1 - .025 * Math.sin((k - .62) / .38 * Math.PI * 2) * (1 - (k - .62) / .38) ** 1.5);
+  api.rollUp = (ms = 540) => reduced ? (api.p = 1, api.paint(), Promise.resolve()) : tween(1, ms, ROLL_EASE);
+  // round 15.10h2 (t234u): the boot open is the close run backwards: p(k) = 1 - rollUpEase(1 - k) at rollUp's own 540 ms (the knock first, then decelerating apart)
+  api.openReverse = (ms = 540) => reduced ? (api.p = 0, api.paint(), Promise.resolve()) : tween(0, ms, k => 1 - ROLL_EASE(1 - k));
   api.unroll = (ms = 700) => reduced ? (api.p = 0, api.paint(), Promise.resolve()) : tween(0, ms, k => { const s = 1 - k; return 1 - s * s * s + Math.sin(k * Math.PI) * .06 * (1 - k); });   // progress 0 -> 1 (ends fully open, p = 0)
   button.replaceChildren(cv); const sr = document.createElement('span'); sr.className = 'sr'; sr.textContent = label; button.append(sr);
   api.paint(0);

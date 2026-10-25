@@ -38,6 +38,7 @@ const anim = (el, k, sp, o) => reduced ? null : springAnimate(el, k, sp, o);
 
 // ---------- the scroll: art + poems composed together ----------
 const LIB = await loadLibrary(SPRITES);                                                       // decode the art once (async inflate)
+window.HBBoot?.mark(.5);   // round 15.10h: a real milestone for the boot bar (art decoded); src/boot-inky.js
 const view = new ScrollView($('#scroll'), { seed: 31, lib: LIB });
 // round 15.6b: older blocks of the shared scroll stack below the newest one (src/feed.js), each its own painting
 const archive = document.createElement('div'); archive.id = 'archive'; archive.className = 'archive';
@@ -254,6 +255,10 @@ inky.onPopUp = () => { if (bubble.hidden) say('…ow.', 1000); };
 inky.onDragStart = () => popBubble();                 // picked up: whatever he was saying pops
 const wind = mountWind({ view, reduced });            // the leaf-blower gust for the write button + the poem scrolls (src/wind.js)
 const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl, { wind: () => wind.at(.92) }) : null;
+// round 15.10h2 (t234u): the write button boots rolled shut and, once boot Inky has swooshed off, opens as its own roll-up played
+// backwards (scroll-button.js openReverse) with the same old-paper roll sound as the close (fabRoll)
+if (fabArt && window.HBBoot && !window.HBBoot.gone) { fabArt.p = 1; fabArt.paint(0);
+  addEventListener('hb:bootgone', () => { if (rolling || composing() || fabArt.p < 1) return; sfx('fabRoll'); fabArt.openReverse(); }, { once: true }); }
 const norenEl = $('#noren'), noren = norenEl ? mountNoren(norenEl) : null;
 const credits = mountCredits({ clock, reduced });   // round 14.5: the © line's 'credits' scroll (src/credits.js)
 const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; }, celebrate: celebratePost });
@@ -276,14 +281,16 @@ const booted = feed.boot().catch(async e => {
   return feed.boot();
 }).then(() => { reports.markAll(); feed.startPolling(); store.cur.warm?.(); });   // 15.6c: Firestore signs this phone in anonymously in the background
 // round 15.10g: the boot Inky (index.html) steps aside as soon as the feed has painted (or given up), just before the real one slips in
-const bootInky = $('#boot-inky'), dropBootInky = () => { bootInky?.classList.add('gone'); setTimeout(() => bootInky?.remove(), 220); };
-booted.then(dropBootInky, dropBootInky);
-// he slips in from off-screen once the board is up
-booted.then(() => clock.wait(reduced ? 0 : 450)).then(() => { if (!composing()) inky.enter(); else inky.entered = true; });
+// round 15.10h (t230u/t231u): the staged boot (src/boot-inky.js): after a ~1 s minimum beat his bar tops up, the board fades in and he swooshes
+// off to the top-right; bootDone resolves once he is gone + a 500 ms beat (15.10h2, t232u), then the board's black Inky rolls in from the bottom-left
+const bootInky = $('#boot-inky'), dropBootInky = () => { document.documentElement.classList.remove('hb-booting'); bootInky?.classList.add('gone'); setTimeout(() => bootInky?.remove(), 220); };
+const bootDone = booted.catch(() => {}).then(() => window.HBBoot ? window.HBBoot.done({ sfx }) : dropBootInky());
+// he slips in from off-screen once the board is up and boot Inky is on his way out
+booted.then(() => bootDone).then(() => { if (!composing()) inky.enter(); else inky.entered = true; });
 
 // test hooks for screenshots / e2e
 // Public hooks (see README, "Seal-stamp hook"): the compose flow calls HB.addPost(post) or the pieces directly.
-window.HB = { feed, ask, asking: () => asking, sound, reports, credits, view, inky, clock, booted, fabArt, noren, compose, wind, writeTapped, onWrite: null,
+window.HB = { feed, ask, asking: () => asking, sound, reports, credits, view, inky, clock, booted, bootDone, fabArt, noren, compose, wind, writeTapped, onWrite: null,
   rollUpButton: ms => fabArt?.rollUp(ms) ?? Promise.resolve(), unrollButton: ms => fabArt?.unroll(ms) ?? Promise.resolve(), copyText, copyPoem, lastCopied: () => lastCopied, stampDemo,
   typePoem: (el, o) => view.typePoem(el, o), stampSeal: (el, o) => view.stampSeal(el, o), addPost: addNewPost,
   openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say, speech, popBubble,

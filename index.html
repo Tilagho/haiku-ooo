@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="hb-booting">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual">
@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="src/style.css?v=15.10g4">
+<link rel="stylesheet" href="src/style.css?v=15.10h2">
 <link rel="stylesheet" href="src/compose.css?v=15.10f5c">
 </head>
 <body>
@@ -37,10 +37,12 @@
 
 <div id="bubble" class="bubble" hidden></div>
 
-<!-- round 15.10g (t222u): a tiny Inky while the first poems load (only fades in if loading takes > .4 s); app.js removes it once the feed is up -->
-<div id="boot-inky" class="boot-inky" role="status" aria-label="loading the scroll"><svg class="bi-blob" aria-hidden="true" viewBox="0 0 13 14" width="52" height="56" shape-rendering="crispEdges"><path fill="#1a181c" d="M6 0h1v1h-1zM5 1h3v1h-3zM4 2h5v1h-5zM3 3h7v1h-7zM2 4h9v1h-9zM1 5h11v1h-11zM1 6h3v1h-3zM5 6h3v1h-3zM9 6h3v1h-3zM1 7h3v1h-3zM5 7h3v1h-3zM9 7h3v1h-3zM1 8h11v1h-11zM1 9h3v1h-3zM5 9h3v1h-3zM9 9h3v1h-3zM1 10h4v1h-4zM8 10h4v1h-4zM1 11h11v1h-11zM2 12h9v1h-9zM4 13h5v1h-5z"/><path class="bi-eyes" fill="#fffaf0" d="M4 6h1v1h-1zM8 6h1v1h-1zM4 7h1v1h-1zM8 7h1v1h-1z"/><path fill="#fffaf0" d="M4 9h1v1h-1zM8 9h1v1h-1zM5 10h3v1h-3z"/></svg><i class="bi-puddle"></i></div>
+<!-- round 15.10g (t222u): a tiny Inky while the first poems load. round 15.10h (t230u/t231u): staged boot — he is on from first paint over a
+     little pixel fill bar, stays at least ~1 s, then swooshes off (src/boot-inky.js) as the board (hidden by html.hb-booting) fades in -->
+<div id="boot-inky" class="boot-inky" role="status" aria-label="loading the scroll"><svg class="bi-blob" aria-hidden="true" viewBox="0 0 13 14" width="52" height="56" shape-rendering="crispEdges"><path fill="#1a181c" d="M6 0h1v1h-1zM5 1h3v1h-3zM4 2h5v1h-5zM3 3h7v1h-7zM2 4h9v1h-9zM1 5h11v1h-11zM1 6h3v1h-3zM5 6h3v1h-3zM9 6h3v1h-3zM1 7h3v1h-3zM5 7h3v1h-3zM9 7h3v1h-3zM1 8h11v1h-11zM1 9h3v1h-3zM5 9h3v1h-3zM9 9h3v1h-3zM1 10h4v1h-4zM8 10h4v1h-4zM1 11h11v1h-11zM2 12h9v1h-9zM4 13h5v1h-5z"/><path class="bi-eyes" fill="#fffaf0" d="M4 6h1v1h-1zM8 6h1v1h-1zM4 7h1v1h-1zM8 7h1v1h-1z"/><path fill="#fffaf0" d="M4 9h1v1h-1zM8 9h1v1h-1zM5 10h3v1h-3z"/></svg><span class="bi-bar" aria-hidden="true"><i class="bi-fill"></i></span></div>
+<script src="src/boot-inky.js?v=15.10h2"></script>
 
 <script src="src/no-zoom.js"></script>
-<script type="module" src="src/app.js?v=15.10g4"></script>
+<script type="module" src="src/app.js?v=15.10h2"></script>
 </body>
 </html>
