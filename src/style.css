@@ -45,11 +45,6 @@ main { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding
 /* the Japanese name sits just under the hems */
 .noren-head .jp { position: relative; margin: 4px 0 0; z-index: 1; text-align: center;
   font: 400 18px/1 var(--text); letter-spacing: 6px; color: #4a4550; }
-.rule { margin: 0; font: 400 16px var(--ui); display: flex; gap: 6px; justify-content: center; align-items: center; }
-.chip { display: inline-grid; place-items: center; width: 26px; height: 26px; color: var(--paper-hi); font: 400 16px var(--ui); background: var(--ink);
-  box-shadow: 0 -3px 0 0 var(--ink), 0 3px 0 0 var(--ink), -3px 0 0 0 var(--ink), 3px 0 0 0 var(--ink); animation: bob 1.6s steps(2) infinite; }
-.chip.c1 { background: var(--blue); } .chip.c2 { background: var(--red); animation-delay: .2s; } .chip.c3 { background: var(--gold); animation-delay: .4s; }
-.scroll-foot { padding: 26px 0 10px; }
 .small { font: 400 16px/1.25 var(--small); color: #4a4550; margin: 6px auto 0; max-width: 320px; }
 @keyframes bob { 50% { transform: translateY(-3px); } }
 
@@ -78,11 +73,38 @@ main { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding
 .post.mine .card { background: #fff6e2; }
 .post.fresh .card { background: #fff3c9; transition: background 2.5s steps(6); }
 
-.scroll-end { text-align: center; padding: 30px 0 10px; font: 400 16px var(--ui); position: relative; }
-.scroll-end > div { display: flex; justify-content: center; }
-.scroll-end p { display: table; margin: 8px auto 0; padding: 4px 8px; background: rgba(244,236,218,.92); }
+/* round 15.10g (t222u): the end of the board, only once the feed is done (sentinel.end); Japanese over English, then inquiries */
+.scroll-end { display: none; text-align: center; padding: 34px 0 96px; position: relative; }   /* (bottom room: at the very end it sits clear above Inky's float line) */
+.feed-more.end ~ .scroll-end { display: block; }
+.scroll-end p { margin: 0; }
+/* round 15.10g3 (t227u): the whole end block speaks in the © row's voice: FindersKeepers, same --crfs ramp, sumi grey, word-spacing.
+   FindersKeepers has no kana, so .end-jp leads with it and falls back to DotGothic16 for おわり.
+   15.10g4 (t228u): no trailing periods (。/.) so the ink is centred, and no word-spacing on the one-word JP line. */
+.scroll-end { --crfs: clamp(16px, calc((100vw - 16px) / 16.3), 22px); }
+.scroll-end .end-jp { font: 400 var(--crfs)/1 'FindersKeepers', 'DotGothic16', monospace; letter-spacing: normal; word-spacing: 0; color: #6b6670; }
+.scroll-end .end-en { margin-top: 8px; font: 400 var(--crfs)/1 var(--small); letter-spacing: normal; word-spacing: 3px; color: #6b6670; }
+/* round 15.10g2 (t226u): the inquiries line is plain text in the © row's voice (FindersKeepers, sumi grey, same size ramp), no box;
+   the address is an inline link that shares the run's font + baseline, with the Credits shine and a >= 44 px invisible hit area */
+.scroll-end .end-mail { --crfs: clamp(16px, calc((100vw - 16px) / 16.3), 22px); margin-top: 22px; font: 400 var(--crfs)/1 var(--small); letter-spacing: normal; word-spacing: 3px; color: #6b6670; white-space: nowrap; }
+.scroll-end .end-mail-a { position: relative; color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.scroll-end .end-mail-a::before { content: ''; position: absolute; left: -8px; right: -8px; top: -14px; bottom: -14px; }
+.scroll-end .end-mail-a:active .cr-w { transform: translateY(3px); }
+.scroll-end .end-mail-a:focus-visible { outline: 3px solid #6b6670; outline-offset: 4px; }
 #sentinel { height: 1px; }
 
+/* round 15.10g (t222u): boot Inky, a little pixel ink drop that squishes in place until the first poems are painted.
+   Fades in only after .4 s (fast loads never see it); app.js adds .gone then removes it once feed.boot() settles. */
+.boot-inky { position: fixed; z-index: 5; left: 50%; top: 50%; transform: translate(-50%, -50%); display: grid; justify-items: center; pointer-events: none;
+  animation: bi-in .2s steps(2) .4s both; }
+.boot-inky .bi-blob { display: block; transform-origin: 50% 100%; animation: bi-squish 1.2s steps(1) infinite; }
+.boot-inky .bi-eyes { animation: bi-blink 3.2s steps(1) infinite; }
+.boot-inky .bi-puddle { display: block; width: 44px; height: 4px; margin-top: 4px; background: rgba(26,24,28,.22); animation: bi-puddle 1.2s steps(1) infinite; }
+.boot-inky.gone { animation: bi-out .2s steps(2) both; }
+@keyframes bi-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes bi-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes bi-squish { 0% { transform: none; } 25% { transform: scale(1.08, .93); } 50% { transform: translateY(-8px) scale(.95, 1.06); } 75% { transform: translateY(-4px); } }
+@keyframes bi-puddle { 0% { transform: none; } 25% { transform: scaleX(1.1); } 50% { transform: scaleX(.7); opacity: .6; } 75% { transform: scaleX(.85); } }
+@keyframes bi-blink { 0%, 92% { opacity: 1; } 94% { opacity: 0; } }
 /* ---------- floating action button ---------- */
 .fab { position: fixed; z-index: 30; left: 50%; bottom: calc(14px + env(safe-area-inset-bottom)); transform: translateX(-50%); transform-origin: 50% 100%;
   padding: 0; border: 0; background: none; cursor: pointer; line-height: 0; outline: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
@@ -111,6 +133,8 @@ main { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; padding
 .seal-speck { position: absolute; z-index: 3; background: #d6342a; pointer-events: none; }
 .float-note { position: fixed; z-index: 70; pointer-events: none; font: 400 16px/1 var(--ui); color: var(--ink); padding: 3px 5px 2px; white-space: nowrap;
   background: repeating-conic-gradient(rgba(244,236,218,.96) 0 25%, rgba(244,236,218,.7) 0 50%) 0 0 / 2px 2px; }
+/* round 15.10g3 (t227u): only the end-of-board address's 'copied' speaks in the © row voice */
+.float-note.end-mail-note { --crfs: clamp(16px, calc((100vw - 16px) / 16.3), 22px); font: 400 var(--crfs)/1 var(--small); letter-spacing: normal; word-spacing: 3px; color: #6b6670; }
 
 /* ---------- Inky overlay, speech bubble, denied seal ---------- */
 .inky-canvas { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; image-rendering: pixelated; }
