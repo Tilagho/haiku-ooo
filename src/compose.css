@@ -89,24 +89,27 @@ body.kb .cscroll { --st: 30px; }
 #compose .crule { position: absolute; left: 0; right: 0; top: calc(4px + var(--fsm, 48px) * var(--asc, .78) + 3px); height: 12px; pointer-events: none; }   /* right under the baseline */
 #compose .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }   /* status for screen readers only: nothing on the scroll */
 /* sign (optional): max 12 characters; blank = no author */
-#compose .sign { display: none; margin: 12px 0 0 12px; align-items: center; gap: 8px; flex-wrap: nowrap; }
-body.ready #compose .sign { display: flex; }
 /* round 14.1: no separate black 'sign' label; the field's own muted tan placeholder reads 'Sign? (optional)'. The only black
    text on the scroll is what the user typed (poem + name) */
-#compose .sign .nm { position: relative; width: 168px; }
+/* round 15.10f4: same ChiKareGo as poem line 3 — same size, no faux-bold, same kerning as .field .mirror. */
+#compose .sign { display: none; width: 100%; margin: 12px 0 0; align-items: center; justify-content: center; gap: 8px; flex-wrap: nowrap; }
+body.ready #compose .sign { display: flex; }
+#compose .sign .nm { position: relative; box-sizing: border-box; width: min(240px, 80%); min-height: calc(max(16px, var(--nfs, var(--fs, 32px))) + 8px); display: flex; justify-content: center; align-items: flex-start; text-align: center; }
 #compose .sign .nm .rl { position: absolute; left: 0; right: 0; top: 100%; height: 12px; pointer-events: none; }   /* anchor for the painted underline */
 #compose .sign input:disabled { visibility: hidden; }
 #compose .sign .nmb { position: absolute; left: -4px; right: -4px; top: -8px; bottom: -6px; z-index: 2; -webkit-tap-highlight-color: transparent; }
 #compose .sign .nm.edit .nmb { display: none; }
-#compose .sign .nph { position: absolute; left: 0; top: 3px; font: 400 20px/1 var(--ui); color: #9c8662; letter-spacing: 1px; pointer-events: none;
-  text-shadow: 1px 0 0 currentColor, 0 1px 0 currentColor, 1px 1px 0 currentColor; }
+#compose .sign .nph { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); width: max-content; max-width: 100%; font: 400 max(16px, var(--nfs, var(--fs, 32px)))/1 var(--ui); color: #9c8662; letter-spacing: normal; pointer-events: none; text-align: center; white-space: nowrap; text-shadow: none; }
 #compose .sign .nm.edit .nph, #compose .sign .nm.has .nph { display: none; }
-#compose .sign input { width: 100%; font: 400 20px/1 var(--ui); color: var(--ink); padding: 3px 0 5px; text-shadow: 1px 0 0 currentColor, 0 1px 0 currentColor, 1px 1px 0 currentColor; letter-spacing: 1px; }
+#compose .sign input { position: relative; z-index: 1; width: 100%; font: 400 max(16px, var(--nfs, var(--fs, 32px)))/1 var(--ui); color: var(--ink); padding: 3px 0 5px; text-align: center; text-shadow: none; letter-spacing: normal; }
 #compose .sign input::placeholder { color: #9c8662; opacity: 1; }
-#compose .sign .nm.has input { color: transparent; text-shadow: none; caret-color: var(--ink); font-size: max(16px, var(--nfs, 20px)); }
-#compose .sign .nm .nmm { position: absolute; left: 0; top: 3px; font: 400 var(--nfs, 20px)/1 var(--ui); color: var(--ink); white-space: pre; pointer-events: none;
-  text-shadow: 1px 0 0 currentColor, 0 1px 0 currentColor, 1px 1px 0 currentColor; letter-spacing: 1px; }
+#compose .sign .nm.has input { color: transparent; text-shadow: none; caret-color: var(--ink); font-size: max(16px, var(--nfs, var(--fs, 32px))); }
+#compose .sign .nm .nmm { position: absolute; left: 50%; top: 3px; z-index: 1; transform: translateX(-50%); width: max-content; max-width: 100%; font: 400 var(--nfs, var(--fs, 32px))/1 var(--ui); color: var(--ink); white-space: pre; pointer-events: none; text-align: center; text-shadow: none; letter-spacing: normal; }
 #compose .sign .nm:not(.has) .nmm { display: none; }
+/* touch/kb: one font-px tighter, same formula as poem mirrors (compose.js KERN) */
+body.kb #compose .sign .nph,
+body.kb #compose .sign input,
+body.kb #compose .sign .nm .nmm { letter-spacing: calc(var(--nfs, var(--fs, 32px)) / -16); }
 /* the wax seal = post button, lower right of the scroll */
 #compose .cpost { position: absolute; right: 54px; top: calc(var(--ph) - 78px); display: flex; align-items: center; gap: 10px; }
 #compose .cpost .wax { position: relative; width: 66px; height: 66px; display: grid; place-items: center; }
@@ -125,8 +128,8 @@ body.kb #compose .field .mirror .nums { top: calc(var(--fsr, 48px) * var(--asc, 
 body.kb #compose .paper { padding-right: 14px; }   /* round 14.4: the torn right edge clips the width (compose.js fits per row), the rest is for the type */
 body.kb #compose .field .mirror { letter-spacing: calc(var(--fsr, 48px) / -16); }          /* one font px tighter (compose.js KERN) */
 body.kb #compose #cpoem { letter-spacing: calc(max(16px, var(--fs, 32px)) / -16); }
-body.kb #compose .sign { position: absolute; margin: 0; left: 114px; right: 114px; top: calc(var(--ph) - 54px); justify-content: center; gap: 6px; }
-body.kb #compose .sign .nm { width: 162px; }
+body.kb #compose .sign { position: absolute; margin: 0; left: 54px; right: 54px; top: calc(var(--ph) - 54px); width: auto; justify-content: center; gap: 6px; }
+body.kb #compose .sign .nm { width: min(240px, 100%); }
 body.kb #compose .cpost { top: calc(var(--ph) - 60px); right: 54px; }
 body.kb #compose .cpost .wax { width: 54px; height: 54px; }
 

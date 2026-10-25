@@ -127,7 +127,7 @@ const MARKUP = `
       <div class="paper" id="cpaper">
         <div id="clines"><textarea id="cpoem" rows="3" wrap="off" maxlength="240" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" enterkeyhint="next" data-1p-ignore data-lpignore="true" data-form-type="other" aria-multiline="true" aria-label="your haiku: three lines of 5, 7 and 5 syllables. return goes to the next line"></textarea></div>
         <p class="sr" id="cnote" aria-live="polite"></p>
-        <div class="sign" id="csign"><span class="nm"><span class="nmm" aria-hidden="true"></span><span class="nph" aria-hidden="true">Sign? (optional)</span><i class="rl" aria-hidden="true"></i><input id="cname" type="text" maxlength="12" disabled tabindex="-1" autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false" inputmode="text" enterkeyhint="done" data-1p-ignore data-lpignore="true" data-form-type="other" placeholder="Sign? (optional)" aria-label="sign with your name, up to 12 characters, optional"><button class="nmb" id="cnamebtn" type="button" aria-label="sign with your name (optional)"></button></span></div>
+        <div class="sign" id="csign"><span class="nm"><span class="nmm" aria-hidden="true"></span><span class="nph" aria-hidden="true">Sign? (optional)</span><i class="rl" aria-hidden="true"></i><input id="cname" type="text" maxlength="12" disabled tabindex="-1" name="given-name" autocomplete="given-name" autocorrect="off" autocapitalize="words" spellcheck="false" inputmode="text" enterkeyhint="done" data-1p-ignore data-lpignore="true" data-form-type="other" placeholder="Sign? (optional)" aria-label="sign with your first name, up to 12 characters, optional"><button class="nmb" id="cnamebtn" type="button" aria-label="sign with your name (optional)"></button></span></div>
         <button class="back" id="cback" type="button" aria-label="back to the board, discard this haiku"><span class="blot"><canvas id="arw"></canvas></span></button>
         <button class="cpost" id="cpost" type="button" aria-label="seal and post"><span class="wax"><canvas id="wax"></canvas></span></button>
       </div>
@@ -143,6 +143,7 @@ export function mountCompose(deps) {
   const theme = document.querySelector('meta[name="theme-color"]'), theme0 = theme?.content;
   const field = new InkField({ z: 20 });
   const inky = new RedInky({ R: 5.6, z: 60, bigEyes: false, fury: true, chunky: true, worried: true });   // round 14.1: 80% of round 14 (R 7), chunkier, more worried
+  inky.onSfx = (name, p) => sfx(name, p);   // round 15.10f: hop/whip watery swooshes
   const INKY_H = () => Math.ceil(inky.R * 2.6 * 4) + 2 + 8;          // css px from his foot to the top of his head (+ the 2 px (8 css) crimson outline, round 14.4)
   const art = new ScrollArt($('#scv'), { maxRows: 92, seed: 8370, outline: 2 });   // 8370: the torn edges stay shallow beside the three writing rows (more room for big type)
   const bubble = document.createElement('div'); bubble.className = 'cbubble'; bubble.hidden = true; root.appendChild(bubble);
@@ -426,6 +427,7 @@ export function mountCompose(deps) {
     const ghost = ghostSize();
     rowFs = pickSize(a.map((l, i) => l.text || PH[i]), sizes).map((f, i) => a[i].text ? f : ghost); fsMax = sizes[0]; fsNow = Math.min(...rowFs);
     linesEl.style.setProperty('--fsm', fsMax + 'px'); linesEl.style.setProperty('--fs', fsNow + 'px'); linesEl.style.setProperty('--asc', ASC);
+    $('#csign')?.style.setProperty('--fs', (rowFs[rowFs.length - 1] || fsNow) + 'px');   // signature matches poem line 3
     rows.forEach((r, i) => r.el.style.setProperty('--fsr', rowFs[i] + 'px'));
     layoutField();
     a.forEach((l, i) => {
@@ -441,7 +443,7 @@ export function mountCompose(deps) {
     // no helper sentence on the scroll (red guides, counters, the stamp and Inky say it); screen readers still hear a status
     $('#cnote').textContent = denied ? (denyMsg || `${a.map(l => l.n).join('-')}: not 5-7-5 yet`) : '';
   }
-  function update() { const a = analyze(texts()), ok = a.every(l => l.ok); allOk = ok; render(a, ok); coach(a.map(l => l.state), ok); return a; }
+  function update() { const a = analyze(texts()), ok = a.every(l => l.ok); allOk = ok; render(a, ok); fitName(); coach(a.map(l => l.state), ok); return a; }
   function coach(states, ok) {
     if (busy || !opened) { lastStates = states; return; }
     const hit = states.findIndex((s, i) => s === 'ok' && lastStates[i] !== 'ok');
@@ -593,12 +595,23 @@ export function mountCompose(deps) {
   $('#cnamebtn').addEventListener('click', e => { e.preventDefault(); openName(); });
   nameIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== nameIn) closeName(); }, 0));
   nameIn.addEventListener('input', () => { const c = cleanName(nameIn.value); if (c !== nameIn.value) nameIn.value = c; fitName(); poke(); });
-  function fitName() {                          // mirror the typed name in label ink; shrink (never below 16px: no iOS focus zoom) only if it must
+  function fitName() {                          // round 15.10f4: exact same ChiKareGo size as poem line 3; shrink only if the name won't fit; never below 16px (iOS focus zoom)
     const nm = nameNm, mm = nm.querySelector('.nmm'), v = nameIn.value;
     mm.textContent = v; nm.classList.toggle('has', !!v); nm.style.removeProperty('--nfs');
+    const mirrors = [...linesEl.querySelectorAll('.field .mirror')];
+    const last = mirrors[mirrors.length - 1];
+    let poemFs = last ? (parseFloat(getComputedStyle(last).fontSize) || 0) : 0;
+    if (!poemFs) {
+      const cs = getComputedStyle(linesEl);
+      poemFs = parseFloat(cs.getPropertyValue('--fs')) || parseFloat(getComputedStyle($('#csign')).getPropertyValue('--fs')) || 32;
+    }
+    const base = Math.max(16, Math.round(poemFs));
+    nm.style.setProperty('--nfs', base + 'px');
     if (!v) return;
-    const room = nm.clientWidth - 2; let fs = 20;
+    const room = nm.clientWidth - 2; let fs = base;
+    mm.style.width = 'max-content';   // scrollWidth must be the glyphs, not the stretched absolute box
     while (fs > 16 && mm.scrollWidth > room) { fs -= 1; nm.style.setProperty('--nfs', fs + 'px'); }
+    mm.style.width = '';
   }
   addEventListener('resize', () => requestAnimationFrame(() => { fitName(); layoutField(); syncCaret(); }));
   document.fonts?.ready.then(() => { layoutField(); syncCaret(); });
@@ -778,7 +791,7 @@ export function mountCompose(deps) {
     await clock.wait(380);
     const d = dock(); inky.visible = true; inky.setMood('cheer'); inky.look = -1;
     sfx('swooshIn', { dur: .95 });                  // round 15.1: his swoop in: the drag churn, swelling with it
-    await inky.whip([[innerWidth + 90, vvt + vvh * .56], [innerWidth * .62, vvt + vvh * .74], [innerWidth * .36, vvt + vvh * .9], [innerWidth * .48, vvt + vvh * .8], [innerWidth * .26, vvt + vvh * .76], [d.x, d.foot]], .95, { splash: 10 });
+    await inky.whip([[innerWidth + 90, vvt + vvh * .56], [innerWidth * .62, vvt + vvh * .74], [innerWidth * .36, vvt + vvh * .9], [innerWidth * .48, vvt + vvh * .8], [innerWidth * .26, vvt + vvh * .76], [d.x, d.foot]], .95, { splash: 10, whoosh: false });   // swooshIn just above
     await done; busyScroll = false; unrolling = false;
     inky.mode = 'coach'; inky.dock = dock; inky.setMood('happy'); inky.look = 1;
     if (!(KB_MODE === 'late' && coarse)) say('hi! I\'m counting.<br>give me 5-7-5', bubbleHold('hi! I\'m counting. give me 5-7-5'));   // 14.8: in the tap-to-write flow his FIRST words are 'tap to write' (this greeting used to flash first)

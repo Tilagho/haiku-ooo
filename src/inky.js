@@ -112,10 +112,11 @@ export class Inky {
     this.x = -this.R * 2.5; this.vx = 150; this.s = -.2;
     return this.slideTo(this.homeX(-1) * P);
   }
+  // round 15.10f (t209u): chunks fly off on poke / splat, but vanish fast — no grey puddles stacking into a fake floor on his float line
   splat(n = 10, power = 1, color = INK, x = this.x, y = this.fy - this.R) {
     for (let k = 0; k < n; k++) {
       const a = -Math.PI * (0.05 + Math.random() * 0.9), sp = (40 + Math.random() * 70) * power;
-      this.drops.push({ x, y, vx: Math.cos(a) * sp * (Math.random() < .5 ? -1 : 1), vy: Math.sin(a) * sp, r: 1 + Math.random() * 1.6, life: 2.5, color, floor: this.floor ?? this.ch - 2 });
+      this.drops.push({ x, y, vx: Math.cos(a) * sp * (Math.random() < .5 ? -1 : 1), vy: Math.sin(a) * sp, r: 1 + Math.random() * 1.6, life: .45 + Math.random() * .3, color, floor: this.ch + 20 });
     }
   }
   sparkle(n = 12, x = this.x, y = this.fy - this.R * 1.5, colors = [GOLD, RED, SOFT, BLUE]) {
@@ -214,8 +215,8 @@ export class Inky {
   }
   splatDown() {
     this.splatT = this.reduced ? DEAD_HOLD_REDUCED : DEAD_HOLD; this.sRest = .8; this.s = .9; this.sv = 0; this.puff = 0; this.targetX = null; this.vx = 0;
-    this.setMood('splat'); this.splat(this.reduced ? 5 : 14, 1.3); this.wobble(1.6);
-    this.puddles.push({ x: this.x, y: this.fy, w: Math.round(this.R * 1.5), life: 1.2, color: WASH });
+    this.setMood('splat'); this.puddles = []; this.trail = [];   // clear the float-line smear so death (X eyes) isn't sitting on a synthetic grey floor
+    this.splat(this.reduced ? 5 : 14, 1.3); this.wobble(1.6);
   }
   popUp() {
     this.splatT = 0; this.sRest = 0; this.meter.revive(); this.onSfx?.('revive');   // round 15.1: the watery reform + a happy 'back!' chime
@@ -301,7 +302,7 @@ export class Inky {
       const before = this.vx; this.vx += a * dt; this.vx = Math.max(-170, Math.min(170, this.vx)); this.x += this.vx * dt;
       if (Math.sign(before) !== Math.sign(this.vx) && Math.abs(before) > 12) this.wobble(.5);          // the turn at each overshoot
       if (Math.abs(this.vx) > 25 && Math.sign(a) !== Math.sign(this.vx) && !this.reduced && Math.random() < dt * 30)   // skidding: ink scuffs off his bottom
-        this.drops.push({ x: this.x - Math.sign(this.vx) * R * .8, y: this.fy - 1, vx: -this.vx * rnd(.1, .3), vy: -rnd(10, 40), r: rnd(.8, 1.3), life: 1, color: INK, floor: this.floor });
+        this.drops.push({ x: this.x - Math.sign(this.vx) * R * .8, y: this.fy - 1, vx: -this.vx * rnd(.1, .3), vy: -rnd(10, 40), r: rnd(.8, 1.3), life: .5, color: INK, floor: this.ch + 20 });
       if (Math.abs(d) < .35 && Math.abs(this.vx) < 3) { this.x = this.targetX; this.vx = 0; this.targetX = null; this.wobble(.35); const f = this._slid; this._slid = null; f?.(); }
     } else if (this.mode === 'drag' && this.drag) {                 // held: a springy slink after the finger
       const d = this.drag, k = this.reduced ? 420 : 150, c = this.reduced ? 40 : 13;
@@ -372,7 +373,7 @@ export class Inky {
       const gx = this.x - d.x, gy = this.fy - R - d.y, gd = Math.hypot(gx, gy);
       if (d.life < 1.9 && gd < R * 2.2 && this.visible) { d.vx += gx * 12 * dt; d.vy += gy * 12 * dt; if (gd < R * .7) d.life = 0; }   // gooey: close drops get pulled back in
       d.vy += G * dt; d.x += d.vx * dt; d.y += d.vy * dt; d.life -= dt;
-      if (d.y > d.floor && d.vy > 0) { d.life = 0; if (d.floor < this.ch) this.puddles.push({ x: d.x, y: d.floor, w: Math.round(d.r * .8), life: 1.1, color: TRAIL }); }
+      if (d.y > d.floor && d.vy > 0) d.life = 0;   // round 15.10f: no puddle at the float line (that looked like a grey floor under him)
     }
     this.drops = this.drops.filter(d => d.life > 0 && d.y < this.ch + 30);
     this.puddles.forEach(p => p.life -= dt); this.puddles = this.puddles.filter(p => p.life > 0);
