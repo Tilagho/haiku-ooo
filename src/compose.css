@@ -91,7 +91,7 @@ body.kb .cscroll { --st: 30px; }
 /* sign (optional): max 12 characters; blank = no author */
 /* round 14.1: no separate black 'sign' label; the field's own muted tan placeholder reads 'Sign? (optional)'. The only black
    text on the scroll is what the user typed (poem + name) */
-/* round 15.10f4: same ChiKareGo as poem line 3 — same size, no faux-bold, same kerning as .field .mirror. */
+/* round 15.10f5: typed name = poem line 3; placeholder pretext smaller so "Sign? (optional)" fits the row. */
 #compose .sign { display: none; width: 100%; margin: 12px 0 0; align-items: center; justify-content: center; gap: 8px; flex-wrap: nowrap; }
 body.ready #compose .sign { display: flex; }
 #compose .sign .nm { position: relative; box-sizing: border-box; width: min(240px, 80%); min-height: calc(max(16px, var(--nfs, var(--fs, 32px))) + 8px); display: flex; justify-content: center; align-items: flex-start; text-align: center; }
@@ -99,17 +99,19 @@ body.ready #compose .sign { display: flex; }
 #compose .sign input:disabled { visibility: hidden; }
 #compose .sign .nmb { position: absolute; left: -4px; right: -4px; top: -8px; bottom: -6px; z-index: 2; -webkit-tap-highlight-color: transparent; }
 #compose .sign .nm.edit .nmb { display: none; }
-#compose .sign .nph { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); width: max-content; max-width: 100%; font: 400 max(16px, var(--nfs, var(--fs, 32px)))/1 var(--ui); color: #9c8662; letter-spacing: normal; pointer-events: none; text-align: center; white-space: nowrap; text-shadow: none; }
+/* pretext: same ChiKareGo family/weight, scaled back (~half of typed name, floor 16px) so the long hint fits */
+#compose .sign .nph { position: absolute; left: 50%; top: 3px; transform: translateX(-50%); width: max-content; max-width: 100%; font: 400 var(--phfs, 28px)/1 var(--ui); color: #9c8662; letter-spacing: normal; pointer-events: none; text-align: center; white-space: nowrap; text-shadow: none; }
 #compose .sign .nm.edit .nph, #compose .sign .nm.has .nph { display: none; }
 #compose .sign input { position: relative; z-index: 1; width: 100%; font: 400 max(16px, var(--nfs, var(--fs, 32px)))/1 var(--ui); color: var(--ink); padding: 3px 0 5px; text-align: center; text-shadow: none; letter-spacing: normal; }
-#compose .sign input::placeholder { color: #9c8662; opacity: 1; }
+#compose .sign input::placeholder { color: #9c8662; opacity: 1; font-size: var(--phfs, 28px); font-family: var(--ui); font-weight: 400; letter-spacing: normal; text-shadow: none; }
 #compose .sign .nm.has input { color: transparent; text-shadow: none; caret-color: var(--ink); font-size: max(16px, var(--nfs, var(--fs, 32px))); }
 #compose .sign .nm .nmm { position: absolute; left: 50%; top: 3px; z-index: 1; transform: translateX(-50%); width: max-content; max-width: 100%; font: 400 var(--nfs, var(--fs, 32px))/1 var(--ui); color: var(--ink); white-space: pre; pointer-events: none; text-align: center; text-shadow: none; letter-spacing: normal; }
 #compose .sign .nm:not(.has) .nmm { display: none; }
-/* touch/kb: one font-px tighter, same formula as poem mirrors (compose.js KERN) */
-body.kb #compose .sign .nph,
+/* touch/kb: typed name kerns like poem mirrors; pretext uses its own smaller size */
 body.kb #compose .sign input,
 body.kb #compose .sign .nm .nmm { letter-spacing: calc(var(--nfs, var(--fs, 32px)) / -16); }
+body.kb #compose .sign .nph,
+body.kb #compose .sign input::placeholder { letter-spacing: calc(var(--phfs, 28px) / -16); }
 /* the wax seal = post button, lower right of the scroll */
 #compose .cpost { position: absolute; right: 54px; top: calc(var(--ph) - 78px); display: flex; align-items: center; gap: 10px; }
 #compose .cpost .wax { position: relative; width: 66px; height: 66px; display: grid; place-items: center; }
