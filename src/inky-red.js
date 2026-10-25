@@ -79,13 +79,15 @@ export class RedInky {
   jump(k = 1, vx = 0) { if (!this.grounded || this.floor == null) return; this.g = 0; this.vy = -95 * k; this.vx = vx; this.grounded = false; this.s = -.25; this.sv = -4; }
   // ballistic hop that always lands on the way DOWN at (x, foot) css after ~T s: the apex sits `height` ink px above
   // the higher end, and gravity is scaled for this hop so the flight takes T (snappy, never a moonshot)
-  hopTo(xcss, footCss, T = .5, height = 22) {
+  // round 15.10f (t210u): every hop through the air gets the watery inky swoosh (stamp / deny / back — same sound)
+  hopTo(xcss, footCss, T = .5, height = 22, { whoosh = true } = {}) {
     const x1 = xcss / P, y1 = footCss / P, apex = Math.min(this.fy, y1) - height;
     const up = Math.sqrt(2 * (this.fy - apex)), down = Math.sqrt(2 * (y1 - apex));
     this.g = Math.max(G * .6, ((up + down) / T) ** 2);
     const Tf = (up + down) / Math.sqrt(this.g);
     this.vy = -up * Math.sqrt(this.g); this.vx = (x1 - this.x) / Tf;
     this.grounded = false; this.floor = y1; this.s = -.2;
+    if (whoosh) this.onSfx?.('swooshIn', { dur: Math.max(0.28, Math.min(1.1, Tf)) });
     return clock.wait(Tf * 1000 + 5);
   }
   splat(n = 10, power = 1, color = BODY, x = this.x, y = this.fy - this.R, floor = this.floor ?? this.ch - 2) {
@@ -106,10 +108,11 @@ export class RedInky {
     return new Promise(res => this.wash.res = res);
   }
   // ---------- whip: swoop through css points in T seconds, then land (feet at the last point) ----------
-  whip(points, T = .7, { land = true, splash = 8 } = {}) {
+  whip(points, T = .7, { land = true, splash = 8, whoosh = true } = {}) {
     const pts = points.map(([x, y]) => [x / P, y / P]);
     this.mode = 'whip'; this.grounded = false; this.floor = null; this.vx = this.vy = 0;
     this.whipS = { pts, T, t: 0, land, splash };
+    if (whoosh) this.onSfx?.('swooshIn', { dur: T });   // round 15.10f: watery bubble swoosh for every whip phase
     return new Promise(res => this.whipS.res = res);
   }
   async runOff(dir = 1) {
@@ -117,7 +120,7 @@ export class RedInky {
     await clock.wait(260);
     const p = this.pos, ex = dir > 0 ? innerWidth + 140 : -140;
     this.splat(10, 1.3, BODY, this.x, this.fy - this.R, this.ch + 20);
-    await this.whip([[p.x, p.foot], [p.x - dir * 60, p.foot - 90], [p.x - dir * 170, p.foot - 260], [p.x - dir * 60, p.foot - 400], [p.x + dir * 20, p.foot - 300], [ex, p.foot - 360]], .95, { land: false });
+    await this.whip([[p.x, p.foot], [p.x - dir * 60, p.foot - 90], [p.x - dir * 170, p.foot - 260], [p.x - dir * 60, p.foot - 400], [p.x + dir * 20, p.foot - 300], [ex, p.foot - 360]], .95, { land: false, whoosh: false });   // inkyFlyaway covers this path
     this.visible = false; this.trail = [];
   }
   // cancelled: slumps, two heavy little hops, then drips off the side in a droopy streak
