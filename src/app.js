@@ -144,13 +144,13 @@ function placeBubble() {
 // Hold a user poem: Inky asks "report" in an extended bubble with a ✕ and a ✔ in it. ✕ (or ignoring him,
 // or scrolling away) = nothing happens; ✔ = report it (src/report.js does the rest). If he is off screen, picked up
 // or splatted, the same bubble hangs off the poem itself. Hidden UI we hope is rarely needed.
-// round 15.6e (Tiago, t194u + his inspiration image): chunky solid-black 8-bit ✕ / ✔, traced cell-for-cell from the
-// bottom row of his reference (22x22 and 26x22 art px, thick blocky strokes, aliased steps; no outline, no shadow).
-// Both solid ink. Drawn at IU = 30/22 css px per art px, so the ✕ is 30x30 and the ✔ 35x30, centred in a 44 px tap target.
-const IU = 30 / 22, IC_INK = '#1a181c';
+// round 15.6e (Tiago, t194u + his inspiration image): chunky solid-black 8-bit ✕ / ✔ from his reference.
+// round 15.10c (t207u, "split the difference"): 9-row grids at IU = 3 css px (between 15.10's ~2.33 and bubble outline's 4),
+// keeping brushy asymmetric strokes; ✕ 27×27 and ✔ 33×27, both solid ink, 44 px tap targets.
+const IU = 3, IC_INK = '#1a181c';
 const ICON = {
-  no: ['...................###', '.................#####', '...............#######', '.###..........########', '#####........########.', '######.....#########..', '.######...#########...', '.#######.########.....', '..##############......', '...############.......', '....##########........', '....#########.........', '.....########.........', '....##########........', '...############.......', '...#############......', '..#####.#########.....', '..#####...#######.....', '.######.....######....', '.#####.......######...', '.#####........#####...', '.####..........####...'],
-  yes: ['......................###.', '....................######', '...................#######', '..................########', '................#########.', '...............#########..', '..............#########...', '.............#########....', '...##........########.....', '.#####......########......', '#######....########.......', '########..########........', '#########.#######.........', '.################.........', '.###############..........', '..#############...........', '...###########............', '....#########.............', '.....########.............', '......######..............', '.......####...............', '........###...............'] };
+  no: ['.......##', '##....###', '###.####.', '.######..', '..####...', '..####...', '.######..', '.###.###.', '###...##.'],
+  yes: ['.........##', '.......####', '......####.', '.#...####..', '###.####...', '#######....', '.#####.....', '..###......', '...##......'] };
 function iconCanvas(rows, color) {
   const cv = document.createElement('canvas'); cv.width = rows[0].length; cv.height = rows.length; cv.className = 'ask-ic';
   const g = cv.getContext('2d'), fill = { '#': color };
@@ -172,7 +172,7 @@ function ask(el, { already = false } = {}) {
       if (!ans && anchor === null && inky.mode === 'roam') inky.setMood('happy');
       popBubble(); resolve(ans); };
     const st = { el, end }; asking = st;
-    say('report', 15000, false, anchor, row);
+    say('report?', 15000, false, anchor, row);   // round 15.10 (t205u): bigger report? + middle icons
     bubble.classList.add('asking'); bubble.setAttribute('role', 'dialog'); bubble.setAttribute('aria-label', 'report this haiku?');
     if (anchor === null) { inky.setMood('worry'); inky.jump(.35); }
     no.addEventListener('click', e => { e.stopPropagation(); end(false); });
