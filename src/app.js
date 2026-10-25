@@ -74,12 +74,18 @@ async function copyPoem(post, e) {
   return ok;
 }
 // small pixel word that rises and fades by the tap point (fallback when Inky is busy elsewhere)
-function floatNote(text, x, y) {
-  const d = document.createElement('span'); d.className = 'float-note'; d.textContent = text; document.body.appendChild(d);
+function floatNote(text, x, y, cls = '') {
+  const d = document.createElement('span'); d.className = 'float-note' + (cls ? ' ' + cls : ''); d.textContent = text; document.body.appendChild(d);
   Object.assign(d.style, { left: Math.round(x) + 'px', top: Math.round(y - 28) + 'px' });
   d.animate([{ transform: 'translate(-50%, 0)', opacity: 1 }, { transform: 'translate(-50%, -8px)', opacity: 1, offset: .6 }, { transform: 'translate(-50%, -14px)', opacity: 0 }], { duration: 1000, easing: 'steps(6)', fill: 'both' })
     .finished.then(() => d.remove(), () => d.remove());
 }
+// round 15.10g2 (t226u): the end-of-board address. The mailto href opens the mail app with a fresh message to us; the same
+// tap also copies the address (so a desktop with no mail app still gets something) and says 'copied' by the finger.
+document.getElementById('end-mail-a')?.addEventListener('click', e => {
+  const x = e.clientX || innerWidth / 2, y = e.clientY || innerHeight / 2;
+  writeClipboard('contact@haiku.ooo').then(ok => { if (ok) { sfx('copyCharm'); floatNote('copied', x, y, 'end-mail-note'); } });   // round 15.10g3: © row font + grey
+});
 // round 15.6b: someone else's poem arrived (polling). At the top of the scroll and free: it types in and is stamped like
 // your own; otherwise it is added quietly and the page is held still so nothing jumps under the reader's finger.
 function incoming(post) {
@@ -269,6 +275,9 @@ const booted = feed.boot().catch(async e => {
   feed.segments.length = 0; feed.done = false; feed.low = Infinity; feed.pending = []; feed.painted.clear();
   return feed.boot();
 }).then(() => { reports.markAll(); feed.startPolling(); store.cur.warm?.(); });   // 15.6c: Firestore signs this phone in anonymously in the background
+// round 15.10g: the boot Inky (index.html) steps aside as soon as the feed has painted (or given up), just before the real one slips in
+const bootInky = $('#boot-inky'), dropBootInky = () => { bootInky?.classList.add('gone'); setTimeout(() => bootInky?.remove(), 220); };
+booted.then(dropBootInky, dropBootInky);
 // he slips in from off-screen once the board is up
 booted.then(() => clock.wait(reduced ? 0 : 450)).then(() => { if (!composing()) inky.enter(); else inky.entered = true; });
 
