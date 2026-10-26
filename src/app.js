@@ -8,10 +8,10 @@ import { SpeechScheduler, readMs, CheerBag } from './inky-mind.js';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { clock } from './clock.js';
 import { copyText } from './share.js';
-import { mountWind } from './wind.js';
+import { mountWind } from './wind.js?v=15.10j';
 import { mountScrollButton } from './scroll-button.js';
 import { sfx } from './sfx.js';
-import { mountNoren } from './noren.js';
+import { mountNoren } from './noren.js?v=15.10j';   // round 15.10j (t237u): period flag gets two chichi, same as the other eight
 import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';

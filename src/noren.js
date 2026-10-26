@@ -575,8 +575,8 @@ function drawRod(put) {
   for (let x = x0; x <= x1; x++) { put(x, y0, C.ink); put(x, y0 + 1, C.woodHi); put(x, y0 + 2, x % 11 === 4 ? C.woodLo : C.wood); put(x, y0 + 3, C.ink); }
   for (const xe of [x0 - 1, x1 - 1]) for (let y = y0 - 1; y <= y0 + 4; y++) for (let x = xe; x < xe + 3; x++) put(x, y, y === y0 - 1 || y === y0 + 4 || x === xe || x === xe + 2 ? C.ink : C.woodLo);
 }
-function drawLoops(put, F) {     // two cloth loops (chichi) per flag wrap the rod
-  const { p } = F, xs = F.dot ? [p[0] + 1] : [p[0] + 1, p[(F.nx - 1) * 2] - 3];
+function drawLoops(put, F) {     // two cloth loops (chichi) per flag wrap the rod. round 15.10j (t237u): the period too (it had been hung from the left loop only)
+  const { p } = F, xs = [p[0] + 1, p[(F.nx - 1) * 2] - 3];
   for (const x of xs) for (let y = ROD_Y - 1; y < TOP + 1; y++) for (let i = 0; i < 3; i++) put(Math.round(x) + i, y, y === ROD_Y - 1 ? C.clothHi : i === 0 ? C.clothHi : C.cloth);
 }
 export function renderNoren(N, img) {
