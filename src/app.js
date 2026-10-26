@@ -17,7 +17,7 @@ import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js';     // round 15.6: hold a user poem, Inky asks to report it; TAKEDOWN_REPORTS take it down (src/moderation.js)
 import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
-import { mountSound } from './sound-wire.js';   // round 15.0: synthesized sound (starts on the first tap; toggle in the header)
+import { mountSound } from './sound-wire.js?v=15.10i';   // round 15.0: synthesized sound (starts on the first tap; toggle in the header)
 
 const $ = s => document.querySelector(s);
 // round 15.6b: one store handle for everything (compose, reports, the feed); `cur` swaps to this device's own board if the

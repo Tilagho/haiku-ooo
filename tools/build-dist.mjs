@@ -8,7 +8,10 @@ const mods = new Set();
 (function walk(f) {
   if (mods.has(f)) return; mods.add(f);
   const s = fs.readFileSync(path.join(ROOT, f), 'utf8');
-  for (const m of s.matchAll(/(?:import|export)[^'"]*?from\s*['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g)) walk(path.normalize(path.join(path.dirname(f), m[1] || m[2])));
+  for (const m of s.matchAll(/(?:import|export)[^'"]*?from\s*['"](\.[^'"]+)['"]|import\(\s*['"](\.[^'"]+)['"]\s*\)/g)) {
+    const spec = (m[1] || m[2]).replace(/[?#].*$/, '');   // round 15.10i (t236u): ?v= on sound.js / sound-wire.js is a cache-bust, not part of the path
+    walk(path.normalize(path.join(path.dirname(f), spec)));
+  }
 })('src/app.js');
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const css = [...html.matchAll(/href="(src\/[^"]+\.css)"/g)].map(m => m[1]);

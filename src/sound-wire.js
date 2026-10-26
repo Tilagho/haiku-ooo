@@ -5,9 +5,9 @@
 // - Credits list scrolling (15.1): a soft paper rustle following the scroll speed.
 // - Breezes (15.1): every 15-45 s a small airy breeze swells and dies over 4-10 s, drifting across the stereo field.
 // - The sound toggle (header, right of the 俳句の掲示板 line) mutes and SUSPENDS the context; the choice is kept in localStorage
-//   ('hb-sound-muted'). Hidden page: faded and suspended (src/sound.js). The iPhone silent switch is respected: no audio session
-//   is set (navigator.audioSession is never touched), so Web Audio stays in the ambient category the switch silences.
-import { SoundEngine, SITE_LEVELS } from './sound.js';
+//   ('hb-sound-muted'). Hidden page: faded and suspended (src/sound.js). round 15.10i (t236u): the first tap (and any later
+//   unlock / rebuild) sets navigator.audioSession.type = "playback" so the iPhone silent switch does not mute the bed.
+import { SoundEngine, SITE_LEVELS } from './sound.js?v=15.10i';
 import { setSfxSink, sfxLog, sfx } from './sfx.js';
 import { WATER_RE } from './waterfall.js';
 import { PX, SCROLL_W } from './scroll-engine2.js';

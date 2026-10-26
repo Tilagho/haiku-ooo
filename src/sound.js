@@ -17,8 +17,8 @@
 //   snd.set('wind', { volume: .4 }); snd.setMuted(true); snd.settings -> JSON
 //   snd.attach(offlineCtx); snd.pump(seconds)    // the same graph inside an OfflineAudioContext (tests / WAV renders)
 //
-// iOS: the context is created / resumed inside a user gesture (unlock); navigator.audioSession is deliberately NOT touched, so the
-// ringer / silent switch keeps working (Web Audio is silenced by it, as it should be for ambience). Hidden page: ducked + suspended.
+// iOS: the context is created / resumed inside a user gesture (unlock). round 15.10i (t236u): that gesture sets
+// navigator.audioSession.type = "playback" (Safari 17+) so the silent switch does not mute Web Audio. Hidden page: ducked + suspended.
 
 export const DEFAULTS = {
   master: { volume: 0.7 },
@@ -42,6 +42,11 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const rnd = (a = 0, b = 1) => a + Math.random() * (b - a);
 const clone = o => JSON.parse(JSON.stringify(o));
 const ls = { get(k) { try { return localStorage.getItem(k); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+// round 15.10i (t236u): Safari leaves Web Audio on the ambient session, which the iPhone silent switch mutes. "playback"
+// (Safari 17+ / iOS 17+) routes it like a media element. No-op when navigator.audioSession is missing.
+function playbackSession() {
+  try { if (typeof navigator !== 'undefined' && navigator.audioSession) navigator.audioSession.type = "playback"; } catch {}
+}
 
 export class SoundEngine {
   constructor({ settings, persist = true, water = true } = {}) {
@@ -55,6 +60,7 @@ export class SoundEngine {
   }
   // ---------- context ----------
   unlock() {                                     // inside a touchend / pointerup / click handler
+    playbackSession();                           // round 15.10i (t236u): before new AudioContext / resume, so the silent switch does not mute
     const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext); if (!AC) return false;
     if (!this.ctx && !this._pending) {
       // only the context is made inside the tap (cheap); the noise buffers are built right after, a few ms per task (no jank on the tap)
@@ -65,7 +71,7 @@ export class SoundEngine {
         // round 15.4 (Tiago t176u): coming back to the page must bring the sound back with no reload. Safari's bfcache / iOS background
         // don't always fire visibilitychange, so pageshow + focus wake it too; and the context's own statechange (iOS 'interrupted' -> back)
         addEventListener('pageshow', this._vis); addEventListener('focus', this._vis); }
-        c.onstatechange = () => { if (c.state === 'running' && !this.muted && !document.hidden) this._restoreGain(); };
+        c.onstatechange = () => { if (c.state === 'running' && !this.muted && !document.hidden) { playbackSession(); this._restoreGain(); } };   // round 15.10i (t236u): an interruption can reset the session
         this.timer = setInterval(() => { if (this.ctx.state === 'running') this.pump(); }, 1000);   // nothing scheduled while suspended (hidden / muted)
         if (this.muted) { this.master.gain.value = 0; c.suspend?.(); }
         for (const f of this._queue.splice(0)) f();
@@ -133,14 +139,14 @@ export class SoundEngine {
     this.master.gain.setTargetAtTime(m ? 0 : this.settings.master.volume, this.now, 0.15);
     if (!this._live()) return;
     if (m) { clearTimeout(this._susT); this._susT = setTimeout(() => this.muted && this.ctx.suspend?.(), 600); }
-    else if (!document.hidden) { clearTimeout(this._susT); this.ctx.resume?.().then(() => this.pump()); }
+    else if (!document.hidden) { clearTimeout(this._susT); playbackSession(); this.ctx.resume?.().then(() => this.pump()); }   // round 15.10i (t236u): session may have reset while suspended
   }
   _live() { const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext); return !!AC && this.ctx instanceof AC; }
   _save() { if (this.persist) ls.set(KEY, JSON.stringify(this.settings)); }
   _visibility() {
     if (!this.ctx || !this._live()) return;
     if (document.hidden) { this.master.gain.setTargetAtTime(0, this.now, 0.08); clearTimeout(this._susT); this._susT = setTimeout(() => document.hidden && this.ctx.suspend(), 400); this._kick = true; }   // hidden: fade, then suspend
-    else if (!this.muted) { clearTimeout(this._susT); this.ctx.resume().then(() => this._wake()).catch(() => {}); this._watch(); }   // (iOS may refuse until the next tap: unlock() resumes AND restores the level then)
+    else if (!this.muted) { clearTimeout(this._susT); playbackSession(); this.ctx.resume().then(() => this._wake()).catch(() => {}); this._watch(); }   // round 15.10i (t236u): re-apply playback before resume (iOS may still refuse until the next tap)
   }
   // back on the page and running again: the level the hide faded to 0 comes back (before 15.4 a tap-resume left it at 0 = silent until reload)
   _restoreGain() { if (!this.master || this.muted || document.hidden) return; const g = this.master.gain; g.cancelScheduledValues(this.now); g.setValueAtTime(g.value, this.now); g.setTargetAtTime(this.settings.master.volume, this.now, 0.3); }
@@ -150,7 +156,7 @@ export class SoundEngine {
   _watch() { const c = this.ctx; if (!c || !this._live()) return; const t0 = c.currentTime; clearTimeout(this._watchT);
     this._watchT = setTimeout(() => { if (document.hidden || this.muted || this.ctx !== c) return; if (c.state === 'running' && c.currentTime === t0) this._dead = true; if (c.state !== 'running') this._kick = true; }, 700); }
   get needsGesture() { return !!this.ctx && !this.muted && (this._dead || this._kick || this.ctx.state !== 'running' || (this.master?.gain.value ?? 1) < 0.01); }
-  rebuild() {                                    // inside a tap: throw away the dead context and build a fresh one (the wire restarts the bed)
+  rebuild() {                                    // inside a tap: throw away the dead context and build a fresh one (unlock re-applies the playback session, 15.10i)
     const old = this.ctx; if (!old || !this._live()) return this.unlock();
     clearInterval(this.timer); clearTimeout(this._susT); clearTimeout(this._watchT); try { old.onstatechange = null; old.close?.(); } catch {}
     this.ctx = null; this.amb = {}; this.drag = null; this.bedOn = false; this.breezeOn = false; this._floodP = null; this._babbleP = null; this.flood = null; this.babbleBank = null; this.babbleOut = null; this._babLive = []; this._dead = false; this._kick = false;
