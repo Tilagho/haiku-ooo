@@ -13,7 +13,7 @@
 // target (noren.js gustTarget: same strength), so a steady scroll still blows just as hard. The noren keeps its own
 // leaf-blower gust (stepGust) untouched.
 import { clock } from './clock.js';
-import { gustTarget } from './noren.js';
+import { gustTarget } from './noren.js?v=15.10j';   // round 15.10j (t237u): same module as app.js, so the cache-bust is one copy
 
 export const WIND_TAU = .15, WIND_OMEGA = 13, WIND_DAMP = 1.15, WIND_SLEW = 6.5;
 // one 1/60 s step of the board wind (pure: tested): low-pass the scroll velocity, then a damped, slew-limited follow
