@@ -1,14 +1,14 @@
-// Round 15.12g: a date-line count of 1 is not painted. From 2 up the numeral sits clear
-// of the face, including the playing ink (flushed eyes, the heart's halves), and the
-// text canvas paints above the glyph so a digit cannot land behind the art.
-// The 15.12f seal clearance stays: a face still leaves the hanko.
+// Round 15.12g: a date-line count of 1 is not painted. From 2 up the numeral is centered
+// under its face (Teams-style), a short gap below the resting box. The text canvas paints
+// above the glyph, so a falling drip cannot cover the digit.
+// The 15.12f seal clearance stays: a face and its numeral still leave the hanko.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { font, measure, sealDims } from '../src/brush-text.js';
 import { poemLayouts, poemStyle, sealOrder } from '../src/scroll-engine2.js';
 import {
-  COUNT_AIR_ART, COUNT_CLEAR_ART, COUNT_FROM, DATE_GAP, GLYPH_BOX, GLYPH_INK_RIGHT, RX_ORDER,
-  countClearance, fitByline, layoutByline, reactionHitsRect,
+  COUNT_FROM, COUNT_UNDER_ART, DATE_GAP, RX_ORDER,
+  fitByline, layoutByline, reactionHitsRect,
 } from '../src/react-data.js';
 
 const src = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
@@ -18,12 +18,19 @@ const Sm = font('small');
 const measureText = t => measure(t, Sm);
 const FROG = 'an old silent pond\na frog jumps into the pond\nsplash silence again';
 const scale = 1.5;
+const cap = 7;
 
 function row(counts, extra = {}) {
   return layoutByline({
     counts, author: extra.author ?? '', date: extra.date ?? 'Oct 26',
-    measure: measureText, scale, ascent: Sm.ascent, descent: Sm.descent, ...extra,
+    measure: measureText, scale, ascent: Sm.ascent, descent: Sm.descent, cap, ...extra,
   });
+}
+function pair(layout, kind) {
+  const glyph = layout.items.find(i => i.kind === kind);
+  const count = layout.items.find(i => i.count && i.x + i.w / 2 >= glyph.x && i.x + i.w / 2 <= glyph.x + glyph.w + 0.6
+    && i.y >= glyph.y);
+  return { glyph, count };
 }
 
 ok('a count of 1 paints the face and no numeral, for every kind', () => {
@@ -40,63 +47,68 @@ ok('a count of 1 paints the face and no numeral, for every kind', () => {
   }
 });
 
-ok('a count of 2 or more paints clear of the resting face and the playing ink', () => {
+ok('a count of 2 or more is centered under the face, the same short gap for every kind', () => {
+  const inkTop = Sm.ascent - cap;
   for (const k of RX_ORDER) {
-    for (const n of [2, 12]) {
-      const counts = { cry: 0, eyes: 0, heart: 0, star: 0, flushed: 0, relieved: 0, [k]: n };
+    for (const num of [2, 12]) {
+      const counts = { cry: 0, eyes: 0, heart: 0, star: 0, flushed: 0, relieved: 0, [k]: num };
       const layout = row(counts, { author: 'kitty G, ' });
-      const glyph = layout.items.find(i => i.type === 'glyph');
-      const count = layout.items.find(i => i.count);
-      const g = GLYPH_BOX[k];
-      assert.equal(count.t, String(n), k + ' ' + n);
-      const minX = glyph.x + g.ow * scale + countClearance(k, scale);
-      assert.ok(count.x + 1e-6 >= minX, `${k} ${n} count at ${count.x}, ink needs ${minX}`);
-      assert.ok(count.x >= glyph.x + glyph.w, k);
-      const inkRight = glyph.x + g.ow * scale + GLYPH_INK_RIGHT[k] * scale;
-      assert.ok(count.x >= inkRight + COUNT_AIR_ART * scale - 1e-6, `${k} paper past the playing ink`);
-      assert.ok(count.x >= glyph.x + g.ow * scale + COUNT_CLEAR_ART * scale - 1e-6, `${k} paper past the outline`);
+      const { glyph, count } = pair(layout, k);
+      assert.equal(count.t, String(num), k + ' ' + num);
+      const midG = glyph.x + glyph.w / 2, midC = count.x + count.w / 2;
+      assert.ok(Math.abs(midG - midC) <= 0.51, `${k} centered ${midC} vs ${midG}`);
+      assert.ok(count.x < glyph.x + glyph.w && count.x + count.w > glyph.x, `${k} sits under the face, not beside it`);
+      const ink = count.y + inkTop;
+      const paper = glyph.y + glyph.h + COUNT_UNDER_ART * scale;
+      assert.ok(ink + 1e-6 >= paper, `${k} paper under the face`);
+      assert.ok(ink <= paper + 1, `${k} the gap stays snug, including relieved`);
+      assert.ok(ink >= glyph.y + glyph.h, `${k} the digit is below the resting face`);
       const author = layout.items.find(i => i.t === 'kitty G, ');
-      assert.equal(author.x, count.x + count.w + DATE_GAP, 'the name follows the numeral');
-      assert.ok(glyph.x + glyph.w <= author.x);
+      const runRight = Math.max(...layout.items.filter(i => i.type === 'glyph' || i.count).map(i => i.x + i.w));
+      assert.equal(author.x, runRight + DATE_GAP, 'the name follows the cluster, not a numeral beside the cheek');
+      assert.ok(count.x + count.w <= author.x, k);
     }
   }
 });
 
-ok('a mixed row hides the 1s and keeps every painted numeral off its face', () => {
+ok('a mixed row hides the 1s and stacks every numeral under its own face', () => {
   const counts = { cry: 1, eyes: 2, heart: 1, star: 4, flushed: 12, relieved: 1 };
   const layout = row(counts, { author: 'moth, ' });
   assert.deepEqual(layout.kinds, ['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved']);
   const texts = layout.items.filter(i => i.type === 'text' && !i.date).map(i => i.t);
   assert.deepEqual(texts, ['2', '4', '12', 'moth, ']);
   for (const k of layout.kinds) {
-    const glyph = layout.items.find(i => i.kind === k);
-    const count = layout.items.find(i => i.count && layout.items.indexOf(i) > layout.items.indexOf(glyph)
-      && !layout.items.slice(layout.items.indexOf(glyph) + 1, layout.items.indexOf(i)).some(x => x.type === 'glyph'));
+    const { glyph, count } = pair(layout, k);
     if ((counts[k] | 0) < 2) assert.equal(count, undefined, k);
     else {
-      const minX = glyph.x + GLYPH_BOX[k].ow * scale + countClearance(k, scale);
-      assert.ok(count.x + 1e-6 >= minX, k);
       assert.equal(count.t, String(counts[k]));
+      assert.ok(Math.abs((glyph.x + glyph.w / 2) - (count.x + count.w / 2)) <= 0.51, k);
+      assert.ok(count.y + (Sm.ascent - cap) >= glyph.y + glyph.h, k);
     }
   }
   const date = layout.items.find(i => i.date);
-  const last = layout.items[layout.items.length - 1];
-  assert.equal(last, date);
   assert.equal(date.x, layout.items.find(i => i.t === 'moth, ').x + layout.items.find(i => i.t === 'moth, ').w);
+  assert.ok(layout.h > layout.textH, 'the row grows downward to hold the numerals');
 });
 
-ok('the numeral stays clear when the row is packed tight', () => {
+ok('relieved shares the other faces\' gap, and a packed row still centers the digits', () => {
+  const relieved = row({ relieved: 2 });
+  const flushed = row({ flushed: 2 });
+  const gap = layout => {
+    const { glyph, count } = pair(layout, layout.kinds[0]);
+    return count.y + (Sm.ascent - cap) - (glyph.y + glyph.h);
+  };
+  assert.ok(Math.abs(gap(relieved) - gap(flushed)) <= 1, 'the drip does not drop the relieved count');
   const counts = { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 };
   const tight = row(counts, { gaps: { glyph: 1, kind: 1, date: 3 } });
   for (const k of RX_ORDER) {
-    const glyph = tight.items.find(i => i.kind === k);
-    const count = tight.items.find(i => i.count && i.t === '12' && i.x > glyph.x && i.x < glyph.x + 80);
-    const minX = glyph.x + GLYPH_BOX[k].ow * scale + countClearance(k, scale);
-    assert.ok(count.x + 1e-6 >= minX, k);
+    const p = pair(tight, k);
+    assert.equal(p.count.t, '12');
+    assert.ok(Math.abs((p.glyph.x + p.glyph.w / 2) - (p.count.x + p.count.w / 2)) <= 0.51, k);
   }
 });
 
-ok('a phone star of count 1 still leaves a left-hand seal', () => {
+ok('a phone star of count 1 still leaves a left-hand seal, and a numeral under a face does too', () => {
   const post = { text: FROG, author: '', createdAt: Date.UTC(2026, 9, 24), id: 'frog88' };
   const style = poemStyle(31, 5, post.id);
   style.sealOrder = sealOrder(5, post.id, null);
@@ -106,23 +118,23 @@ ok('a phone star of count 1 still leaves a left-hand seal', () => {
   assert.equal(L.sealPos, 'left-3');
   const SmDate = 'Oct 24';
   const sigW = measure(L.sig.t, Sm), dateW = measure(SmDate, Sm);
-  const opts = {
-    counts: { star: 1 }, author: '', date: SmDate, measure: measureText, scale: 4 / 3,
+  const base = {
+    author: '', date: SmDate, measure: measureText, scale: 4 / 3,
     ascent: Sm.ascent, descent: Sm.descent,
     dateLeft: L.sig.x + sigW - dateW, dateRight: L.sig.x + sigW,
     leftLimit: -8.67, rightLimit: 220, sigY: L.sig.y, avoid,
   };
-  const fit = fitByline(opts);
-  assert.equal(fit.layout.items.find(i => i.count), undefined);
-  assert.equal(reactionHitsRect(fit.layout, fit.placed.left, L.sig.y, avoid, fit.scale), false);
-  const author = fit.layout.items.find(i => i.type === 'text' && !i.date && !i.count);
-  const date = fit.layout.items.find(i => i.date);
-  assert.ok(date);
-  assert.equal(author, undefined);
-  for (const it of fit.layout.items) {
-    if (it.type !== 'glyph') continue;
-    assert.ok(it.x >= date.x + date.w || it.x + it.w <= date.x);
-  }
+  const one = fitByline({ ...base, counts: { star: 1 } });
+  assert.equal(one.layout.items.find(i => i.count), undefined);
+  assert.equal(reactionHitsRect(one.layout, one.placed.left, L.sig.y, avoid, one.scale), false);
+  const two = fitByline({ ...base, counts: { star: 2 } });
+  assert.equal(two.layout.items.find(i => i.count).t, '2');
+  assert.equal(reactionHitsRect(two.layout, two.placed.left, L.sig.y, avoid, two.scale), false);
+  const glyph = two.layout.items.find(i => i.kind === 'star');
+  const count = two.layout.items.find(i => i.count);
+  assert.ok(count.y > glyph.y);
+  const date = two.layout.items.find(i => i.date);
+  assert.ok(glyph.x >= date.x + date.w || glyph.x + glyph.w <= date.x);
 });
 
 ok('cache-bust is 15.12g on the date line only', () => {
@@ -137,6 +149,7 @@ ok('cache-bust is 15.12g on the date line only', () => {
   assert.ok(/inky\.js\?v=15\.12c/.test(app));
   assert.ok(/z-index: 1/.test(rx) && /z-index: 0/.test(rx), 'the numeral paints above the face');
   assert.ok(/COUNT_FROM/.test(src('src/react-data.js')));
+  assert.ok(/COUNT_UNDER_ART/.test(src('src/react-data.js')));
   assert.ok(!/firestore\.rules/.test(app + rx + src('src/react-data.js')));
 });
 

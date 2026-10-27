@@ -305,8 +305,9 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
 
 const RX_CSS = `
 .rx-row { position: absolute; z-index: 4; pointer-events: none; }
-/* The numeral shares the text canvas. It paints above the face so a playing eye or a
-   heart half cannot cover the digit (round 15.12g). Clear pixels still show the glyph. */
+/* The numeral shares the text canvas and paints above the face (round 15.12g). It sits
+   under the glyph; this only keeps a falling drip from covering the digit. Clear pixels
+   still show the glyph. */
 .rx-row .rx-tx { display: block; image-rendering: pixelated; position: relative; z-index: 1; }
 .rx-row .rx-g { position: absolute; z-index: 0; image-rendering: pixelated; pointer-events: none; }
 .poem.rx-holding .pc, .poem.rpt-holding .pc { transform: scale(.965); }

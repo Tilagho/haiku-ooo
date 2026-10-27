@@ -45,8 +45,11 @@ ok('date line: bare glyphs with counts, no bullet, date kept at the right edge',
   assert.ok(!row.items.some(i => String(i.t || '').includes('·')));
   assert.ok(!texts.some(t => t === '0'));
   const dateItem = row.items.find(i => i.date);
-  const lastCount = [...row.items].reverse().find(i => i.count);
-  assert.equal(dateItem.x, lastCount.x + lastCount.w + DATE_GAP, 'a gap, not a bullet, separates the count and the date');
+  const star = row.items.find(i => i.kind === 'star');
+  const count = row.items.find(i => i.count);
+  assert.equal(dateItem.x, star.x + star.w + DATE_GAP, 'the date follows the face; the numeral sits under it');
+  assert.ok(count.x >= star.x && count.x + count.w <= star.x + star.w, 'the 2 is centered in the star, not beside it');
+  assert.ok(count.y > star.y, 'the numeral is below the face');
   assert.equal(dateItem.x + dateItem.w, row.w, 'the date ends the cluster, so it can stay put against the old byline');
   assert.ok(row.items.some(i => i.type === 'glyph' && i.kind === 'star' && i.h > Sm.ascent));
 });
@@ -135,23 +138,24 @@ ok('a full set of counts stays inside the viewing area, packed tighter only when
   assert.ok(glyph.x > date.x + date.w, 'the star sits to the right of a date that is already at the left edge');
   const visualL = edge.placed.left - edge.layout.bleedL, visualR = edge.placed.left + edge.layout.w + edge.layout.bleedR;
   assert.ok(visualL >= -0.5 && visualR <= 300.5);
-  // 15.12g: each numeral sits clear of its face, so a full set needs a little more than the old 300.
+  // Numerals sit under the faces, so a full set is no wider than the glyphs. This clip
+  // still cannot hold the open gaps; the tight pack is what fits.
   const crowded = fitByline({
     ...base, counts: { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 },
-    author: 'sample, ', date: 'Oct 24', dateLeft: 240, dateRight: 272, leftLimit: 0, rightLimit: 330,
+    author: 'sample, ', date: 'Oct 24', dateLeft: 208, dateRight: 240, leftLimit: 0, rightLimit: 240,
   });
   assert.equal(crowded.ok, true);
   assert.equal(crowded.layout.gaps.date, 3, 'gaps tighten only so the whole set still fits');
   const cL = crowded.placed.left - crowded.layout.bleedL, cR = crowded.placed.left + crowded.layout.w + crowded.layout.bleedR;
-  assert.ok(cL >= -0.5 && cR <= 330.5, `visible row ${cL}..${cR} stays inside 0..330`);
+  assert.ok(cL >= -0.5 && cR <= 240.5, `visible row ${cL}..${cR} stays inside 0..240`);
   const stillWide = fitByline({
     ...base, counts: { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 },
-    author: 'sample, ', date: 'Oct 24', dateLeft: 200, dateRight: 232, leftLimit: 0, rightLimit: 260,
+    author: 'sample, ', date: 'Oct 24', dateLeft: 168, dateRight: 200, leftLimit: 0, rightLimit: 200,
   });
   assert.equal(stillWide.ok, false);
   const wideW = stillWide.layout.w + stillWide.layout.bleedL + stillWide.layout.bleedR;
-  const shrink = rowFitScale(wideW, 0, 260);
-  assert.ok(shrink < 1 && wideW * shrink <= 260.5, 'a row wider than the phone scales down instead of clipping');
+  const shrink = rowFitScale(wideW, 0, 200);
+  assert.ok(shrink < 1 && wideW * shrink <= 200.5, 'a row wider than the phone scales down instead of clipping');
   const roomy = fitByline({
     ...base, counts: { cry: 1, eyes: 1, heart: 1, star: 1, flushed: 1, relieved: 1 },
     author: '', date: 'Oct 24', dateLeft: 200, dateRight: 232, leftLimit: 0, rightLimit: 400,

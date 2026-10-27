@@ -97,7 +97,7 @@ ok('the signature and the date stay glued, with more air before that block', () 
   assert.equal(roomy.layout.side, 'before');
   const crowded = fitByline({
     ...base, counts: { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 },
-    dateLeft: 240, dateRight: 272, leftLimit: 0, rightLimit: 330,
+    dateLeft: 208, dateRight: 240, leftLimit: 0, rightLimit: 240,
   });
   assert.equal(crowded.layout.gaps.date, 3, 'the pack-to-fit gap is unchanged, so a full row still stays on screen');
   assert.equal(crowded.ok, true);
