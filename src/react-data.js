@@ -42,8 +42,11 @@ export function normalizeCounts(data) {
   return c;
 }
 
-// Font px of air between the date and the glyphs. Spacing only — no middot, no bullet.
-export const DATE_GAP = 6;
+// Font px of air between the glyph run (faces and their counts) and the signature+date block.
+// Spacing only — no middot, no bullet. The name and the date stay glued; glyphs stay outside that block.
+// Round 15.12d: 6 → 16 (+10). At the poem's usual 1.5 scale that is about 15 CSS px more on a phone,
+// so the faces are not sitting on the name and the date. TIGHT_GAPS still packs when the open gap would clip.
+export const DATE_GAP = 16;
 // Square picker cell, in art px: the largest resting face (the star). Every mobile cell is this
 // size so the six glyphs share one grid; animation frames may overflow the cell.
 export const PICKER_CELL = Math.max(...RX_ORDER.map(k => Math.max(GLYPH_BOX[k].ow, GLYPH_BOX[k].oh)));

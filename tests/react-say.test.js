@@ -23,10 +23,16 @@ ok('each reaction spells its word, and a bang punches the last letter only', () 
   assert.ok(SPELL_STEP > 1 / BABBLE.maxRate, 'letters are spaced so the babble does not merge them');
 });
 
-ok('the live react path spells a placed kind and poofs a clear', () => {
+ok('the live react path spells a placed kind on the tap and poofs a clear after it lands', () => {
   const js = src('src/reactions.js');
-  assert.ok(/if \(res\.mine\) sfx\('reactSay', \{ kind: res\.mine \}\)/.test(js), 'success with a kind spells it');
-  assert.ok(/else sfx\('poof'\)/.test(js), 'clearing plays the existing poof');
+  const choose = js.slice(js.indexOf('async function choose'), js.indexOf('function cancelHold'));
+  const say = choose.indexOf("sfx('reactSay'");
+  const wait = choose.indexOf('await store.react');
+  const poof = choose.indexOf("sfx('poof')");
+  assert.ok(say >= 0 && say < wait, 'the spell starts on choose, before the reaction is stored');
+  assert.equal(choose.indexOf("sfx('reactSay'", say + 1), -1, 'one spell, not a second after the store returns');
+  assert.ok(poof > wait, 'clearing still poofs after the store succeeds');
+  assert.ok(/if \(!res\.mine && !next\) sfx\('poof'\)/.test(choose), 'a place does not also poof');
   assert.ok(!/reactOff|reactClear|un-?stamp/.test(js), 'clearing does not grow a new sound');
   const wire = src('src/sound-wire.js');
   assert.ok(/name === 'reactSay'/.test(wire) && /sayReaction\(p\.kind\)/.test(wire));

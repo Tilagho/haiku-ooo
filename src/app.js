@@ -16,7 +16,7 @@ import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.11';     // round 15.6: hold the number seal, Inky asks to report it; TAKEDOWN_REPORTS take it down
-import { mountReactions } from './reactions.js?v=15.12c'; // round 15.12c: used face is grey, Inky stays under the bubble, open/dismiss chimes
+import { mountReactions } from './reactions.js?v=15.12d'; // round 15.12d: place plays ~1s then idles, spell on the tap, ink wash, wider date gap
 import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js?v=15.12c';   // round 15.12c: pickerChime / pickerBack ride the same play() path as the other one-shots
 

@@ -9,8 +9,8 @@ import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
-} from './react-data.js?v=15.11c';
-import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD } from './react-glyphs.js?v=15.12c';
+} from './react-data.js?v=15.12d';
+import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD, GLYPH_PLAY_MS, planPlays } from './react-glyphs.js?v=15.12d';
 import { sfx } from './sfx.js';
 
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)
@@ -21,6 +21,22 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
   setGlyphMotion(reduced);
   loadSprites();
   const counts = new Map(), mine = new Map(), pending = new Set();
+  // Date-line motion. `settled` is the kinds already shown (null until the first measure: those stay idle).
+  // `plays` is kind -> performance.now() deadline for the one-second place animation.
+  const settled = new Map(), plays = new Map();
+  function syncPlays(id, kinds) {
+    const plan = planPlays(settled.has(id) ? settled.get(id) : null, kinds, performance.now(), { plays: plays.get(id) });
+    settled.set(id, plan.seen);
+    plays.set(id, plan.plays);
+  }
+  function glyphMode(id, kind) {
+    const until = plays.get(id)?.get(kind) || 0;
+    return until > performance.now() ? { loop: false, until } : 'idle';
+  }
+  function stampMotion(cv, mode) {
+    if (mode === 'idle') { cv.dataset.motion = 'idle'; delete cv.dataset.until; }
+    else { cv.dataset.motion = 'play'; cv.dataset.until = String(mode.until); }
+  }
   const pop = document.createElement('div');
   pop.id = 'rx-pop'; pop.className = 'rx-pop'; pop.hidden = true;
   pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'react to this haiku');
@@ -32,8 +48,12 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
   let popGen = 0;
   const io = new IntersectionObserver(es => {
     for (const e of es) e.target.querySelectorAll('.rx-g').forEach(cv => {
-      if (e.isIntersecting) { if (!cv._rx && cv.dataset.kind) trackGlyph(cv, cv.dataset.kind, +cv.dataset.phase || 0); }
-      else untrackGlyph(cv);
+      if (e.isIntersecting) {
+        if (!cv._rx && cv.dataset.kind) {
+          const mode = cv.dataset.motion === 'play' ? { loop: false, until: +cv.dataset.until || 0 } : 'idle';
+          trackGlyph(cv, cv.dataset.kind, +cv.dataset.phase || 0, mode);
+        }
+      } else untrackGlyph(cv);
     });
   }, { rootMargin: '240px 0px' });
 
@@ -55,6 +75,8 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     if (!rec || !view || !view.host.clientWidth) return;
     const id = rec.post.id, c = counts.get(id) || emptyCounts();
     composeLabel(el, c);
+    const active = RX_ORDER.filter(k => (c[k] | 0) > 0);
+    syncPlays(id, active);
     let row = el.querySelector(':scope > .rx-row');
     if (!hasReactions(c)) {
       if (row) { io.unobserve(row); row.querySelectorAll('.rx-g').forEach(untrackGlyph); row.remove(); }
@@ -96,11 +118,16 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
       ctx.putImageData(img, 0, 0); row.appendChild(tx);
       for (const it of layout.items) if (it.type === 'glyph') {
         const g = GLYPH_BOX[it.kind], cv = document.createElement('canvas');
-        cv.className = 'rx-g'; cv.dataset.kind = it.kind; cv.dataset.phase = String(hash(id, it.kind) % 1200);
+        cv.className = 'rx-g'; cv.dataset.kind = it.kind;
+        const mode = glyphMode(id, it.kind);
+        // Phase cancels `now` so a play starts at frame 0 and a redraw mid-second does not jump back.
+        const phase = mode === 'idle' ? 0 : -(mode.until - GLYPH_PLAY_MS);
+        cv.dataset.phase = String(phase);
+        stampMotion(cv, mode);
         sizeGlyph(cv, it.kind, sc.layer);
         cv.style.left = (it.x - (GLYPH_PAD + g.ox) * sc.fontPerArt) * fontPx + 'px';
         cv.style.top = (it.y - (GLYPH_PAD + g.oy) * sc.fontPerArt) * fontPx + 'px';
-        row.appendChild(cv); trackGlyph(cv, it.kind, +cv.dataset.phase);
+        row.appendChild(cv); trackGlyph(cv, it.kind, phase, mode);
       }
       row.dataset.key = key;
     }
@@ -211,15 +238,27 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     const prev = mine.has(id) ? mine.get(id) : null;
     const next = nextKind(prev, kind);
     const before = { ...(counts.get(id) || emptyCounts()) };
+    // Round 15.12d: the spell used to wait on store.react (a Firestore transaction), so the stamp spoke late.
+    // Start it on the tap. The write stays async. A success does not spell again. Clearing still poofs only
+    // after the delete lands — that path has no word to say, and a failed clear should stay silent.
+    if (next) {
+      const m = plays.get(id) || new Map();
+      m.set(next, performance.now() + GLYPH_PLAY_MS);
+      plays.set(id, m);
+      sfx('reactSay', { kind: next });
+    } else plays.get(id)?.delete(kind);
     pending.add(id); mine.set(id, next); counts.set(id, applyCounts(before, prev, next));
     renderRow(el); close({ light: true, placed: true });
     try {
       const res = await store.react(id, kind);
       mine.set(id, res.mine ?? null); counts.set(id, normalizeCounts(res.counts));
-      if (res.mine) sfx('reactSay', { kind: res.mine });   // placed (or switched): spell the word, then the stamp.
-      else sfx('poof');                                   // cleared: the same poof as the credits close and the noren egg. No babble.
+      if (!res.mine && !next) sfx('poof');
     } catch (err) {
       mine.set(id, prev); counts.set(id, before);
+      if (next) plays.get(id)?.delete(next);
+      // The optimistic row already marked `next` as seen. Put the previous kinds back so the
+      // rollback does not treat them as newly placed and play them.
+      settled.set(id, new Set(RX_ORDER.filter(k => (before[k] | 0) > 0)));
       onFail(err?.reason || 'could not react, try again');
     } finally { pending.delete(id); const node = document.querySelector(`.poem[data-id="${CSS.escape(id)}"]`); if (node) renderRow(node); }
   }
