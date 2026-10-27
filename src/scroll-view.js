@@ -86,7 +86,9 @@ export class ScrollView {
     const R = rng(hash(post.id, n));
     let left = chars;
     for (const l of L.lines) { if (left <= 0) break; const t = [...l.t].slice(0, left).join(''); left -= [...l.t].length; drawLine(buf, t, l.x + pad, l.y + pad, F, R); }
-    if (sig) drawLine(buf, L.sig.t, L.sig.x + pad, L.sig.y + pad, S, R, { color: [86, 80, 88] });
+    // rec.sigText === '' hides the painted byline so the reaction row can draw it (author, glyphs, date)
+    const sigText = rec.sigText != null ? rec.sigText : L.sig.t;
+    if (sig && sigText) drawLine(buf, sigText, L.sig.x + pad, L.sig.y + pad, S, R, { color: [86, 80, 88] });
     ditherBacking(buf, { solid: 1, fade: 4.5 });               // dithered paper behind the letters (art may peek in)
     if (seal) drawSeal(buf, n, L.seal.x + pad, L.seal.y + pad, R);
     ctx.putImageData(img, 0, 0);

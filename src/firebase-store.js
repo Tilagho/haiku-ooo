@@ -8,6 +8,8 @@
 // Collections (rules: firestore.rules; anything else in the project is denied):
 //   haikus/{id}                 { seq, text, author, uid, createdAt (server time), reports: 0, removed: false, hash }
 //   haikus/{id}/reports/{uid}   { at }                    one report per signed-in device per poem (the doc id IS the uid)
+//   poemRx/{poemId}             { cry, eyes, heart, star, flushed, relieved }   totals, public. heart = broken heart
+//   poemRx/{poemId}/by/{uid}    { kind, at }              that device's one reaction (round 15.11). Samples use id sample-01…
 //   haikuMeta/counter           { seq, last }             the last permanent number handed out, and to which poem
 //   haikuTexts/{sha256}         { post, uid }             duplicate lock: one poem per normalized (lower-cased) text
 //   haikuPosters/{uid}          { last, windowStart, n }  rate limit: MIN_GAP_S between posts, PER_HOUR per uid per hour
@@ -23,6 +25,7 @@
 import { checkHaiku } from './haiku.js';
 import { SEED } from './seed.js';
 import { TAKEDOWN_REPORTS, isReportable } from './moderation.js';
+import { emptyCounts, isKind, normalizeCounts } from './react-data.js';
 
 export const SDK_VERSION = '10.14.1';        // Firebase JS SDK, official gstatic ESM build
 export const MIN_GAP_S = 20, PER_HOUR = 12;   // keep in sync with firestore.rules (tests/round15_6c.test.js checks)
@@ -171,6 +174,50 @@ export class FirestoreStore {
       if (e.mine) throw e;
       throw err('report failed', { reason: 'could not report, try again', cause: e });
     }
+  }
+  // one reaction per anonymous uid. Tapping the kind you already have clears it; any other kind replaces it.
+  // The totals doc and the per-uid doc move in one transaction so firestore.reactions.rules can check the delta.
+  async react(id, kind) {
+    if (!isKind(kind) || !/^[A-Za-z0-9_-]{1,128}$/.test(id || '')) throw err('bad reaction', { reason: 'could not react, try again' });
+    const uid = await this.uid(), { F, db } = await this._init();
+    const parent = F.doc(db, 'poemRx', id), mine = F.doc(db, 'poemRx', id, 'by', uid);
+    try {
+      return await F.runTransaction(db, async tx => {
+        const p = await tx.get(parent), m = await tx.get(mine);
+        const counts = normalizeCounts(p.exists() ? p.data() : null);
+        const prev = m.exists() && isKind(m.data().kind) ? m.data().kind : null;
+        const next = prev === kind ? null : kind;
+        if (prev) counts[prev] = Math.max(0, counts[prev] - 1);
+        if (next) counts[next]++;
+        if (next) tx.set(mine, { kind: next, at: F.serverTimestamp() });
+        else if (m.exists()) tx.delete(mine);
+        tx.set(parent, counts);
+        return { mine: next, counts };
+      });
+    } catch (e) {
+      if (e.reason) throw e;
+      throw err('react failed', { reason: 'could not react, try again', cause: e });
+    }
+  }
+  async reactionCounts(ids) {
+    const want = [...new Set((ids || []).filter(id => /^[A-Za-z0-9_-]{1,128}$/.test(id || '')))];
+    const out = {};
+    if (!want.length) return out;
+    const { F, db } = await this._init();
+    for (let i = 0; i < want.length; i += 30) {
+      const chunk = want.slice(i, i + 30);
+      const q = F.query(F.collection(db, 'poemRx'), F.where(F.documentId(), 'in', chunk));
+      const snap = await F.getDocs(q);
+      snap.forEach(d => { out[d.id] = normalizeCounts(d.data()); });
+    }
+    for (const id of want) if (!out[id]) out[id] = emptyCounts();
+    return out;
+  }
+  async myReaction(id) {
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id || '')) return null;
+    const uid = await this.uid(), { F, db } = await this._init();
+    const s = await F.getDoc(F.doc(db, 'poemRx', id, 'by', uid));
+    return s.exists() && isKind(s.data().kind) ? s.data().kind : null;
   }
   async count() {
     try {
