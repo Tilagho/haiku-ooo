@@ -10,7 +10,7 @@ import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
 } from './react-data.js?v=15.11c';
-import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD } from './react-glyphs.js';
+import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD } from './react-glyphs.js?v=15.12c';
 import { sfx } from './sfx.js';
 
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)
@@ -29,6 +29,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
   pop.append(bcv, grid); document.body.appendChild(pop);
 
   const S = { picking: null, swallowUntil: 0, hold: null, armed: 0 };
+  let popGen = 0;
   const io = new IntersectionObserver(es => {
     for (const e of es) e.target.querySelectorAll('.rx-g').forEach(cv => {
       if (e.isIntersecting) { if (!cv._rx && cv.dataset.kind) trackGlyph(cv, cv.dataset.kind, +cv.dataset.phase || 0); }
@@ -152,26 +153,35 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     Object.assign(bcv.style, { left: drawn.ox * BU + 'px', top: drawn.oy * BU + 'px', width: drawn.W * BU + 'px', height: drawn.H * BU + 'px' });
   }
 
-  function close({ light = true } = {}) {
-    if (pop.hidden && !S.picking) return;
-    S.picking = null; pop.classList.remove('show');
-    const done = () => { pop.hidden = true; grid.querySelectorAll('.rx-g').forEach(untrackGlyph); grid.replaceChildren(); };
-    if (light && !reduced && !pop.hidden) pop.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, easing: 'steps(3, end)', fill: 'forwards' }).finished.then(done, done);
+  function close({ light = true, placed = false } = {}) {
+    if (!S.picking && pop.hidden) return;
+    if (!S.picking) return;   // the fade from the first close is already running
+    const shown = !pop.hidden;
+    const gen = ++popGen;
+    S.picking = null;
+    inky?.holdBubble?.('picker', false);   // the bubble is leaving: he may patrol again
+    if (shown && !placed) sfx('pickerBack');   // tap-out / escape / scroll. A placed (or cleared) kind keeps reactSay / poof only.
+    pop.classList.remove('show');
+    const done = () => { if (gen !== popGen) return; pop.hidden = true; grid.querySelectorAll('.rx-g').forEach(untrackGlyph); grid.replaceChildren(); };
+    if (light && !reduced && shown) pop.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, easing: 'steps(3, end)', fill: 'forwards' }).finished.then(done, done);
     else done();
   }
 
   async function open(el) {
     if (!el || busy() || !feed.recOf(el)) return;
+    const gen = ++popGen;
     const rec = feed.recOf(el), id = rec.post.id;
     hush();
     const poemAnchor = !inkyFree();
     S.picking = { el, id, poemAnchor }; S.armed = performance.now() + 420; S.swallowUntil = performance.now() + 700;
+    // His bubble, not the poem's: stop the roam slide before the picker is measured, and keep him there until close.
+    inky?.holdBubble?.('picker', !poemAnchor);
     if (!poemAnchor) { try { inky.setMood('happy'); } catch {} }
     try { await loadSprites(); } catch {}
     if (!mine.has(id) && store.myReaction) {
       try { mine.set(id, await Promise.race([store.myReaction(id), new Promise(r => setTimeout(() => r(mine.get(id) ?? null), 500))])); } catch {}
     }
-    if (S.picking?.id !== id) return;
+    if (gen !== popGen || S.picking?.id !== id) return;
     const sc = pickerScale((feed.viewOf(el) || feed.main).host.clientWidth, devicePixelRatio || 1);
     const wide = innerWidth >= 840;
     grid.className = 'rx-grid' + (wide ? ' is-row' : '');
@@ -183,7 +193,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     for (const k of RX_ORDER) {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'rx-btn' + (cur === k ? ' on' : '');
       b.dataset.kind = k; b.setAttribute('aria-label', RX_LABEL[k]); b.setAttribute('aria-pressed', cur === k ? 'true' : 'false');
-      const cv = document.createElement('canvas'); cv.className = 'rx-g'; sizeGlyph(cv, k, sc.css);
+      const cv = document.createElement('canvas'); cv.className = 'rx-g'; if (cur === k) cv.dataset.used = '1'; sizeGlyph(cv, k, sc.css);
       if (!wide) { const o = pickerGlyphOrigin(k, sc.css); cv.style.left = o.left + 'px'; cv.style.top = o.top + 'px'; }
       b.appendChild(cv); grid.appendChild(b); trackGlyph(cv, k, hash(id, k) % 800);
       b.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); if (performance.now() < S.armed) return; choose(id, el, k); });
@@ -193,6 +203,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     pop.style.width = bw * BU + 'px'; pop.style.height = bh * BU + 'px';
     pop.getAnimations?.().forEach(a => a.cancel()); pop.style.opacity = '1';
     placePop();
+    sfx('pickerChime');   // the selection bubble is up. Choosing still plays reactSay / poof, not this.
     if (!reduced) pop.animate([{ transform: 'translateY(4px) scale(.92)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 160, easing: 'steps(3, end)' });
   }
 
@@ -201,7 +212,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     const next = nextKind(prev, kind);
     const before = { ...(counts.get(id) || emptyCounts()) };
     pending.add(id); mine.set(id, next); counts.set(id, applyCounts(before, prev, next));
-    renderRow(el); close({ light: true });
+    renderRow(el); close({ light: true, placed: true });
     try {
       const res = await store.react(id, kind);
       mine.set(id, res.mine ?? null); counts.set(id, normalizeCounts(res.counts));
@@ -262,7 +273,8 @@ const RX_CSS = `
   touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .rx-grid:not(.is-row) .rx-btn { position: relative; padding: 0; width: var(--rx-cell, 51px); height: var(--rx-cell, 51px); overflow: visible; }
 .rx-grid:not(.is-row) .rx-btn .rx-g { position: absolute; }
-.rx-btn.on { background: #f0e2c4; }
+/* round 15.12c: no tan selection square. The face already on the poem is greyed in paintGlyph (dataset.used). */
+.rx-btn.on { background: transparent; }
 .rx-btn:active { transform: translateY(2px); }
 .rx-btn:focus-visible { outline: 3px solid #6b6670; outline-offset: -2px; }
 .rx-btn .rx-g { image-rendering: pixelated; pointer-events: none; display: block; }

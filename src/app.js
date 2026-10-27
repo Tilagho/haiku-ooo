@@ -3,7 +3,7 @@ import { createStore } from './store.js?v=15.11';
 import { ScrollView } from './scroll-view.js?v=15.11';
 import { loadLibrary } from './scroll-engine2.js';
 import SPRITES from './sprites6.js';
-import { Inky } from './inky.js';
+import { Inky } from './inky.js?v=15.12c';
 import { SpeechScheduler, readMs, CheerBag } from './inky-mind.js';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { clock } from './clock.js';
@@ -16,9 +16,9 @@ import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.11';     // round 15.6: hold the number seal, Inky asks to report it; TAKEDOWN_REPORTS take it down
-import { mountReactions } from './reactions.js?v=15.12b'; // round 15.12b: placing spells the word, then the stamp; clearing plays the existing poof
+import { mountReactions } from './reactions.js?v=15.12c'; // round 15.12c: used face is grey, Inky stays under the bubble, open/dismiss chimes
 import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
-import { mountSound } from './sound-wire.js?v=15.12b';   // round 15.12b: the clear path's comment lives with the poof sink note
+import { mountSound } from './sound-wire.js?v=15.12c';   // round 15.12c: pickerChime / pickerBack ride the same play() path as the other one-shots
 
 const $ = s => document.querySelector(s);
 // round 15.6b: one store handle for everything (compose, reports, the feed); `cur` swaps to this device's own board if the
@@ -169,22 +169,30 @@ function iconCanvas(rows, color) {
 }
 let lastPointer = ''; addEventListener('pointerdown', e => { lastPointer = e.pointerType; }, { capture: true, passive: true });
 const inkyFree = () => inky.entered && inky.visible && inky.mode === 'roam' && inky.mood !== 'splat';
+// round 15.12c: each Inky-anchored report bubble holds its own token, so a short "you reported this" line
+// cannot release the ask that replaced it (or the other way around).
+const reportPins = new Set();
+function pinReport() {
+  const token = {}; reportPins.add(token); inky.holdBubble('report', true);
+  return () => { if (!reportPins.delete(token)) return; if (!reportPins.size) inky.holdBubble('report', false); };
+}
 function ask(el, { already = false } = {}) {
   const anchor = inkyFree() ? null : el;
-  if (already) { if (anchor === null) inky.setMood('happy'); say('you reported this one', 1800, false, anchor); return Promise.resolve(false); }
+  const unpin = anchor === null ? pinReport() : () => {};
+  if (already) { if (anchor === null) inky.setMood('happy'); say('you reported this one', 1800, false, anchor); clock.wait(1900).then(unpin); return Promise.resolve(false); }
   return new Promise(resolve => {
     const row = document.createElement('span'); row.className = 'ask-row';
     const btn = (k, label, color) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ask-' + k; b.setAttribute('aria-label', label); b.appendChild(iconCanvas(ICON[k], color)); row.appendChild(b); return b; };
     const no = btn('no', 'no, do not report', IC_INK), yes = btn('yes', 'yes, report this haiku', IC_INK);   // both solid ink (t194u)
     const y0 = scrollY, onScroll = () => { if (Math.abs(scrollY - y0) > 80) end(false); };
     const key = e => { if (e.key === 'Escape') { e.preventDefault(); end(false); } };
-    const end = ans => { if (asking !== st) return; asking = null; removeEventListener('scroll', onScroll); removeEventListener('keydown', key, true); bubble.classList.remove('asking');
+    const end = ans => { if (asking !== st) return; asking = null; unpin(); removeEventListener('scroll', onScroll); removeEventListener('keydown', key, true); bubble.classList.remove('asking');
       if (!ans && anchor === null && inky.mode === 'roam') inky.setMood('happy');
       popBubble(); resolve(ans); };
     const st = { el, end }; asking = st;
     say('report?', 15000, false, anchor, row);   // round 15.10 (t205u): bigger report? + middle icons
     bubble.classList.add('asking'); bubble.setAttribute('role', 'dialog'); bubble.setAttribute('aria-label', 'report this haiku?');
-    if (anchor === null) { inky.setMood('worry'); inky.jump(.35); }
+    if (anchor === null) { inky.setMood('worry'); inky.jump(.35); }   // a small hop in place; the bubble follows. Patrol stays locked until end().
     no.addEventListener('click', e => { e.stopPropagation(); end(false); });
     yes.addEventListener('click', e => { e.stopPropagation(); end(true); });
     addEventListener('scroll', onScroll, { passive: true }); addEventListener('keydown', key, true);
@@ -224,7 +232,7 @@ $('#fab')?.addEventListener('click', writeTapped);
 // shuffle bag (src/inky-mind.js CHEERS). Busy elsewhere (held, splatted, asking about a report, compose open again): just the old little cheer hop.
 const cheers = new CheerBag();
 function celebratePost() {
-  if (!composing() && inkyFree() && !asking && inky.celebrate()) {
+  if (!composing() && inkyFree() && !asking && !pickerOpen() && !inky.bubbleHeld && inky.celebrate()) {
     sfx('inkyCelebrate');
     const line = cheers.next(); say(line, Math.max(2200, readMs(line) - 300));
     return line;

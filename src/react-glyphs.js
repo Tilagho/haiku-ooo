@@ -51,7 +51,21 @@ export function frameAt(kind, t) {
   return { i: 0, dx: 0, dy: 0 };
 }
 
+// The face this person already left on the poem: fully desaturated and pulled darker so it reads as
+// used, with no selection chip behind it. Opaque pixels only; the shake padding stays clear.
+// A bright gold (~luma 180) lands near 75, white eyes near 107, so the face still reads.
+export function dimUsedRGBA(data) {
+  for (let i = 0; i < data.length; i += 4) {
+    if (!data[i + 3]) continue;
+    const y = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    const v = Math.round(y * 0.42);
+    data[i] = data[i + 1] = data[i + 2] = v;
+  }
+  return data;
+}
+
 // Paint one frame into an art-px canvas. Returns false if the strip has not loaded yet.
+// cv.dataset.used === '1' (the picker face already on this poem) is greyed every frame.
 export function paintGlyph(cv, kind, t, reduced = false) {
   const img = imgs.get(kind), g = GLYPH_BOX[kind];
   if (!img || !g) return false;
@@ -62,6 +76,7 @@ export function paintGlyph(cv, kind, t, reduced = false) {
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, W, H);
   ctx.drawImage(img, fr.i * g.w, 0, g.w, g.h, PAD + fr.dx, PAD + fr.dy, g.w, g.h);
+  if (cv.dataset?.used === '1') { const imgd = ctx.getImageData(0, 0, W, H); dimUsedRGBA(imgd.data); ctx.putImageData(imgd, 0, 0); }
   return true;
 }
 
