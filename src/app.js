@@ -236,6 +236,7 @@ function addNewPost(post) {
   const { node, played } = view.add(post, { animate: true });      // the poem types in, then its kanji seal is stamped
   requestAnimationFrame(() => view.scrollToPoem(node, reduced ? 'auto' : 'smooth'));
   played.then(() => celebratePost());
+  reports?.markAll(); reactions?.refresh();                        // a poem you just wrote can be reported (the seal) and reacted to
   return node;
 }
 
