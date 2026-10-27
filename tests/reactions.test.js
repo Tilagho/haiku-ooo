@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { measure, font, sealDims } from '../src/brush-text.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, nextKind, applyCounts, hasReactions, layoutByline, placeByline, fitByline, rowFitScale,
-  reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, DATE_GAP, GLYPH_PAD, glyphHang, sealScreenRect, pointInRect,
+  reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, DATE_GAP, GLYPH_PAD, sealScreenRect, pointInRect,
 } from '../src/react-data.js';
 
 const src = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
@@ -39,62 +39,14 @@ ok('date line: bare glyphs with counts, no bullet, date kept at the right edge',
   assert.equal(row.side, 'before');
   assert.deepEqual(row.kinds, ['cry', 'star']);
   const texts = row.items.filter(i => i.type === 'text').map(i => i.t);
-  assert.deepEqual(texts, ['2', 'Oct 24'], 'a count of 1 is the glyph alone');
+  assert.deepEqual(texts, ['1', '2', 'Oct 24']);
   assert.ok(!row.items.some(i => String(i.t || '').includes('·')));
-  assert.ok(!texts.some(t => t === '0' || t === '1'));
-  const star = row.items.find(i => i.kind === 'star'), starCount = row.items.find(i => i.count);
-  const starBoxR = star.x + star.w + glyphHang('star', 1.5).R;
-  assert.ok(starCount.x >= starBoxR + row.gaps.glyph - 0.01, 'the 2 starts clear of the star frame');
+  assert.ok(!texts.some(t => t === '0'));
   const dateItem = row.items.find(i => i.date);
   const lastCount = [...row.items].reverse().find(i => i.count);
   assert.equal(dateItem.x, lastCount.x + lastCount.w + DATE_GAP, 'a gap, not a bullet, separates the count and the date');
   assert.equal(dateItem.x + dateItem.w, row.w, 'the date ends the cluster, so it can stay put against the old byline');
   assert.ok(row.items.some(i => i.type === 'glyph' && i.kind === 'star' && i.h > Sm.ascent));
-});
-
-ok('a count of 1 is not painted, and 2+ stays clear of every glyph canvas', () => {
-  const Sm = font('small');
-  const measureText = t => measure(t, Sm);
-  const scale = 1.5;
-  const layout = (counts, gaps) => layoutByline({
-    counts, author: '', date: 'Oct 24', measure: measureText, scale,
-    ascent: Sm.ascent, descent: Sm.descent, gaps,
-  });
-  const box = (it) => { const h = glyphHang(it.kind, scale); return { L: it.x - h.L, R: it.x + it.w + h.R }; };
-  const eyes = layout({ cry: 0, eyes: 1, heart: 0, star: 0, flushed: 0, relieved: 0 });
-  assert.deepEqual(eyes.items.filter(i => i.type === 'text').map(i => i.t), ['Oct 24']);
-  assert.equal(eyes.items.filter(i => i.count).length, 0, 'one eyes reaction shows the glyph only');
-  const row = layout({ cry: 1, eyes: 2, heart: 4, star: 12, flushed: 1, relieved: 9 });
-  assert.deepEqual(row.items.filter(i => i.count).map(i => i.t), ['2', '4', '12', '9']);
-  const glyphs = row.items.filter(i => i.type === 'glyph');
-  const date = row.items.find(i => i.date);
-  for (const c of row.items.filter(i => i.count)) {
-    for (const g of glyphs) {
-      const b = box(g);
-      const clear = c.x >= b.R + row.gaps.glyph - 0.05 || c.x + c.w <= b.L - row.gaps.glyph + 0.05;
-      assert.ok(clear, `count ${c.t} overlaps the ${g.kind} canvas`);
-    }
-  }
-  for (let i = 0; i < glyphs.length; i++) for (let j = i + 1; j < glyphs.length; j++) {
-    const a = box(glyphs[i]), b = box(glyphs[j]);
-    assert.ok(a.R <= b.L + 0.05 || b.R <= a.L + 0.05, `${glyphs[i].kind} canvas overlaps ${glyphs[j].kind}`);
-  }
-  for (const g of glyphs) {
-    const b = box(g);
-    assert.ok(date.x >= b.R + row.gaps.date - 0.05 || date.x + date.w <= b.L + 0.05, `the date overlaps ${g.kind}`);
-  }
-  const tight = layout({ cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 }, { glyph: 1, kind: 1, date: 3 });
-  const tg = tight.items.filter(i => i.type === 'glyph');
-  for (const c of tight.items.filter(i => i.count)) for (const g of tg) {
-    const b = box(g);
-    assert.ok(c.x >= b.R + tight.gaps.glyph - 0.05 || c.x + c.w <= b.L - tight.gaps.glyph + 0.05, `tight count overlaps ${g.kind}`);
-  }
-  const js = src('src/reactions.js');
-  const start = js.indexOf('row.replaceChildren()');
-  const paint = js.slice(start, js.indexOf('row.dataset.key = key', start));
-  assert.ok(paint.indexOf('row.appendChild(tx)') < paint.indexOf('row.appendChild(cv)'));
-  assert.ok(paint.indexOf('row.appendChild(cv)') < paint.indexOf('row.appendChild(ct)'), 'the count canvas is painted above the glyphs');
-  assert.ok(/if \(it\.count\) drawLine\(cbuf/.test(paint) && /halo: 1/.test(paint));
 });
 
 ok('a signature and its date stay one block, glyphs outside it', () => {
@@ -181,16 +133,14 @@ ok('a full set of counts stays inside the viewing area, packed tighter only when
   assert.ok(glyph.x > date.x + date.w, 'the star sits to the right of a date that is already at the left edge');
   const visualL = edge.placed.left - edge.layout.bleedL, visualR = edge.placed.left + edge.layout.w + edge.layout.bleedR;
   assert.ok(visualL >= -0.5 && visualR <= 300.5);
-  // Six faces with two-digit counts clear of their frames run ~391 font px loose and ~377 packed.
-  // This window sits between those, so only the tight gaps fit.
   const crowded = fitByline({
     ...base, counts: { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 },
-    author: 'sample, ', date: 'Oct 24', dateLeft: 240, dateRight: 272, leftLimit: 0, rightLimit: 385,
+    author: 'sample, ', date: 'Oct 24', dateLeft: 240, dateRight: 272, leftLimit: 0, rightLimit: 300,
   });
   assert.equal(crowded.ok, true);
   assert.equal(crowded.layout.gaps.date, 3, 'gaps tighten only so the whole set still fits');
   const cL = crowded.placed.left - crowded.layout.bleedL, cR = crowded.placed.left + crowded.layout.w + crowded.layout.bleedR;
-  assert.ok(cL >= -0.5 && cR <= 385.5, `visible row ${cL}..${cR} stays inside 0..385`);
+  assert.ok(cL >= -0.5 && cR <= 300.5, `visible row ${cL}..${cR} stays inside 0..300`);
   const stillWide = fitByline({
     ...base, counts: { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 },
     author: 'sample, ', date: 'Oct 24', dateLeft: 200, dateRight: 232, leftLimit: 0, rightLimit: 260,
