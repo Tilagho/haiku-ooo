@@ -74,7 +74,7 @@ export class Inky {
   resize() {
     this.cw = Math.ceil(innerWidth / P); this.ch = Math.ceil(innerHeight / P);
     this.cv.width = this.cw; this.cv.height = this.ch; this.cv.style.width = this.cw * P + 'px'; this.cv.style.height = this.ch * P + 'px'; this.img = this.ctx.createImageData(this.cw, this.ch);
-    if (this.mode === 'roam') { this.floor = this.pageFloor(); if (this.grounded) this.fy = this.floor; if (this.entered) this.targetX = this.homeX(this.side); }
+    if (this.mode === 'roam') { this.floor = this.pageFloor(); if (this.grounded) this.fy = this.floor; if (this.entered && !this.bubbleHeld) this.targetX = this.homeX(this.side); }
   }
   // where he floats: a little above the write-button scroll, from its RESTING geometry (it animates during compose)
   fabRest() {
@@ -95,6 +95,19 @@ export class Inky {
   get sy() { return this._sy ?? 1; } set sy(v) { this._sy = v; }
   setMood(m) { if (this.mood !== m) { this.mood = m; if (m === 'cheer') this.jump(1.1); if (m === 'worry') this.shiver = .6; if (m === 'happy') this.wobble(.25); } }
   placeAt(xcss, footCss) { this.x = xcss / P; this.fy = footCss / P; this.vx = this.vy = 0; this.targetX = null; this.entered = true; }
+  // round 15.12c: while his reaction picker or report bubble is open he is the speaker, so the roam
+  // patrol stays parked. Reasons stack — a short "you reported this" line must not release a later ask.
+  holdBubble(reason, on) {
+    if (!this._bubbleWhy) this._bubbleWhy = new Set();
+    if (on) this._bubbleWhy.add(reason); else this._bubbleWhy.delete(reason);
+    if (this.bubbleHeld) this.plant();
+  }
+  get bubbleHeld() { return !!this._bubbleWhy?.size; }
+  plant() {
+    if (this.targetX != null) { this.targetX = null; const f = this._slid; this._slid = null; f?.(); }
+    this.vx = 0;
+    if (!this.grounded && this.mode === 'roam' && this.floor != null) { this.fy = this.floor; this.vy = 0; this.grounded = true; this.flung = false; }
+  }
   wobble(k = .4) { if (this.reduced) k *= .4; this.sv += 9 * k; this.rim.forEach(r => { r.vx += Math.cos(r.a * 2 + this.t) * 18 * k; r.vy += Math.sin(r.a * 3) * 18 * k; }); }
   jump(k = 1, vx = 0) { if (!this.grounded && this.floor != null) return; if (this.reduced) k *= .5; this.vy = -95 * k; this.vx = vx; this.grounded = false; this.s = -.25; this.sv = -4; }
   hopTo(xcss, footCss, T = .5, height = 22) {   // ballistic hop that lands at a css point after ~T s
@@ -155,6 +168,7 @@ export class Inky {
     e.preventDefault();
     const now = clock.now() / 1000, x = e.clientX, y = e.clientY;
     if (!this.drag) {
+      if (this.bubbleHeld) return;   // the open bubble owns him; a drag would walk him out from under it
       if (Math.hypot(x - p0.x, y - p0.y) < DRAG_START) return;
       // picked up: grab offset from his foot, the spin tracker starts on the finger
       this.drag = { ox: x / P - this.x, oy: y / P - this.fy, tx: this.x, ty: this.fy, cx: x, cy: y, a: null, turn: 0, last: now, w: 0, fast: 0, px: x, py: y };
@@ -229,7 +243,7 @@ export class Inky {
   // at every take-off, and pixel music notes floating up off him. A hop waits for him to be back on his float line (so they never cut each
   // other short). Reduced motion: one small hop, no spin, no notes. Only from 'roam' (not while he is splatted, held or in compose).
   celebrate() {
-    if (!this.visible || this.mode !== 'roam' || this.splatT > 0 || this.drag) return false;
+    if (!this.visible || this.mode !== 'roam' || this.splatT > 0 || this.drag || this.bubbleHeld) return false;
     this.reading = 0; this.targetX = null; this._slid = null; this.mood = 'cheer'; this.puff = 0; this.shiver = 0; this.giggle = 0;
     this.party = this.reduced ? 1.6 : 2.4; this.partyT = 0; this.hopN = 0;
     this.hops = this.reduced ? [[.1, .45, 0]] : [[.1, .9, 0], [.72, .75, 0], [1.3, 1.1, .9]];   // [not before (s), height, spin]
@@ -253,12 +267,17 @@ export class Inky {
   roam(dt) {
     if (this.splatT > 0) { this.splatT -= dt; if (this.splatT <= 0) this.popUp(); return; }
     // drift back up to the float line above the write button (e.g. after the compose drain set him down lower)
-    if (this.grounded && this.visible) { const pf = this.pageFloor(); if (Math.abs(this.fy - pf) > .05) { this.floor = pf; this.fy += (pf - this.fy) * Math.min(1, dt * 5); } }
+    if (this.grounded && this.visible && !this.bubbleHeld) { const pf = this.pageFloor(); if (Math.abs(this.fy - pf) > .05) { this.floor = pf; this.fy += (pf - this.fy) * Math.min(1, dt * 5); } }
     const now = clock.now();
     if (this.meter.mood(now) === 'calm' && (this.mood === 'mad' || this.mood === 'annoyed')) { this.setMood('happy'); this.puff = 0; }
     this.puff = Math.max(0, this.puff - dt * (this.mood === 'mad' ? .05 : .6));
     if (this.mood === 'mad' && !this.reduced && Math.random() < dt * 2.5) { this.shiver = .25; this.steam.push({ x: this.x + rnd(-3, 3), y: this.fy - this.R * 2.1, vy: -rnd(14, 22), life: rnd(.5, .8), side: Math.sign(rnd(-1, 1)) }); }
     if (!this.entered || this.reduced) return;
+    // round 15.12c: picker or report bubble is his. Freeze the patrol clock and kill a slide already in motion.
+    if (this.bubbleHeld) {
+      if (this.targetX != null) { this.targetX = null; if (this.grounded) this.vx = 0; }
+      return;
+    }
     // slide over to the other end of the button now and then
     this.roamT -= dt;
     if (this.roamT <= 0 && this.grounded && this.targetX == null && this.mood !== 'mad') {
@@ -287,7 +306,7 @@ export class Inky {
     if (this.party > 0) {                                        // round 15.10: the celebration (celebrate())
       this.party -= dt; this.partyT += dt; this.reading = 0;
       const h = this.hops[0];
-      if (h && this.partyT >= h[0] && this.grounded && this.mode === 'roam') { this.hops.shift(); this.jump(h[1]); this.onSfx?.('celebrateHop', { i: this.hopN++, spin: !!h[2] }); if (h[2]) this.spin = h[2]; this.confetti(this.reduced ? 6 : h[2] ? 20 : 12); this.wobble(.6); }
+      if (h && this.partyT >= h[0] && this.grounded && this.mode === 'roam' && !this.bubbleHeld) { this.hops.shift(); this.jump(h[1]); this.onSfx?.('celebrateHop', { i: this.hopN++, spin: !!h[2] }); if (h[2]) this.spin = h[2]; this.confetti(this.reduced ? 6 : h[2] ? 20 : 12); this.wobble(.6); }
       if (!this.reduced && Math.random() < dt * 3.2) this.notes.push({ x: this.x + rnd(-this.R, this.R), y: this.fy - this.R * 2.3, vx: rnd(-6, 6), vy: -rnd(16, 24), life: rnd(.9, 1.3), color: Math.random() < .5 ? INK : GOLD });
       if (this.party <= 0 || this.mode !== 'roam' || this.splatT > 0) { this.party = 0; this.hops = []; if (this.mood === 'cheer') { this.mood = 'happy'; this.giggle = .6; this.wobble(.3); } }
     }

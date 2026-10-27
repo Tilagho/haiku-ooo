@@ -808,6 +808,26 @@ const fxShots = {
     mallet(E, t + 0.15, g, 1046.5, 0.18, 0.34, 0.22);
     chime(E, t + 0.15, g, 1568, 0.04, 0.5, 0.12);
   },
+  // round 15.12c: Inky opens the reaction picker. A short ink hello, then two kalimba notes rising a fourth
+  // (A5 → D6) and one glass wink. Same mallet/chime family as reactStamp and inkyCelebrate, a smaller gesture.
+  // The place path stays reactSay + reactStamp. Audible length ~0.55 s.
+  pickerChime(E, t) {
+    const d0 = fxOut(E), d = E.gain(1.65), ink = inkyOut(E); d.connect(d0);
+    bloop(E, t, ink, 300, 480, 0.1, 0.22, 'triangle');
+    plip(E, t + 0.05, ink, { f: 620, amp: 0.08, dur: 0.05, rise: 1.6 });
+    mallet(E, t + 0.07, d, 880, 0.13, 0.22, -0.2);
+    mallet(E, t + 0.18, d, 1174.7, 0.15, 0.36, 0.16);
+    chime(E, t + 0.18, d, 1760, 0.04, 0.5, 0.22);
+  },
+  // round 15.12c: the picker closed without a choice (tap-out, escape, scroll). The same notes coming back down,
+  // softer, settling a step lower, plus a quiet falling ink sigh. Not an error beep and not sadNotes.
+  pickerBack(E, t) {
+    const d0 = fxOut(E), d = E.gain(1.25), ink = inkyOut(E); d.connect(d0);
+    mallet(E, t, d, 1174.7, 0.11, 0.18, 0.12);
+    mallet(E, t + 0.12, d, 880, 0.12, 0.26, -0.1);
+    mallet(E, t + 0.26, d, 659.3, 0.075, 0.34, -0.04);
+    bloop(E, t + 0.24, ink, 360, 200, 0.18, 0.06, 'sine');
+  },
   // round 15.3 (Tiago: 'when text is copied there needs to be a little tiny charm sound'): a successful copy: three tiny glass tinks
   // rising (B6, E7, G#7: an E-major sparkle), soft and close, with a faint high shimmer; ~0.35 s. Quiet: well under the other one-shots.
   copyCharm(E, t) {
@@ -1135,6 +1155,16 @@ function churnVoice(E, inky, t0) {
     duck(t, s) { dk.gain.cancelScheduledValues(t); dk.gain.setTargetAtTime(1 - 0.7 * clamp(s), t, 0.01); dk.gain.setTargetAtTime(1, t + 0.09, 0.08); },   // get out of the way of the wall slap
     stop(t) { out.gain.setTargetAtTime(0, t, 0.12); for (const n of [s1, s2, l1.o, l2.o]) n.stop(t + 0.8); if (sp > 0.3) plip(E, t, d, { f: 420 * k, amp: 0.12, dur: 0.07 }); },
   };
+}
+
+// Offline render of one one-shot (pickerChime / pickerBack demos). No bed, no files. ~1 s is enough for either cue.
+export async function renderShot(name, dur = 1.15) {
+  if (!SHOTS[name]) throw new Error('unknown shot ' + name);
+  const oc = new OfflineAudioContext(2, Math.ceil(44100 * dur), 44100);
+  const E = new SoundEngine({ settings: { ...SITE_LEVELS, master: { volume: 1 } }, persist: false, water: false });
+  E.muted = false; E.attach(oc);
+  E.play(name, { when: 0.02 });
+  return oc.startRendering();
 }
 
 // Offline render of one reaction word plus its stamp chime (demo clips, tests). No bed, no files.
