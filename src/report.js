@@ -1,4 +1,6 @@
-// Round 15.6 (Tiago, t181u) + 15.6b (t183u): hold down on a user-submitted poem to report it. There is no report UI of
+// Round 15.6 (Tiago, t181u) + 15.6b (t183u): hold the number seal of a user-submitted poem to report it.
+// Round 15.11: the hold moved off the poem body (that opens the reaction picker, src/reactions.js) and onto the
+// seal alone — the red kanji stamp, plus the 通報 mark if it is already there. There is no report UI of
 // its own: INKY asks ("report") in his speech bubble with a simple ✕ / ✔ inside it, so the whole flow is
 // his (app.js `ask`). ✔ files the report; enough unique reporters (TAKEDOWN_REPORTS, src/moderation.js) take the poem
 // down for everyone. Whoever reported it sees a plain 通報 ('reported') beside that poem's number seal, in the same
@@ -7,6 +9,7 @@
 // The long-press never fights the scroll: a finger that drifts LONG_PRESS_SLOP px, a pointercancel (the browser took
 // the gesture for scrolling) or any scroll cancels it, and the tap-to-copy only happens when the hold did not fire.
 import { TAKEDOWN_REPORTS, REPORT_MARK, LONG_PRESS_MS, LONG_PRESS_SLOP, deviceId, isReportable, ReportLedger } from './moderation.js';
+import { poemZone } from './react-data.js';
 import { sealDims } from './brush-text.js';
 import { SCROLL_W } from './scroll-engine2.js';
 
@@ -30,13 +33,14 @@ export function mountReports({ feed, store, ask, reduced = false, onReported = (
   if (!document.getElementById('rpt-css')) { const st = document.createElement('style'); st.id = 'rpt-css'; st.textContent = REPORT_CSS; document.head.appendChild(st); }
   const recOf = el => feed.recOf(el);
   const S = { asking: null, swallowUntil: 0, hold: null };
-  const poemAt = e => { const el = e.target.closest?.('.poem'); return el && recOf(el) ? el : null; };
+  // round 15.11: only the number seal (and the 通報 mark) starts a report. The poem body is the reaction picker.
+  const stampAt = e => { const z = poemZone(e, feed); return z?.stamp && isReportable(z.rec.post) ? z.el : null; };
 
-  // ---------- long-press (anywhere on the shared scroll: the newest block and every older one) ----------
+  // ---------- long-press the seal (newest block and every older one) ----------
   function cancelHold() { if (!S.hold) return; clearTimeout(S.hold.t); S.hold.el.classList.remove('rpt-holding'); S.hold = null; }
   document.addEventListener('pointerdown', e => {
     if (e.button > 0 || S.asking || busy()) return;
-    const el = poemAt(e); if (!el || !isReportable(recOf(el)?.post)) return;
+    const el = stampAt(e); if (!el) return;
     cancelHold();
     const x = e.clientX, y = e.clientY;
     S.hold = { el, x, y, pid: e.pointerId, t: setTimeout(() => {
@@ -53,9 +57,9 @@ export function mountReports({ feed, store, ask, reduced = false, onReported = (
   document.addEventListener('click', e => { if (performance.now() < S.swallowUntil && e.target.closest?.('.poem')) { e.stopPropagation(); e.preventDefault(); S.swallowUntil = 0; } }, true);
   // right-click / the keyboard's context-menu key / Android's own long-press event: Inky asks too (never the browser menu)
   document.addEventListener('contextmenu', e => {
-    const el = poemAt(e); if (!el) return; e.preventDefault();
-    if (S.asking || busy() || !isReportable(recOf(el)?.post)) return;
-    cancelHold(); S.swallowUntil = performance.now() + 900; open(el);
+    const z = poemZone(e, feed); if (!z) return; e.preventDefault();
+    if (!z.stamp || S.asking || busy() || !isReportable(z.rec.post)) return;
+    cancelHold(); S.swallowUntil = performance.now() + 900; open(z.el);
   });
 
   // ---------- Inky asks ----------
@@ -112,7 +116,8 @@ export function mountReports({ feed, store, ask, reduced = false, onReported = (
   function markAll() {
     document.querySelectorAll('.poem').forEach(el => {
       const post = recOf(el)?.post; if (!isReportable(post)) return;
-      if (!/hold to report/.test(el.getAttribute('aria-label') || '')) el.setAttribute('aria-label', el.getAttribute('aria-label') + ', hold to report');
+      if (!el.dataset.label) el.dataset.label = (el.getAttribute('aria-label') || '').split(', hold')[0].split(', reactions:')[0];
+      el.dataset.reportable = '1';
       if (ledger.has(post.id) && !el.querySelector('.rpt-mark')) stampMark(el);
     });
   }

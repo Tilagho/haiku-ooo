@@ -1,6 +1,6 @@
 import { checkHaiku } from './haiku.js';
-import { createStore } from './store.js';
-import { ScrollView } from './scroll-view.js';
+import { createStore } from './store.js?v=15.11';
+import { ScrollView } from './scroll-view.js?v=15.11';
 import { loadLibrary } from './scroll-engine2.js';
 import SPRITES from './sprites6.js';
 import { Inky } from './inky.js';
@@ -15,7 +15,8 @@ import { mountNoren } from './noren.js?v=15.10j';   // round 15.10j (t237u): per
 import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
-import { mountReports } from './report.js';     // round 15.6: hold a user poem, Inky asks to report it; TAKEDOWN_REPORTS take it down (src/moderation.js)
+import { mountReports } from './report.js?v=15.11';     // round 15.6: hold the number seal, Inky asks to report it; TAKEDOWN_REPORTS take it down
+import { mountReactions } from './reactions.js?v=15.11'; // round 15.11: hold the poem body for the reaction picker
 import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js?v=15.10i';   // round 15.0: synthesized sound (starts on the first tap; toggle in the header)
 
@@ -23,7 +24,8 @@ const $ = s => document.querySelector(s);
 // round 15.6b: one store handle for everything (compose, reports, the feed); `cur` swaps to this device's own board if the
 // shared scroll cannot be reached (see `booted` below)
 const store = { cur: createStore(), get shared() { return this.cur.shared; }, list(o) { return this.cur.list(o); }, create(t, o) { return this.cur.create(t, o); },
-  report(id, o) { return this.cur.report(id, o); }, count() { return this.cur.count(); } };
+  report(id, o) { return this.cur.report(id, o); }, count() { return this.cur.count(); },
+  react(id, kind) { return this.cur.react(id, kind); }, reactionCounts(ids) { return this.cur.reactionCounts(ids); }, myReaction(id) { return this.cur.myReaction(id); } };
 const bubble = $('#bubble'), bcv = document.createElement('canvas'); bcv.className = 'bcv';
 const reduced = prefersReducedMotion();
 
@@ -94,7 +96,7 @@ function incoming(post) {
     const { played } = view.add(post, { animate: true });
     played.then(() => { if (inky.mode === 'roam' && inky.visible && bubble.hidden && !asking) { say('a new haiku!', 1400); } });
   } else { const h0 = document.documentElement.scrollHeight; view.add(post); const d = document.documentElement.scrollHeight - h0; if (d && scrollY > 0) scrollBy({ top: d, behavior: 'instant' }); }
-  reports?.markAll();
+  reports?.markAll(); reactions?.refresh();
 }
 
 // ---------- Inky: the ink-drop mascot (canvas overlay) + his pixel speech bubble ----------
@@ -105,8 +107,9 @@ inky.placeAt(-80, innerHeight - 78); inky.entered = false; inky.floor = inky.pag
 let bubbleUntil = 0, bubbleAnchor = null, popping = false, popTok = 0;   // popTok: a new bubble voids a pop still in flight (round 15.6b)
 const speech = new SpeechScheduler();
 let asking = null;      // round 15.6b: Inky is asking whether to report a poem; nothing else talks over him
+let pickerOpen = () => false;   // round 15.11: the reaction picker is up
 function say(text, ms = readMs(String(text)), big = false, anchor = null, extra = null) {
-  if (asking && !extra) return;
+  if ((asking && !extra) || pickerOpen()) return;
   bubbleAnchor = anchor; bubble.classList.remove('asking'); popTok++; popping = false; bubble.getAnimations?.().forEach(a => a.cancel());
   bubble.classList.add('px'); bubble.innerHTML = ''; const t = document.createElement('span'); t.className = 'bt';
   String(text).split('\n').forEach((l, i) => { if (i) t.appendChild(document.createElement('br')); t.appendChild(document.createTextNode(l)); });
@@ -204,14 +207,16 @@ clock.onTick(() => {
 // HB.onWrite (default: the compose flow, src/compose.js) runs after the roll-up; `haiku:write` fires on window at the same moment.
 let rolling = false;
 const composing = () => !!compose?.opened || !!compose?.busy || document.body.classList.contains('composing');
+let closeReactions = () => {};
 async function writeTapped() {
+  closeReactions();
   if (composing() || rolling) return; rolling = true;
   sfx('fabRoll');                                   // round 15.2: the button rolls itself up: the crunchy old-paper roll (the write scroll's roll-up sound), once, at the tap
   try { await fabArt?.rollUp(); } finally { rolling = false; }
   window.dispatchEvent(new CustomEvent('haiku:write'));
   await (window.HB?.onWrite || openCompose)();
 }
-const openCompose = () => compose?.open();
+const openCompose = () => { closeReactions(); return compose?.open(); };
 $('#fab')?.addEventListener('click', writeTapped);
 
 // round 15.10 (Tiago t204u, t208u): YOUR poem has landed and its number seal just settled: board Inky celebrates (src/inky.js celebrate:
@@ -265,21 +270,27 @@ const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardB
 const sound = mountSound({ view, inky, clock });
 // round 15.6: reports. Inky thanks whoever reported (or a small float note if he is busy elsewhere)
 // round 15.6b: the shared scroll (src/feed.js) and reports (src/report.js: Inky asks, then thanks whoever reported)
-let reports = null;
+let reports = null, reactions = null;
 const feed = new Feed({ main: view, store, seed: 31, makeSegment, sentinel, busy: () => composing() || rolling,
-  onIncoming: incoming, onPainted: () => reports?.markAll() });
-reports = mountReports({ feed, store, ask, reduced, busy: () => composing() || !!asking, onReported: ({ removed, el, error }) => {
+  onIncoming: incoming, onPainted: () => { reports?.markAll(); reactions?.refresh(); } });
+reports = mountReports({ feed, store, ask, reduced, busy: () => composing() || !!asking || !!reactions?.picking, onReported: ({ removed, el, error }) => {
   const r = el?.getBoundingClientRect?.(), text = error ? 'hm, that did not go through.\ntry again?' : removed ? 'poof! it is gone' : 'thank you!\nreported';
   if (!composing() && inkyFree()) { inky.setMood(error ? 'worry' : 'cheer'); if (!error) inky.jump(.6); say(text, 1600); clock.wait(1200).then(() => inky.mode === 'roam' && inky.setMood('happy')); }
   else floatNote(error ? 'could not report' : removed ? 'removed' : 'reported', r ? r.left + r.width / 2 : innerWidth / 2, r ? r.top : innerHeight / 2);
 } });
+// round 15.11: hold the poem body → Inky's bubble of six glyphs. Hold the seal → report (above).
+reactions = mountReactions({ feed, store, inky, inkyFree, reduced, busy: () => composing() || !!asking || !!reports?.asking,
+  hush: () => { if (!asking) popBubble(); },
+  onFail: msg => { const x = innerWidth / 2, y = innerHeight / 2; if (!composing() && inkyFree()) { inky.setMood('worry'); say(msg, 1600); } else floatNote(msg, x, y); } });
+pickerOpen = () => !!reactions?.picking;
+closeReactions = () => reactions?.close();
 // the shared scroll unreachable (offline, server down): fall back to this device's own board so the page still works
 const booted = feed.boot().catch(async e => {
   console.warn('feed: shared scroll unreachable, using this device only', e);
   const { LocalStore } = await import('./store.js'); store.cur = new LocalStore();
   feed.segments.length = 0; feed.done = false; feed.low = Infinity; feed.pending = []; feed.painted.clear();
   return feed.boot();
-}).then(() => { reports.markAll(); feed.startPolling(); store.cur.warm?.(); });   // 15.6c: Firestore signs this phone in anonymously in the background
+}).then(() => { reports.markAll(); reactions?.refresh(); feed.startPolling(); store.cur.warm?.(); });   // 15.6c: Firestore signs this phone in anonymously in the background
 // round 15.10g: the boot Inky (index.html) steps aside as soon as the feed has painted (or given up), just before the real one slips in
 // round 15.10h (t230u/t231u): the staged boot (src/boot-inky.js): after a ~1 s minimum beat his bar tops up, the board fades in and he swooshes
 // off to the top-right; bootDone resolves once he is gone + a 500 ms beat (15.10h2, t232u), then the board's black Inky rolls in from the bottom-left
@@ -290,7 +301,7 @@ booted.then(() => bootDone).then(() => { if (!composing()) inky.enter(); else in
 
 // test hooks for screenshots / e2e
 // Public hooks (see README, "Seal-stamp hook"): the compose flow calls HB.addPost(post) or the pieces directly.
-window.HB = { feed, ask, asking: () => asking, sound, reports, credits, view, inky, clock, booted, bootDone, fabArt, noren, compose, wind, writeTapped, onWrite: null,
+window.HB = { feed, ask, asking: () => asking, sound, reports, reactions, credits, view, inky, clock, booted, bootDone, fabArt, noren, compose, wind, writeTapped, onWrite: null,
   rollUpButton: ms => fabArt?.rollUp(ms) ?? Promise.resolve(), unrollButton: ms => fabArt?.unroll(ms) ?? Promise.resolve(), copyText, copyPoem, lastCopied: () => lastCopied, stampDemo,
   typePoem: (el, o) => view.typePoem(el, o), stampSeal: (el, o) => view.stampSeal(el, o), addPost: addNewPost,
   openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say, speech, popBubble,

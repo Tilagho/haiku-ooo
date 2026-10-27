@@ -4,6 +4,9 @@
 //     list({ beforeSeq?, afterSeq?, limit? }): Promise<{ posts: Post[] /* newest first */, nextBeforeSeq: number|null, maxSeq: number }>
 //     create(text: string, { author?: string }): Promise<Post>   // throws { reason } if not a haiku / rejected
 //     report(id: string, { reporter: string }): Promise<{ count, already, removed }>   // round 15.6 (src/moderation.js)
+//     react(id, kind): Promise<{ mine: kind|null, counts }>   // round 15.11, one kind per person (src/react-data.js)
+//     reactionCounts(ids): Promise<{ [id]: counts }>
+//     myReaction(id): Promise<kind|null>
 //   }
 //   type Post = { id, seq /* its permanent number = the kanji seal */, text /* 3 lines joined by \n */, createdAt /* ms */,
 //                 author? ('' = unsigned), sample? }
@@ -19,11 +22,12 @@
 //   reference, not deployed). An HTTP server MUST re-run checkHaiku() itself; the client check is only live feedback.
 import { checkHaiku } from './haiku.js';
 import { SEED } from './seed.js';
-import { tally, isRemoved, isReportable } from './moderation.js';
+import { tally, isRemoved, isReportable, deviceId } from './moderation.js';
+import { applyCounts, emptyCounts, isKind, normalizeCounts } from './react-data.js';
 import { API_BASE, FIREBASE } from './config.js';
-import { FirestoreStore } from './firebase-store.js';
+import { FirestoreStore } from './firebase-store.js?v=15.11';
 
-const KEY = 'haiku-board:posts:v1', REPORTS_KEY = 'haiku-board:reports:v1';
+const KEY = 'haiku-board:posts:v1', REPORTS_KEY = 'haiku-board:reports:v1', RX_KEY = 'haiku-board:reactions:v1';
 // one page of a newest-first list already numbered by seq
 export function pageOf(all, { beforeSeq = Infinity, afterSeq = 0, limit = 24 } = {}) {
   limit = Math.max(1, Math.min(200, +limit || 24));
@@ -34,7 +38,11 @@ export function pageOf(all, { beforeSeq = Infinity, afterSeq = 0, limit = 24 } =
 }
 
 export class LocalStore {
-  constructor() { this.mine = this._load(); this.reports = {}; try { this.reports = JSON.parse(localStorage.getItem(REPORTS_KEY)) || {}; } catch {} }
+  constructor() {
+    this.mine = this._load(); this.reports = {}; this.rx = {};
+    try { this.reports = JSON.parse(localStorage.getItem(REPORTS_KEY)) || {}; } catch {}
+    try { this.rx = JSON.parse(localStorage.getItem(RX_KEY)) || {}; } catch {}
+  }
   get shared() { return false; }
   _load() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
   _save() { try { localStorage.setItem(KEY, JSON.stringify(this.mine.slice(0, 500))); } catch {} }
@@ -52,6 +60,19 @@ export class LocalStore {
     try { localStorage.setItem(REPORTS_KEY, JSON.stringify(this.reports)); } catch {}
     return r;
   }
+  _saveRx() { try { localStorage.setItem(RX_KEY, JSON.stringify(this.rx)); } catch {} }
+  // this device only (the shared totals live on Firestore). One kind at a time; tapping it again clears it.
+  async react(id, kind) {
+    if (!isKind(kind) || typeof id !== 'string' || !id) throw Object.assign(new Error('bad reaction'), { reason: 'could not react, try again' });
+    const who = deviceId(), slot = this.rx[id] || (this.rx[id] = { by: {}, counts: emptyCounts() });
+    const prev = isKind(slot.by[who]) ? slot.by[who] : null, next = prev === kind ? null : kind;
+    slot.counts = applyCounts(slot.counts, prev, next);
+    if (next) slot.by[who] = next; else delete slot.by[who];
+    this._saveRx();
+    return { mine: next, counts: { ...slot.counts } };
+  }
+  async reactionCounts(ids) { const out = {}; for (const id of ids || []) out[id] = normalizeCounts(this.rx[id]?.counts); return out; }
+  async myReaction(id) { const k = this.rx[id]?.by?.[deviceId()]; return isKind(k) ? k : null; }
   async list(o = {}) { return pageOf(this._all(), o); }
   async create(text, { author = '' } = {}) {
     const r = checkHaiku(text);
@@ -82,6 +103,9 @@ export class RemoteStore {
   async report(id, { reporter } = {}) {
     return this._json(`/posts/${encodeURIComponent(id)}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reporter }) }, 'could not report, try again');
   }
+  async react() { throw Object.assign(new Error('no reactions'), { reason: 'could not react, try again' }); }
+  async reactionCounts(ids) { const out = {}; for (const id of ids || []) out[id] = emptyCounts(); return out; }
+  async myReaction() { return null; }
   async count() { try { return (await this._json('/count', {}, '')).count; } catch { return null; } }
 }
 

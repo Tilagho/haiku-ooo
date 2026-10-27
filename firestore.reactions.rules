@@ -1,0 +1,65 @@
+// Round 15.11 — PASTE this match into the LIVE haiku-ooo Firestore rules.
+// Do NOT deploy this file by itself. It is not the whole ruleset. Replacing production rules with
+// only this block would lock posting and reporting. The full rules live in the Firebase console
+// (project haiku-ooo, never tiago-ooo) and are not in this repo.
+//
+// Put the match next to match /haikus/{id}, inside the same `match /databases/{database}/documents`.
+//
+//   poemRx/{poemId}            { cry, eyes, heart, star, flushed, relieved }  public totals (heart = broken heart)
+//   poemRx/{poemId}/by/{uid}   { kind, at }                                   that anonymous uid's one reaction
+//
+// A toggle is one transaction: the caller's by/{uid} doc is created, updated, or deleted, and every
+// total moves by exactly that delta (−1 / 0 / +1). Nobody else's slot counts.
+
+    function signedIn() { return request.auth != null; }
+    function rxKind(k) { return k in ['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved']; }
+    function rxMine(poemId) {
+      return /databases/$(database)/documents/poemRx/$(poemId)/by/$(request.auth.uid);
+    }
+    function rxOldKind(poemId) {
+      return exists(rxMine(poemId)) ? get(rxMine(poemId)).data.kind : '';
+    }
+    function rxNewKind(poemId) {
+      return existsAfter(rxMine(poemId)) ? getAfter(rxMine(poemId)).data.kind : '';
+    }
+    function rxDelta(poemId, k) {
+      return (rxNewKind(poemId) == k ? 1 : 0) - (rxOldKind(poemId) == k ? 1 : 0);
+    }
+    function rxOldCount(k) {
+      return resource == null ? 0 : int(resource.data.get(k, 0));
+    }
+
+    match /poemRx/{poemId} {
+      allow read: if true;
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved'])
+        && request.resource.data.cry is int && request.resource.data.eyes is int
+        && request.resource.data.heart is int && request.resource.data.star is int
+        && request.resource.data.flushed is int && request.resource.data.relieved is int
+        && request.resource.data.cry >= 0 && request.resource.data.eyes >= 0
+        && request.resource.data.heart >= 0 && request.resource.data.star >= 0
+        && request.resource.data.flushed >= 0 && request.resource.data.relieved >= 0
+        && request.resource.data.cry == rxOldCount('cry') + rxDelta(poemId, 'cry')
+        && request.resource.data.eyes == rxOldCount('eyes') + rxDelta(poemId, 'eyes')
+        && request.resource.data.heart == rxOldCount('heart') + rxDelta(poemId, 'heart')
+        && request.resource.data.star == rxOldCount('star') + rxDelta(poemId, 'star')
+        && request.resource.data.flushed == rxOldCount('flushed') + rxDelta(poemId, 'flushed')
+        && request.resource.data.relieved == rxOldCount('relieved') + rxDelta(poemId, 'relieved')
+        && (rxNewKind(poemId) == '' || rxKind(rxNewKind(poemId)))
+        && (rxOldKind(poemId) == '' || rxKind(rxOldKind(poemId)));
+      allow delete: if false;
+
+      match /by/{uid} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['kind', 'at'])
+          && rxKind(request.resource.data.kind)
+          && request.resource.data.at == request.time;
+        allow update: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['kind', 'at'])
+          && rxKind(request.resource.data.kind)
+          && request.resource.data.kind != resource.data.kind
+          && request.resource.data.at == request.time;
+        allow delete: if signedIn() && request.auth.uid == uid;
+      }
+    }
