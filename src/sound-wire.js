@@ -30,7 +30,7 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
       if (name === 'fabRoll' && snd._pending) { snd.play(name, p); return 'deferred'; }
       return 'locked';   // round 15.2: a write tap as the very first tap still gets its paper roll (~0.1 s late, once the graph is built)
     }
-    if (name === 'reactSay') { snd.sayReaction(p.kind); return 'played'; }   // round 15.12: spell the reaction, then the stamp chime (clearing stays silent — no event)
+    if (name === 'reactSay') { snd.sayReaction(p.kind); return 'played'; }   // round 15.12: spell the reaction, then the stamp chime. Clearing is sfx('poof') — the existing shot, no new event.
     if (name === 'dragStart') snd.startDrag();
     else if (name === 'dragEnd') snd.stopDrag();
     else if (name === 'rustleStart') snd.startRustle();

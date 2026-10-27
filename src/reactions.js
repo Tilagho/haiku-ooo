@@ -205,7 +205,8 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     try {
       const res = await store.react(id, kind);
       mine.set(id, res.mine ?? null); counts.set(id, normalizeCounts(res.counts));
-      if (res.mine) sfx('reactSay', { kind: res.mine });   // placed (or switched): spell the word, then the stamp. Clearing stays silent.
+      if (res.mine) sfx('reactSay', { kind: res.mine });   // placed (or switched): spell the word, then the stamp.
+      else sfx('poof');                                   // cleared: the same poof as the credits close and the noren egg. No babble.
     } catch (err) {
       mine.set(id, prev); counts.set(id, before);
       onFail(err?.reason || 'could not react, try again');
