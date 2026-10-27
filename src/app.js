@@ -16,7 +16,7 @@ import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.12e';     // round 15.12e: a successful ✔ plays reportYes; the ask itself stays in app.js
-import { mountReactions } from './reactions.js?v=15.12f'; // round 15.12f: date-line faces stay off the number seal
+import { mountReactions } from './reactions.js?v=15.12g'; // round 15.12g: date-line counts paint from 2, clear of the face
 import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js?v=15.12e';   // round 15.12e: reportOpen / reportYes / reportNo ride the same play() path as the other one-shots
 

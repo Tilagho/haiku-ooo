@@ -39,7 +39,9 @@ ok('date line: bare glyphs with counts, no bullet, date kept at the right edge',
   assert.equal(row.side, 'before');
   assert.deepEqual(row.kinds, ['cry', 'star']);
   const texts = row.items.filter(i => i.type === 'text').map(i => i.t);
-  assert.deepEqual(texts, ['1', '2', 'Oct 24']);
+  assert.deepEqual(texts, ['2', 'Oct 24']);
+  assert.equal(row.items.some(i => i.count && i.t === '1'), false, 'a count of 1 is not painted');
+  assert.ok(row.items.some(i => i.type === 'glyph' && i.kind === 'cry'), 'the face for a count of 1 still shows');
   assert.ok(!row.items.some(i => String(i.t || '').includes('·')));
   assert.ok(!texts.some(t => t === '0'));
   const dateItem = row.items.find(i => i.date);
@@ -133,14 +135,15 @@ ok('a full set of counts stays inside the viewing area, packed tighter only when
   assert.ok(glyph.x > date.x + date.w, 'the star sits to the right of a date that is already at the left edge');
   const visualL = edge.placed.left - edge.layout.bleedL, visualR = edge.placed.left + edge.layout.w + edge.layout.bleedR;
   assert.ok(visualL >= -0.5 && visualR <= 300.5);
+  // 15.12g: each numeral sits clear of its face, so a full set needs a little more than the old 300.
   const crowded = fitByline({
     ...base, counts: { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 },
-    author: 'sample, ', date: 'Oct 24', dateLeft: 240, dateRight: 272, leftLimit: 0, rightLimit: 300,
+    author: 'sample, ', date: 'Oct 24', dateLeft: 240, dateRight: 272, leftLimit: 0, rightLimit: 330,
   });
   assert.equal(crowded.ok, true);
   assert.equal(crowded.layout.gaps.date, 3, 'gaps tighten only so the whole set still fits');
   const cL = crowded.placed.left - crowded.layout.bleedL, cR = crowded.placed.left + crowded.layout.w + crowded.layout.bleedR;
-  assert.ok(cL >= -0.5 && cR <= 300.5, `visible row ${cL}..${cR} stays inside 0..300`);
+  assert.ok(cL >= -0.5 && cR <= 330.5, `visible row ${cL}..${cR} stays inside 0..330`);
   const stillWide = fitByline({
     ...base, counts: { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 },
     author: 'sample, ', date: 'Oct 24', dateLeft: 200, dateRight: 232, leftLimit: 0, rightLimit: 260,

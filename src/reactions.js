@@ -9,7 +9,7 @@ import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
-} from './react-data.js?v=15.12f';
+} from './react-data.js?v=15.12g';
 import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD, GLYPH_PLAY_MS, planPlays } from './react-glyphs.js?v=15.12d';
 import { sfx } from './sfx.js';
 
@@ -305,8 +305,10 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
 
 const RX_CSS = `
 .rx-row { position: absolute; z-index: 4; pointer-events: none; }
-.rx-row .rx-tx { display: block; image-rendering: pixelated; }
-.rx-row .rx-g { position: absolute; image-rendering: pixelated; pointer-events: none; }
+/* The numeral shares the text canvas. It paints above the face so a playing eye or a
+   heart half cannot cover the digit (round 15.12g). Clear pixels still show the glyph. */
+.rx-row .rx-tx { display: block; image-rendering: pixelated; position: relative; z-index: 1; }
+.rx-row .rx-g { position: absolute; z-index: 0; image-rendering: pixelated; pointer-events: none; }
 .poem.rx-holding .pc, .poem.rpt-holding .pc { transform: scale(.965); }
 .rx-pop { position: fixed; z-index: 80; display: grid; place-items: center; pointer-events: auto; touch-action: manipulation; }
 .rx-pop[hidden] { display: none !important; }

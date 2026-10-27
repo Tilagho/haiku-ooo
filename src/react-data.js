@@ -47,6 +47,21 @@ export function normalizeCounts(data) {
 // Round 15.12d: 6 → 16 (+10). At the poem's usual 1.5 scale that is about 15 CSS px more on a phone,
 // so the faces are not sitting on the name and the date. TIGHT_GAPS still packs when the open gap would clip.
 export const DATE_GAP = 16;
+// A count of 1 is the face by itself. The numeral is painted from 2 up (round 15.12g).
+export const COUNT_FROM = 2;
+// Art px the playing ink reaches past the resting box's right edge. Measured off the
+// 1× strips with the ±1 shake folded in: cry's shake, the star's twinkle, the flushed
+// eyes, the heart's halves. Frame 0 itself stays inside the box.
+export const GLYPH_INK_RIGHT = { cry: 1, eyes: 0, heart: 5, star: 1, flushed: 2, relieved: 0 };
+// Paper kept past that playing ink, and the least paper past the resting outline
+// (so a digit is not sitting on the cheek when the ink never leaves the box).
+// Art px. Not the decorative gGap: a packed row may close that, but not this.
+export const COUNT_AIR_ART = 2;
+export const COUNT_CLEAR_ART = 3;
+export function countClearance(kind, scale) {
+  const pastInk = ((GLYPH_INK_RIGHT[kind] || 0) + COUNT_AIR_ART) * scale;
+  return Math.max(pastInk, COUNT_CLEAR_ART * scale);
+}
 // Square picker cell, in art px: the largest resting face (the star). Every mobile cell is this
 // size so the six glyphs share one grid; animation frames may overflow the cell.
 export const PICKER_CELL = Math.max(...RX_ORDER.map(k => Math.max(GLYPH_BOX[k].ow, GLYPH_BOX[k].oh)));
@@ -65,6 +80,7 @@ export function pickerGlyphOrigin(kind, cssPx) {
 
 // Date-line cluster, in font px. `scale` is font px per reaction art px. Glyphs center on the
 // small-font cap. A signature and its date are one block: glyphs never sit between them.
+// A count of 1 draws no numeral. From 2 up the numeral starts clear of the playing ink.
 // `side: 'before'` puts glyphs to the left of that whole block (the date still ends the row);
 // `side: 'after'` puts them to the right of it. Unsigned poems have no author, so the block is
 // the date alone. No separator character either way — `gaps.date` is air.
@@ -80,12 +96,21 @@ export function layoutByline({ counts, author = '', date, measure, scale, ascent
   kinds.forEach((k, i) => {
     const g = GLYPH_BOX[k];
     const w = Math.max(1, Math.round(g.ow * scale)), h = Math.max(1, Math.round(g.oh * scale));
+    const n = counts[k] | 0;
     run.push({ type: 'glyph', kind: k, x: rx, y: Math.round(capCenter - h / 2), w, h });
-    rx += w + gGap;
-    const t = String(counts[k] | 0), tw = measure(t);
-    run.push({ type: 'text', t, x: rx, y: 0, w: tw, count: true });
-    rx += tw;
-    if (i < kinds.length - 1) rx += kGap;
+    if (n >= COUNT_FROM) {
+      // Past the resting art and past the playing ink, so the digit is not under the eyes.
+      const countX = Math.ceil(Math.max(rx + w, rx + g.ow * scale + countClearance(k, scale)));
+      const t = String(n), tw = measure(t);
+      run.push({ type: 'text', t, x: countX, y: 0, w: tw, count: true });
+      rx = countX + tw;
+      if (i < kinds.length - 1) rx += kGap;
+    } else {
+      rx += w;
+      // No numeral in the way. The next face still has to clear this one's playing ink
+      // (the old "1" used to occupy that gap). The date gap is already wider than the ink.
+      if (i < kinds.length - 1) rx += Math.max(kGap, Math.ceil((GLYPH_INK_RIGHT[k] || 0) * scale));
+    }
   });
   const items = [];
   let x = 0;
