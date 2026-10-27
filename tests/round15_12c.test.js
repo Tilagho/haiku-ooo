@@ -71,6 +71,7 @@ ok('cache-bust is 15.12c on the board entry and the modules this round changes',
   assert.ok(/sound-wire\.js\?v=15\.12c/.test(app));
   assert.ok(/sound\.js\?v=15\.12c/.test(wire));
   assert.ok(/react-glyphs\.js\?v=15\.12c/.test(rx));
+  assert.ok(/react-data\.js\?v=15\.12c/.test(rx));
   assert.ok(!/app\.js\?v=15\.12b/.test(html + app));
 });
 

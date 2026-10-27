@@ -49,6 +49,17 @@ export const DATE_GAP = 6;
 export const PICKER_CELL = Math.max(...RX_ORDER.map(k => Math.max(GLYPH_BOX[k].ow, GLYPH_BOX[k].oh)));
 export const GLYPH_PAD = 2;
 
+// How far the glyph canvas hangs past the resting face, in the same px as `scale`
+// (font px per art px). The strip is wider than the opaque box, and paintGlyph adds
+// GLYPH_PAD on every side for the shake. That hang is what was covering the count.
+export function glyphHang(kind, scale) {
+  const g = GLYPH_BOX[kind];
+  return {
+    L: (GLYPH_PAD + g.ox) * scale,
+    R: (GLYPH_PAD + g.w - g.ox - g.ow) * scale,
+  };
+}
+
 // Where a picker canvas sits inside its square cell so the resting face is centered.
 export function pickerGlyphOrigin(kind, cssPx) {
   const g = GLYPH_BOX[kind];
@@ -65,6 +76,8 @@ export function pickerGlyphOrigin(kind, cssPx) {
 // `side: 'before'` puts glyphs to the left of that whole block (the date still ends the row);
 // `side: 'after'` puts them to the right of it. Unsigned poems have no author, so the block is
 // the date alone. No separator character either way — `gaps.date` is air.
+// A count of 1 is not painted (the glyph alone). From 2 up, the digits sit past that glyph's
+// canvas — resting box plus glyphHang — and clear of the next glyph's canvas, on the date baseline.
 // Returns items shifted so the row's top is 0. `dateX` is the date's x inside the row.
 // `bleedL` / `bleedR` are how far the glyph canvases hang past the row (frame pad + shake room),
 // so a fit check can keep the visible glyph inside the clip, not only the resting ink.
@@ -73,16 +86,28 @@ export function layoutByline({ counts, author = '', date, measure, scale, ascent
   const capCenter = ascent - cap / 2;
   const kinds = RX_ORDER.filter(k => (counts?.[k] | 0) > 0);
   const run = [];
-  let rx = 0;
+  // The run starts at the first canvas, not the resting face, so a glyph placed after the
+  // date cannot hang back over the signature.
+  let rx = kinds.length ? Math.ceil(glyphHang(kinds[0], scale).L - 1e-6) : 0;
   kinds.forEach((k, i) => {
     const g = GLYPH_BOX[k];
     const w = Math.max(1, Math.round(g.ow * scale)), h = Math.max(1, Math.round(g.oh * scale));
+    const n = counts?.[k] | 0;
+    const hang = glyphHang(k, scale);
     run.push({ type: 'glyph', kind: k, x: rx, y: Math.round(capCenter - h / 2), w, h });
-    rx += w + gGap;
-    const t = String(counts[k] | 0), tw = measure(t);
-    run.push({ type: 'text', t, x: rx, y: 0, w: tw, count: true });
-    rx += tw;
-    if (i < kinds.length - 1) rx += kGap;
+    const faceR = rx + w;
+    let contentR = faceR;
+    if (n >= 2) {
+      const t = String(n), tw = measure(t);
+      const cx = Math.ceil(faceR + hang.R + gGap - 1e-6);
+      run.push({ type: 'text', t, x: cx, y: 0, w: tw, count: true });
+      contentR = cx + tw;
+    }
+    if (i < kinds.length - 1) {
+      const nextL = glyphHang(kinds[i + 1], scale).L;
+      const clear = Math.max(faceR + hang.R, contentR) + nextL + gGap;
+      rx = Math.max(faceR + kGap, Math.ceil(clear - 1e-6));
+    } else rx = Math.max(contentR, Math.ceil(faceR + hang.R - 1e-6));
   });
   const items = [];
   let x = 0;
@@ -104,10 +129,9 @@ export function layoutByline({ counts, author = '', date, measure, scale, ascent
   const rowW = Math.max(0, x);
   let bleedL = 0, bleedR = 0;
   for (const it of items) if (it.type === 'glyph') {
-    const g = GLYPH_BOX[it.kind];
-    const hangL = (GLYPH_PAD + g.ox) * scale, hangR = (GLYPH_PAD + g.w - g.ox - g.ow) * scale;
-    bleedL = Math.max(bleedL, hangL - it.x);
-    bleedR = Math.max(bleedR, it.x + it.w + hangR - rowW);
+    const hang = glyphHang(it.kind, scale);
+    bleedL = Math.max(bleedL, hang.L - it.x);
+    bleedR = Math.max(bleedR, it.x + it.w + hang.R - rowW);
   }
   return {
     w: rowW, h: bot + shift, shift, items, kinds, side: side === 'after' ? 'after' : 'before',

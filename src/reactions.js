@@ -9,7 +9,7 @@ import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
-} from './react-data.js?v=15.11c';
+} from './react-data.js?v=15.12c';
 import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD } from './react-glyphs.js?v=15.12c';
 import { sfx } from './sfx.js';
 
@@ -92,7 +92,8 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
       tx.style.width = layout.w * fontPx + 'px'; tx.style.height = layout.h * fontPx + 'px';
       const ctx = tx.getContext('2d'), img = ctx.createImageData(tx.width, tx.height);
       const buf = { w: tx.width, h: tx.height, data: img.data }, R = rng(hash(id, 'rx'));
-      for (const it of layout.items) if (it.type === 'text') drawLine(buf, it.t, it.x, it.y, Sm, R, { color: INK });
+      // The date stays under the glyphs. Counts are a later canvas (below) so a frame cannot cover them.
+      for (const it of layout.items) if (it.type === 'text' && !it.count) drawLine(buf, it.t, it.x, it.y, Sm, R, { color: INK });
       ctx.putImageData(img, 0, 0); row.appendChild(tx);
       for (const it of layout.items) if (it.type === 'glyph') {
         const g = GLYPH_BOX[it.kind], cv = document.createElement('canvas');
@@ -101,6 +102,17 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
         cv.style.left = (it.x - (GLYPH_PAD + g.ox) * sc.fontPerArt) * fontPx + 'px';
         cv.style.top = (it.y - (GLYPH_PAD + g.oy) * sc.fontPerArt) * fontPx + 'px';
         row.appendChild(cv); trackGlyph(cv, it.kind, +cv.dataset.phase);
+      }
+      if (layout.items.some(it => it.count)) {
+        const ct = document.createElement('canvas'); ct.className = 'rx-ct';
+        ct.width = tx.width; ct.height = tx.height;
+        ct.style.width = tx.style.width; ct.style.height = tx.style.height;
+        const cctx = ct.getContext('2d'), cimg = cctx.createImageData(ct.width, ct.height);
+        const cbuf = { w: ct.width, h: ct.height, data: cimg.data }, Rc = rng(hash(id, 'rxc'));
+        // Same grey as the date, same small face, with a 1px paper knockout so the digit
+        // reads on the dithered sheet. Layout already starts it clear of every glyph canvas.
+        for (const it of layout.items) if (it.count) drawLine(cbuf, it.t, it.x, it.y, Sm, Rc, { color: INK, halo: 1 });
+        cctx.putImageData(cimg, 0, 0); row.appendChild(ct);
       }
       row.dataset.key = key;
     }
@@ -259,7 +271,8 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
 
 const RX_CSS = `
 .rx-row { position: absolute; z-index: 4; pointer-events: none; }
-.rx-row .rx-tx { display: block; image-rendering: pixelated; }
+.rx-row .rx-tx, .rx-row .rx-ct { display: block; image-rendering: pixelated; }
+.rx-row .rx-ct { position: absolute; left: 0; top: 0; }
 .rx-row .rx-g { position: absolute; image-rendering: pixelated; pointer-events: none; }
 .poem.rx-holding .pc, .poem.rpt-holding .pc { transform: scale(.965); }
 .rx-pop { position: fixed; z-index: 80; display: grid; place-items: center; pointer-events: auto; touch-action: manipulation; }
