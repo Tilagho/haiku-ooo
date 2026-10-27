@@ -9,7 +9,7 @@ import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
-} from './react-data.js?v=15.11b';
+} from './react-data.js?v=15.11c';
 import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD } from './react-glyphs.js';
 
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)
@@ -67,9 +67,9 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     const date = dateOf(rec.post), dateW = measure(date, Sm);
     const s = view.host.clientWidth / SCROLL_W || 1;
     const pr = el.getBoundingClientRect();
-    // The poem bitmap does not clip. The scroll layer and the viewport do — measure those,
-    // so a date near the left edge can put glyphs to its right, and a wide row can use the
-    // margin beside a poem instead of running off the screen.
+    // The poem bitmap does not clip. The scroll layer and the viewport do — measure those.
+    // Glyphs sit left of the whole signature+date block, or right of it when the left side
+    // would leave the screen. They never land between the name and the date.
     const clip = el.closest('.art-layer')?.getBoundingClientRect();
     const viewL = Math.max(2, clip ? clip.left : 0);
     const viewR = Math.min(innerWidth - 2, clip ? clip.right : innerWidth);

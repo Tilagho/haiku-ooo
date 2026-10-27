@@ -61,8 +61,10 @@ export function pickerGlyphOrigin(kind, cssPx) {
 }
 
 // Date-line cluster, in font px. `scale` is font px per reaction art px. Glyphs center on the
-// small-font cap. `side: 'before'` puts glyphs to the left of the date (the date ends the row);
-// `side: 'after'` puts them to the right. No separator character either way — `gaps.date` is air.
+// small-font cap. A signature and its date are one block: glyphs never sit between them.
+// `side: 'before'` puts glyphs to the left of that whole block (the date still ends the row);
+// `side: 'after'` puts them to the right of it. Unsigned poems have no author, so the block is
+// the date alone. No separator character either way — `gaps.date` is air.
 // Returns items shifted so the row's top is 0. `dateX` is the date's x inside the row.
 // `bleedL` / `bleedR` are how far the glyph canvases hang past the row (frame pad + shake room),
 // so a fit check can keep the visible glyph inside the clip, not only the resting ink.
@@ -86,13 +88,13 @@ export function layoutByline({ counts, author = '', date, measure, scale, ascent
   let x = 0;
   const text = (t, extra) => { const w = measure(t); items.push({ type: 'text', t, x, y: 0, w, ...extra }); x += w; };
   const addRun = () => { for (const it of run) items.push({ ...it, x: it.x + x }); x += rx; };
-  if (author) text(author);
+  const signature = () => { if (author) text(author); text(date, { date: true }); };
   if (side === 'after') {
-    text(date, { date: true });
+    signature();
     if (kinds.length) { x += dGap; addRun(); }
   } else {
     if (kinds.length) { addRun(); x += dGap; }
-    text(date, { date: true });
+    signature();
   }
   let top = 0, bot = ascent + descent;
   for (const it of items) if (it.type === 'glyph') { top = Math.min(top, it.y); bot = Math.max(bot, it.y + it.h); }
@@ -113,11 +115,13 @@ export function layoutByline({ counts, author = '', date, measure, scale, ascent
   };
 }
 
-// Keep the date where the painted signature had it, and put the glyphs on the side that fits.
-// Coordinates are font px in the poem. Prefer the left of the date. If that row (including the
-// glyph canvas hanging past the resting ink) would leave [leftLimit, rightLimit], use the right
-// of the date. If neither side fits, take the roomier side and slide the whole row so the visible
-// glyphs and the date stay inside the limits — the date moves only then.
+// Keep the signature+date block where the painted byline had it, and put the glyphs on the side
+// that fits. Coordinates are font px in the poem. Prefer the left of the whole block. If that row
+// (including the glyph canvas hanging past the resting ink) would leave [leftLimit, rightLimit],
+// use the right of the block. If neither side fits, take the roomier side of the block and slide
+// the whole row so the visible glyphs and the byline stay inside the limits — the byline moves
+// only then. `afterDateX` is the date's x in the after-layout, which is also the author width,
+// so `dateLeft - afterDateX` is the start of the signature block (the date itself, when unsigned).
 export function placeByline({
   beforeW, afterW, afterDateX, dateLeft, dateRight, leftLimit, rightLimit,
   beforeBleedL = 0, beforeBleedR = 0, afterBleedL = 0, afterBleedR = 0,
@@ -127,7 +131,7 @@ export function placeByline({
   const fits = (left, w, bL, bR) => left - bL >= leftLimit - 0.5 && left + w + bR <= rightLimit + 0.5;
   if (fits(beforeLeft, beforeW, beforeBleedL, beforeBleedR)) return { side: 'before', left: beforeLeft };
   if (fits(afterLeft, afterW, afterBleedL, afterBleedR)) return { side: 'after', left: afterLeft };
-  const roomL = dateLeft - leftLimit, roomR = rightLimit - dateRight;
+  const roomL = dateLeft - afterDateX - leftLimit, roomR = rightLimit - dateRight;
   const side = roomL >= roomR ? 'before' : 'after';
   let left = side === 'before' ? beforeLeft : afterLeft;
   const w = side === 'before' ? beforeW : afterW;

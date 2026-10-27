@@ -49,6 +49,36 @@ ok('date line: bare glyphs with counts, no bullet, date kept at the right edge',
   assert.ok(row.items.some(i => i.type === 'glyph' && i.kind === 'star' && i.h > Sm.ascent));
 });
 
+ok('a signature and its date stay one block, glyphs outside it', () => {
+  const Sm = font('small');
+  const measureText = t => measure(t, Sm);
+  const base = {
+    counts: { cry: 0, eyes: 0, heart: 0, star: 1, flushed: 0, relieved: 0 },
+    author: 'sample, ', date: 'Oct 24', measure: measureText, scale: 1.5, ascent: Sm.ascent, descent: Sm.descent,
+  };
+  const flush = layout => {
+    const author = layout.items.find(i => i.t === 'sample, ');
+    const date = layout.items.find(i => i.date);
+    const glyph = layout.items.find(i => i.type === 'glyph');
+    assert.ok(author && date && glyph);
+    assert.equal(date.x, author.x + author.w, 'the date follows the name with no room for a glyph');
+    assert.ok(glyph.x + glyph.w <= author.x || glyph.x >= date.x + date.w, 'the star is outside the signature block');
+    assert.ok(!layout.items.some(i => String(i.t || '').includes('·')));
+  };
+  const before = layoutByline({ ...base, side: 'before' });
+  const after = layoutByline({ ...base, side: 'after' });
+  flush(before); flush(after);
+  assert.ok(before.items.find(i => i.type === 'glyph').x < before.items.find(i => i.t === 'sample, ').x);
+  assert.ok(after.items.find(i => i.type === 'glyph').x > after.items.find(i => i.date).x);
+  const roomy = fitByline({ ...base, dateLeft: 160, dateRight: 192, leftLimit: 0, rightLimit: 400 });
+  assert.equal(roomy.layout.side, 'before', 'with room, glyphs sit left of the whole name and date');
+  flush(roomy.layout);
+  const tight = fitByline({ ...base, dateLeft: 40, dateRight: 72, leftLimit: 0, rightLimit: 400 });
+  assert.equal(tight.layout.side, 'after', 'a name already at the left edge keeps its date and puts glyphs on the right');
+  flush(tight.layout);
+  assert.equal(tight.ok, true);
+});
+
 ok('date line flips to the right of the date when the left side would leave the poem', () => {
   const Sm = font('small');
   const measureText = t => measure(t, Sm);
