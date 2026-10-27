@@ -828,6 +828,29 @@ const fxShots = {
     mallet(E, t + 0.26, d, 659.3, 0.075, 0.34, -0.04);
     bloop(E, t + 0.24, ink, 360, 200, 0.18, 0.06, 'sine');
   },
+  // round 15.12e: the report ask appears. One centered kalimba note (D5), no climb and no glass wink,
+  // so it stays neutral — not pickerChime's rising A5→D6, and not a yes. ~0.45 s.
+  reportOpen(E, t) {
+    const d0 = fxOut(E), d = E.gain(1.7); d.connect(d0);
+    mallet(E, t, d, 587.33, 0.18, 0.4, 0);
+  },
+  // round 15.12e: the ✔ confirmed the report. Two kalimba notes up a major third (C6 → E6), a small
+  // rising ink hello, and one glass wink. Same family as pickerChime, a different figure. ~0.55 s.
+  reportYes(E, t) {
+    const d0 = fxOut(E), d = E.gain(1.65), ink = inkyOut(E); d.connect(d0);
+    bloop(E, t, ink, 360, 640, 0.09, 0.16, 'triangle');
+    mallet(E, t + 0.04, d, 1046.5, 0.13, 0.2, -0.16);
+    mallet(E, t + 0.15, d, 1318.5, 0.15, 0.38, 0.14);
+    chime(E, t + 0.15, d, 2093, 0.04, 0.5, 0.18);
+  },
+  // round 15.12e: the ✕, or the ask dismissed without a report. Two kalimba notes down a minor third
+  // (Eb5 → C5) and a soft falling ink sigh. Lower and shorter than pickerBack; not the error beep. ~0.5 s.
+  reportNo(E, t) {
+    const d0 = fxOut(E), d = E.gain(1.4), ink = inkyOut(E); d.connect(d0);
+    mallet(E, t, d, 622.25, 0.12, 0.16, 0.1);
+    mallet(E, t + 0.11, d, 523.25, 0.13, 0.34, -0.12);
+    bloop(E, t + 0.1, ink, 280, 150, 0.18, 0.06, 'sine');
+  },
   // round 15.3 (Tiago: 'when text is copied there needs to be a little tiny charm sound'): a successful copy: three tiny glass tinks
   // rising (B6, E7, G#7: an E-major sparkle), soft and close, with a faint high shimmer; ~0.35 s. Quiet: well under the other one-shots.
   copyCharm(E, t) {
@@ -1157,7 +1180,7 @@ function churnVoice(E, inky, t0) {
   };
 }
 
-// Offline render of one one-shot (pickerChime / pickerBack demos). No bed, no files. ~1 s is enough for either cue.
+// Offline render of one one-shot (picker and report chime demos). No bed, no files. ~1 s is enough for either cue.
 export async function renderShot(name, dur = 1.15) {
   if (!SHOTS[name]) throw new Error('unknown shot ' + name);
   const oc = new OfflineAudioContext(2, Math.ceil(44100 * dur), 44100);

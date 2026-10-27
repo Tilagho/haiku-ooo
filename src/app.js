@@ -15,10 +15,10 @@ import { mountNoren } from './noren.js?v=15.10j';   // round 15.10j (t237u): per
 import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
-import { mountReports } from './report.js?v=15.11';     // round 15.6: hold the number seal, Inky asks to report it; TAKEDOWN_REPORTS take it down
+import { mountReports } from './report.js?v=15.12e';     // round 15.12e: a successful ✔ plays reportYes; the ask itself stays in app.js
 import { mountReactions } from './reactions.js?v=15.12d'; // round 15.12d: place plays ~1s then idles, spell on the tap, ink wash, wider date gap
 import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
-import { mountSound } from './sound-wire.js?v=15.12c';   // round 15.12c: pickerChime / pickerBack ride the same play() path as the other one-shots
+import { mountSound } from './sound-wire.js?v=15.12e';   // round 15.12e: reportOpen / reportYes / reportNo ride the same play() path as the other one-shots
 
 const $ = s => document.querySelector(s);
 // round 15.6b: one store handle for everything (compose, reports, the feed); `cur` swaps to this device's own board if the
@@ -186,12 +186,15 @@ function ask(el, { already = false } = {}) {
     const no = btn('no', 'no, do not report', IC_INK), yes = btn('yes', 'yes, report this haiku', IC_INK);   // both solid ink (t194u)
     const y0 = scrollY, onScroll = () => { if (Math.abs(scrollY - y0) > 80) end(false); };
     const key = e => { if (e.key === 'Escape') { e.preventDefault(); end(false); } };
+    let opened = false;
     const end = ans => { if (asking !== st) return; asking = null; unpin(); removeEventListener('scroll', onScroll); removeEventListener('keydown', key, true); bubble.classList.remove('asking');
       if (!ans && anchor === null && inky.mode === 'roam') inky.setMood('happy');
+      if (opened && !ans) sfx('reportNo');   // round 15.12e: ✕ / escape / scroll / a popped ask. The ✔ chime waits until the report lands (src/report.js).
       popBubble(); resolve(ans); };
     const st = { el, end }; asking = st;
     say('report?', 15000, false, anchor, row);   // round 15.10 (t205u): bigger report? + middle icons
     bubble.classList.add('asking'); bubble.setAttribute('role', 'dialog'); bubble.setAttribute('aria-label', 'report this haiku?');
+    if (!bubble.hidden && row.isConnected) { opened = true; sfx('reportOpen'); }   // round 15.12e: neutral chime as the ask appears (not the picker's positive open)
     if (anchor === null) { inky.setMood('worry'); inky.jump(.35); }   // a small hop in place; the bubble follows. Patrol stays locked until end().
     no.addEventListener('click', e => { e.stopPropagation(); end(false); });
     yes.addEventListener('click', e => { e.stopPropagation(); end(true); });

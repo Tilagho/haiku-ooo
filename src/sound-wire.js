@@ -7,7 +7,7 @@
 // - The sound toggle (header, right of the 俳句の掲示板 line) mutes and SUSPENDS the context; the choice is kept in localStorage
 //   ('hb-sound-muted'). Hidden page: faded and suspended (src/sound.js). round 15.10i (t236u): the first tap (and any later
 //   unlock / rebuild) sets navigator.audioSession.type = "playback" so the iPhone silent switch does not mute the bed.
-import { SoundEngine, SITE_LEVELS } from './sound.js?v=15.12c';
+import { SoundEngine, SITE_LEVELS } from './sound.js?v=15.12e';
 import { setSfxSink, sfxLog, sfx } from './sfx.js';
 import { WATER_RE } from './waterfall.js';
 import { PX, SCROLL_W } from './scroll-engine2.js';
@@ -27,7 +27,7 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
     if (snd.muted) return 'muted';
     if (!live()) {
       if (name === 'reactSay') { snd.whenReady(() => { if (!snd.muted) snd.sayReaction(p.kind); }); return 'deferred'; }
-      if ((name === 'fabRoll' || name === 'pickerChime' || name === 'pickerBack') && snd._pending) { snd.play(name, p); return 'deferred'; }
+      if ((name === 'fabRoll' || name === 'pickerChime' || name === 'pickerBack' || name === 'reportOpen' || name === 'reportYes' || name === 'reportNo') && snd._pending) { snd.play(name, p); return 'deferred'; }
       return 'locked';   // round 15.2: a write tap as the very first tap still gets its paper roll (~0.1 s late, once the graph is built)
     }
     if (name === 'reactSay') { snd.sayReaction(p.kind); return 'played'; }   // round 15.12: spell the reaction, then the stamp chime. Clearing is sfx('poof') — the existing shot, no new event.

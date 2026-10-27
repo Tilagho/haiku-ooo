@@ -9,6 +9,7 @@
 // The long-press never fights the scroll: a finger that drifts LONG_PRESS_SLOP px, a pointercancel (the browser took
 // the gesture for scrolling) or any scroll cancels it, and the tap-to-copy only happens when the hold did not fire.
 import { TAKEDOWN_REPORTS, REPORT_MARK, LONG_PRESS_MS, LONG_PRESS_SLOP, deviceId, isReportable, ReportLedger } from './moderation.js';
+import { sfx } from './sfx.js';
 import { poemZone } from './react-data.js';
 import { sealDims } from './brush-text.js';
 import { SCROLL_W } from './scroll-engine2.js';
@@ -75,6 +76,7 @@ export function mountReports({ feed, store, ask, reduced = false, onReported = (
     try { res = await store.report(id, { reporter: me }); }
     catch (err) { S.asking = null; onReported({ id, el, error: err?.reason || 'could not report, try again' }); return { id, reported: false, error: err }; }
     ledger.add(id); S.asking = null;
+    sfx('reportYes');   // round 15.12e: the ✔ went through. Not on ✕, not on "already", not when the report throws.
     if (res?.removed) await takeDown(el); else stampMark(el, { animate: true });
     onReported({ id, el, ...res });
     return { id, reported: true, ...res };
