@@ -3,13 +3,13 @@
 // Hold the number seal to report — that stays in src/report.js. Counts live in haiku-ooo Firestore
 // (poemRx/{poemId} + poemRx/{poemId}/by/{uid}); see firestore.reactions.rules.
 import { drawLine, font, measure, rng, hash } from './brush-text.js';
-import { signatureFor, sigAuthor } from './scroll-engine2.js';
+import { signatureFor, sigAuthor, SCROLL_W } from './scroll-engine2.js';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
-  layoutByline, reactionScale, pickerScale, poemZone,
-} from './react-data.js';
+  fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
+} from './react-data.js?v=15.11c';
 import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD } from './react-glyphs.js';
 
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)
@@ -62,11 +62,25 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     const L = rec.poem.layout, Sm = font('small');
     const sc = reactionScale(view.host.clientWidth, devicePixelRatio || 1);
     const fontPx = view.fontScale(L.u);
-    const layout = layoutByline({
-      counts: c, author: sigAuthor(rec.post), date: dateOf(rec.post), scale: sc.fontPerArt,
-      measure: t => measure(t, Sm), ascent: Sm.ascent, descent: Sm.descent,
+    const measureSm = t => measure(t, Sm);
+    const sigRight = L.sig.x + measure(signatureFor(rec.post), Sm);
+    const date = dateOf(rec.post), dateW = measure(date, Sm);
+    const s = view.host.clientWidth / SCROLL_W || 1;
+    const pr = el.getBoundingClientRect();
+    // The poem bitmap does not clip. The scroll layer and the viewport do — measure those.
+    // Glyphs sit left of the whole signature+date block, or right of it when the left side
+    // would leave the screen. They never land between the name and the date.
+    const clip = el.closest('.art-layer')?.getBoundingClientRect();
+    const viewL = Math.max(2, clip ? clip.left : 0);
+    const viewR = Math.min(innerWidth - 2, clip ? clip.right : innerWidth);
+    const toFont = screen => (screen - pr.left) / (fontPx * s) - rec.pad;
+    const { placed, layout } = fitByline({
+      counts: c, author: sigAuthor(rec.post), date, scale: sc.fontPerArt,
+      measure: measureSm, ascent: Sm.ascent, descent: Sm.descent,
+      dateLeft: sigRight - dateW, dateRight: sigRight,
+      leftLimit: toFont(viewL), rightLimit: toFont(viewR),
     });
-    const key = [layout.kinds.join('.'), layout.kinds.map(k => c[k]).join('.'), sc.rk, fontPx.toFixed(4)].join('|');
+    const key = [layout.side, layout.gaps.glyph, layout.gaps.kind, layout.gaps.date, layout.kinds.join('.'), layout.kinds.map(k => c[k]).join('.'), sc.rk, fontPx.toFixed(4)].join('|');
     if (!row) { row = document.createElement('div'); row.className = 'rx-row'; el.appendChild(row); io.observe(row); }
     if (row.dataset.key !== key) {
       row.querySelectorAll('.rx-g').forEach(untrackGlyph);
@@ -88,9 +102,14 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
       }
       row.dataset.key = key;
     }
-    const sigRight = L.sig.x + measure(signatureFor(rec.post), Sm);
-    row.style.left = (sigRight - layout.w + rec.pad) * fontPx + 'px';
+    const span = toFont(viewR) - toFont(viewL);
+    const visualW = layout.w + layout.bleedL + layout.bleedR;
+    const rowScale = rowFitScale(visualW, 0, span);
+    const left = rowScale === 1 ? placed.left : toFont(viewL) + layout.bleedL * rowScale;
+    row.style.left = (left + rec.pad) * fontPx + 'px';
     row.style.top = (L.sig.y - layout.shift + rec.pad) * fontPx + 'px';
+    row.style.transformOrigin = '0 0';
+    row.style.transform = rowScale === 1 ? '' : `scale(${rowScale})`;
     if (rec.sigText !== '') { rec.sigText = ''; view.paintPoem(rec); }
   }
 
@@ -155,6 +174,8 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     const sc = pickerScale((feed.viewOf(el) || feed.main).host.clientWidth, devicePixelRatio || 1);
     const wide = innerWidth >= 840;
     grid.className = 'rx-grid' + (wide ? ' is-row' : '');
+    if (wide) grid.style.removeProperty('--rx-cell');
+    else grid.style.setProperty('--rx-cell', (PICKER_CELL * sc.css) + 'px');
     grid.querySelectorAll('.rx-g').forEach(untrackGlyph);
     grid.replaceChildren();
     const cur = mine.get(id) || null;
@@ -162,6 +183,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
       const b = document.createElement('button'); b.type = 'button'; b.className = 'rx-btn' + (cur === k ? ' on' : '');
       b.dataset.kind = k; b.setAttribute('aria-label', RX_LABEL[k]); b.setAttribute('aria-pressed', cur === k ? 'true' : 'false');
       const cv = document.createElement('canvas'); cv.className = 'rx-g'; sizeGlyph(cv, k, sc.css);
+      if (!wide) { const o = pickerGlyphOrigin(k, sc.css); cv.style.left = o.left + 'px'; cv.style.top = o.top + 'px'; }
       b.appendChild(cv); grid.appendChild(b); trackGlyph(cv, k, hash(id, k) % 800);
       b.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); if (performance.now() < S.armed) return; choose(id, el, k); });
     }
@@ -231,8 +253,12 @@ const RX_CSS = `
 .rx-pop .rx-bcv { position: absolute; z-index: 0; image-rendering: pixelated; pointer-events: none; }
 .rx-grid { position: relative; z-index: 1; display: grid; gap: 4px; padding: 2px; grid-template-columns: repeat(3, auto); }
 .rx-grid.is-row { grid-template-columns: repeat(6, auto); }
+/* phone 2×3: one cell per face (the star's 17 art px), 2px gutters, 4px inset from the bubble ink */
+.rx-grid:not(.is-row) { gap: 2px; padding: 4px; grid-template-columns: repeat(3, var(--rx-cell, 51px)); grid-template-rows: repeat(2, var(--rx-cell, 51px)); }
 .rx-btn { display: grid; place-items: center; margin: 0; padding: 4px; border: 0; background: transparent; cursor: pointer;
   touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.rx-grid:not(.is-row) .rx-btn { position: relative; padding: 0; width: var(--rx-cell, 51px); height: var(--rx-cell, 51px); overflow: visible; }
+.rx-grid:not(.is-row) .rx-btn .rx-g { position: absolute; }
 .rx-btn.on { background: #f0e2c4; }
 .rx-btn:active { transform: translateY(2px); }
 .rx-btn:focus-visible { outline: 3px solid #6b6670; outline-offset: -2px; }
