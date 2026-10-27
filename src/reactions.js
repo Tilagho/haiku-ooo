@@ -2,14 +2,14 @@
 // toggles that person's one reaction and the totals sit bare on the date line (no chips).
 // Hold the number seal to report — that stays in src/report.js. Counts live in haiku-ooo Firestore
 // (poemRx/{poemId} + poemRx/{poemId}/by/{uid}); see firestore.reactions.rules.
-import { drawLine, font, measure, rng, hash } from './brush-text.js';
+import { drawLine, font, measure, rng, hash, sealDims } from './brush-text.js';
 import { signatureFor, sigAuthor, SCROLL_W } from './scroll-engine2.js';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
-} from './react-data.js?v=15.12d';
+} from './react-data.js?v=15.12f';
 import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD, GLYPH_PLAY_MS, planPlays } from './react-glyphs.js?v=15.12d';
 import { sfx } from './sfx.js';
 
@@ -93,17 +93,24 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     const pr = el.getBoundingClientRect();
     // The poem bitmap does not clip. The scroll layer and the viewport do — measure those.
     // Glyphs sit left of the whole signature+date block, or right of it when the left side
-    // would leave the screen. They never land between the name and the date.
+    // would leave the screen or land on this poem's number seal. They never sit between the name and the date.
     const clip = el.closest('.art-layer')?.getBoundingClientRect();
     const viewL = Math.max(2, clip ? clip.left : 0);
     const viewR = Math.min(innerWidth - 2, clip ? clip.right : innerWidth);
     const toFont = screen => (screen - pr.left) / (fontPx * s) - rec.pad;
-    const { placed, layout } = fitByline({
+    // The number seal's layout rect is off-limits for faces and counts. fitByline still
+    // prefers the left of the glued signature+date block, and still flips or scales to
+    // stay on screen — a side that would paint on the seal is not a fit.
+    const [sealW, sealH] = sealDims(rec.poem.n);
+    const fit = fitByline({
       counts: c, author: sigAuthor(rec.post), date, scale: sc.fontPerArt,
       measure: measureSm, ascent: Sm.ascent, descent: Sm.descent,
       dateLeft: sigRight - dateW, dateRight: sigRight,
       leftLimit: toFont(viewL), rightLimit: toFont(viewR),
+      sigY: L.sig.y,
+      avoid: { x: L.seal.x, y: L.seal.y, w: sealW, h: sealH },
     });
+    const { placed, layout } = fit;
     const key = [layout.side, layout.gaps.glyph, layout.gaps.kind, layout.gaps.date, layout.kinds.join('.'), layout.kinds.map(k => c[k]).join('.'), sc.rk, fontPx.toFixed(4)].join('|');
     if (!row) { row = document.createElement('div'); row.className = 'rx-row'; el.appendChild(row); io.observe(row); }
     if (row.dataset.key !== key) {
@@ -133,8 +140,8 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     }
     const span = toFont(viewR) - toFont(viewL);
     const visualW = layout.w + layout.bleedL + layout.bleedR;
-    const rowScale = rowFitScale(visualW, 0, span);
-    const left = rowScale === 1 ? placed.left : toFont(viewL) + layout.bleedL * rowScale;
+    const rowScale = fit.scale != null ? fit.scale : rowFitScale(visualW, 0, span);
+    const left = fit.scale != null ? placed.left : (rowScale === 1 ? placed.left : toFont(viewL) + layout.bleedL * rowScale);
     row.style.left = (left + rec.pad) * fontPx + 'px';
     row.style.top = (L.sig.y - layout.shift + rec.pad) * fontPx + 'px';
     row.style.transformOrigin = '0 0';
