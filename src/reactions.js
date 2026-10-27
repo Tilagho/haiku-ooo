@@ -11,6 +11,7 @@ import {
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
 } from './react-data.js?v=15.11c';
 import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD } from './react-glyphs.js';
+import { sfx } from './sfx.js';
 
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)
 const dateOf = post => signatureFor(post).slice(sigAuthor(post).length);
@@ -204,6 +205,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     try {
       const res = await store.react(id, kind);
       mine.set(id, res.mine ?? null); counts.set(id, normalizeCounts(res.counts));
+      if (res.mine) sfx('reactSay', { kind: res.mine });   // placed (or switched): spell the word, then the stamp. Clearing stays silent.
     } catch (err) {
       mine.set(id, prev); counts.set(id, before);
       onFail(err?.reason || 'could not react, try again');

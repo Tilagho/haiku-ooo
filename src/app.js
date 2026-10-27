@@ -16,9 +16,9 @@ import { mountCompose } from './compose.js';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.11';     // round 15.6: hold the number seal, Inky asks to report it; TAKEDOWN_REPORTS take it down
-import { mountReactions } from './reactions.js?v=15.11c'; // round 15.11c: signature and date stay one block; glyphs sit outside it
+import { mountReactions } from './reactions.js?v=15.12'; // round 15.12: a placed reaction is spelled, then a little stamp chime
 import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
-import { mountSound } from './sound-wire.js?v=15.10i';   // round 15.0: synthesized sound (starts on the first tap; toggle in the header)
+import { mountSound } from './sound-wire.js?v=15.12';   // round 15.12: reaction words use the typing babble, then a stamp chime
 
 const $ = s => document.querySelector(s);
 // round 15.6b: one store handle for everything (compose, reports, the feed); `cur` swaps to this device's own board if the

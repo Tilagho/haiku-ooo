@@ -243,13 +243,16 @@ export class SoundEngine {
     const syl = babbleSyl(p.line, p.i); if (!syl) return 'silent';
     if (!this.babbleBank) { this.prepareBabble(); return 'warming'; }
     const t = when ?? this.now + 0.005, clk = when ?? performance.now() / 1000;                 // (the wall clock for the rate: the audio clock moves in coarse blocks)
-    if (clk - (this._babT ?? -1) < 1 / BABBLE.maxRate - 0.004) return 'merged';               // faster than ~15 / s: every other letter
-    this._babT = clk;
+    if (!p.spell && clk - (this._babT ?? -1) < 1 / BABBLE.maxRate - 0.004) return 'merged';   // faster than ~15 / s: every other letter (a spelled word paces itself)
+    if (!p.spell) this._babT = clk;
     this._babbleBus();
     const u = clamp(p.u ?? 0.5), contour = 1 + 0.05 * Math.sin(Math.PI * Math.min(1, u * 1.6)) - 0.07 * Math.max(0, u - 0.7) / 0.3;   // a gentle rise, then down at the line's end
-    const src = this.ctx.createBufferSource(); src.buffer = this.babbleBank[syl.onset + syl.vowel]; src.playbackRate.value = contour * rnd(0.95, 1.06);
-    const g = this.gain(rnd(0.8, 1)); src.connect(g).connect(this.babbleOut); src.start(t);
-    const live = this._babLive; live.push(src); src.onended = () => { const k = live.indexOf(src); if (k >= 0) live.splice(k, 1); };
+    const src = this.ctx.createBufferSource(); src.buffer = this.babbleBank[syl.onset + syl.vowel];
+    const energy = p.punch ? 1.22 : 1;   // a word that ends in ! leans on its last letter (the engine itself keeps punctuation silent)
+    src.playbackRate.value = contour * rnd(0.95, 1.06) * energy;
+    const g = this.gain(rnd(0.8, 1) * (p.punch ? 1.28 : 1)); src.connect(g).connect(this.babbleOut); src.start(t);
+    const live = this._babLive; live.push(src); src.onended = () => { const k = live.indexOf(src); if (k >= 0) live.splice(k, 1); if (p.spell) { const s = this._spellLive, j = s?.indexOf(src) ?? -1; if (j >= 0) s.splice(j, 1); } };
+    if (p.spell) (this._spellLive ||= []).push(src);
     while (live.length > BABBLE.poly) { const old = live.shift(); try { old.stop(t); } catch {} }
     return 'played';
   }
@@ -257,6 +260,30 @@ export class SoundEngine {
     const o = this.babbleOut = this.gain(1), lv = this.gain(BABBLE.level * this.settings.inky.volume), pn = this.pan(-0.1), s = this.gain(0.12);
     o.connect(lv).connect(pn).connect(this.master); pn.connect(s).connect(this.verb); this._babLive = []; }
   babbleDuck(t = this.now) { const g = this.babbleOut?.gain; if (!g) return; g.cancelScheduledValues(t); g.setTargetAtTime(0.25, t, 0.01); g.setTargetAtTime(1, t + 0.5, 0.25); }   // a stamp landing over the typing
+  // Stop a reaction spell-out that is still talking (a newer reaction replaces it; clearing one stays silent).
+  _stopSpell() {
+    const t = this.now;
+    for (const s of this._spellLive || []) { try { s.stop(t); } catch {} }
+    this._spellLive = [];
+    if (this._spellGate) { try { this._spellGate.gain.cancelScheduledValues(t); this._spellGate.gain.setValueAtTime(0, t); } catch {} this._spellGate = null; }
+    this._spellGen = (this._spellGen || 0) + 1;
+  }
+  // Spell the reaction's word with the typing babble, then the little stamp chime. Returns 'played' | 'warming' | 'off'.
+  sayReaction(kind, when) {
+    const word = RX_SAY[kind];
+    if (!word || !this.ctx || this.muted) return 'off';
+    if (!this.babbleBank) {
+      const ticket = ++this._spellWait;
+      this.prepareBabble()?.then(() => { if (this._spellWait === ticket && !this.muted) this.sayReaction(kind, when); });
+      return 'warming';
+    }
+    this._stopSpell();
+    const gen = this._spellGen, steps = spellSteps(word);
+    const t0 = Math.max(when ?? 0, this.now + 0.03);
+    steps.forEach((step, k) => this.babble({ line: word, i: step.i, u: steps.length > 1 ? k / (steps.length - 1) : 0.35, punch: step.punch, spell: true }, t0 + k * SPELL_STEP));
+    this.play('reactStamp', { when: t0 + Math.max(0, steps.length - 1) * SPELL_STEP + 0.12, gen });
+    return 'played';
+  }
   _playBuf(buf, t, offset = 0) { const s = this.ctx.createBufferSource(), g = this.gain(this.settings.inky.volume); s.buffer = buf; s.connect(g).connect(this.master); s.start(t, offset); return s; }
   // round 15.1: the credits list being scrolled: a soft old-paper rustle that follows the scroll speed and fades when it stops
   startRustle(when) { if (!this.ctx) return this._defer(() => this.startRustle()); this.stopRustle(when); this.rustle = rustleVoice(this, when ?? this.now); }
@@ -289,10 +316,22 @@ export class SoundEngine {
 // round 15.7 (Tiago t193u: 'not hearing it yet'): measured at -25 dBFS peak / -41 dB RMS on the board, ~9 dB under the stamps and masked by the
 // ink wash's tail, so on a phone speaker it vanished: now +9 dB (level 1.0), a little brighter (more F2 / F3, the soft lowpass opened) and 60 ms long.
 export const BABBLE = { maxRate: 15, poly: 3, level: 1.0, f0: 300, slot: 0.1, dur: 0.06 };
+// One word per reaction, spelled letter by letter with the babble above. The bang is not a phoneme
+// (punctuation stays silent); spellSteps marks the last letter punchy instead.
+export const RX_SAY = { cry: 'Cry', eyes: 'Look', heart: 'Love', star: 'Star', flushed: 'Oof!', relieved: 'Joy!' };
+export const SPELL_STEP = 0.09;   // just slower than the babble's 15/s merge, so every letter is heard
 export const BABBLE_VOWELS = { a: [900, 1450, 3000], e: [580, 2300, 3100], i: [380, 2800, 3500], o: [620, 1050, 2900], u: [420, 1100, 2800], '@': [650, 1600, 2900] };
 const ONSET_OF = {}; for (const [k, s] of [['plosive', 'pbtdkgcq'], ['fric', 'fvszhxj'], ['nasal', 'mn'], ['liquid', 'lrwy']]) for (const ch of s) ONSET_OF[ch] = k;
 export const BABBLE_ONSETS = ['none', 'plosive', 'fric', 'nasal', 'liquid'];
 // the syllable a typed character says: null = silent (space / punctuation / digit), else { onset, vowel }
+// Letters of a spelled word, in babbleSyl's index space. A trailing ! or ? punches the last letter.
+export function spellSteps(word) {
+  const chars = [...String(word || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')];
+  const bang = /[!?]/.test(chars[chars.length - 1] || '');
+  const idx = [];
+  chars.forEach((ch, i) => { if (/\p{L}/u.test(ch)) idx.push(i); });
+  return idx.map((i, k) => ({ i, punch: bang && k === idx.length - 1 }));
+}
 export function babbleSyl(line, i) {
   const chars = [...String(line || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()], ch = chars[i];
   if (!ch || !/\p{L}/u.test(ch)) return null;
@@ -752,6 +791,23 @@ const fxShots = {
     bloop(E, t + 0.5, d, 230, 95, 0.4, 0.5, 'triangle');
     pour(E, t + 0.55, d, 2.4);
   },
+  // round 15.12: the reaction glyph landing on the date line, after its word has been spelled.
+  // A soft ink tap, then two kalimba notes a fifth apart (F5, C6) and one quiet glass wink.
+  // Original figure — the copy-charm's three tinks and the celebrate fanfare stay theirs.
+  reactStamp(E, t, p = {}) {
+    if (p.gen != null && p.gen !== E._spellGen) return;
+    const d = fxOut(E), g = E.gain(4.2); g.connect(d); E._spellGate = g;
+    const c = E.ctx, o = c.createOscillator(), og = E.gain(0); o.type = 'sine';
+    o.frequency.setValueAtTime(280, t); o.frequency.exponentialRampToValueAtTime(150, t + 0.05);
+    og.gain.setValueAtTime(0, t); og.gain.linearRampToValueAtTime(0.42, t + 0.004); og.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+    o.connect(og).connect(g); o.start(t); o.stop(t + 0.1);
+    const s = E.src('white', t, { loop: false }), b = E.filt('bandpass', 1700, 1.5), ng = E.gain(0);
+    ng.gain.setValueAtTime(0, t); ng.gain.linearRampToValueAtTime(0.28, t + 0.002); ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.028);
+    s.connect(b).connect(ng).connect(g); s.stop(t + 0.05);
+    mallet(E, t + 0.055, g, 698.5, 0.2, 0.26, -0.18);
+    mallet(E, t + 0.15, g, 1046.5, 0.18, 0.34, 0.22);
+    chime(E, t + 0.15, g, 1568, 0.04, 0.5, 0.12);
+  },
   // round 15.3 (Tiago: 'when text is copied there needs to be a little tiny charm sound'): a successful copy: three tiny glass tinks
   // rising (B6, E7, G#7: an E-major sparkle), soft and close, with a faint high shimmer; ~0.35 s. Quiet: well under the other one-shots.
   copyCharm(E, t) {
@@ -1079,4 +1135,16 @@ function churnVoice(E, inky, t0) {
     duck(t, s) { dk.gain.cancelScheduledValues(t); dk.gain.setTargetAtTime(1 - 0.7 * clamp(s), t, 0.01); dk.gain.setTargetAtTime(1, t + 0.09, 0.08); },   // get out of the way of the wall slap
     stop(t) { out.gain.setTargetAtTime(0, t, 0.12); for (const n of [s1, s2, l1.o, l2.o]) n.stop(t + 0.8); if (sp > 0.3) plip(E, t, d, { f: 420 * k, amp: 0.12, dur: 0.07 }); },
   };
+}
+
+// Offline render of one reaction word plus its stamp chime (demo clips, tests). No bed, no files.
+export async function renderReactionSay(kind) {
+  const word = RX_SAY[kind]; if (!word) throw new Error('unknown reaction ' + kind);
+  const steps = spellSteps(word);
+  const dur = 0.08 + Math.max(0, steps.length - 1) * SPELL_STEP + 0.12 + 1.7;
+  const oc = new OfflineAudioContext(2, Math.ceil(44100 * dur), 44100);
+  const E = new SoundEngine({ settings: { ...SITE_LEVELS, master: { volume: 1 } }, persist: false, water: false });
+  E.muted = false; E.attach(oc); await E.prepareBabble();
+  E.sayReaction(kind, 0.05);
+  return oc.startRendering();
 }
