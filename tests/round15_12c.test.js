@@ -38,7 +38,7 @@ ok('opening the picker chimes, dismissing goes back, choosing does not', () => {
   assert.ok(/if \(shown && !placed\) sfx\('pickerBack'\)/.test(close));
   assert.ok(/close\(\{ light: true, placed: true \}\)/.test(choose));
   assert.ok(!/pickerBack|pickerChime/.test(choose));
-  assert.ok(/sfx\('reactSay', \{ kind: res\.mine \}\)/.test(choose));
+  assert.ok(/sfx\('reactSay', \{ kind: next \}\)/.test(choose), 'choosing still spells; 15.12d starts it on the tap');
   assert.ok(/sfx\('poof'\)/.test(choose));
   const wire = src('src/sound-wire.js'), sound = src('src/sound.js');
   assert.ok(/pickerChime\(E, t\)/.test(sound) && /pickerBack\(E, t\)/.test(sound));
@@ -63,15 +63,12 @@ ok('Inky patrol is frozen while a picker or report bubble is his, and released w
   assert.ok(/!pickerOpen\(\) && !inky\.bubbleHeld && inky\.celebrate\(\)/.test(app));
 });
 
-ok('cache-bust is 15.12c on the board entry and the modules this round changes', () => {
-  const html = src('index.html'), app = src('src/app.js'), wire = src('src/sound-wire.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.12c"/.test(html));
-  assert.ok(/inky\.js\?v=15\.12c/.test(app));
-  assert.ok(/reactions\.js\?v=15\.12c/.test(app));
+ok('15.12c modules this later round did not touch stay on 15.12c', () => {
+  const app = src('src/app.js'), wire = src('src/sound-wire.js');
+  assert.ok(/inky\.js\?v=15\.12c/.test(app), 'Inky hold is unchanged');
   assert.ok(/sound-wire\.js\?v=15\.12c/.test(app));
   assert.ok(/sound\.js\?v=15\.12c/.test(wire));
-  assert.ok(/react-glyphs\.js\?v=15\.12c/.test(rx));
-  assert.ok(!/app\.js\?v=15\.12b/.test(html + app));
+  assert.ok(!/app\.js\?v=15\.12b/.test(src('index.html') + app));
 });
 
 console.log(n + ' round 15.12c checks passed');
