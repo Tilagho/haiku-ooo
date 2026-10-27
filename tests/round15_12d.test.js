@@ -128,15 +128,15 @@ ok('ink wash desaturates toward the paper and leaves the used-grey path alone', 
   assert.ok(/else inkStampRGBA/.test(glyphs), 'picker and date-line share the wash, the used face does not');
 });
 
-ok('cache-bust is 15.12d on the board entry and the modules this round changes', () => {
+ok('reaction modules stay on 15.12d; the board entry moved with the 15.12e report chimes', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.12d"/.test(html));
-  assert.ok(!/app\.js\?v=15\.12c/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.12e"/.test(html));
+  assert.ok(!/app\.js\?v=15\.12[cd]"/.test(html));
   assert.ok(/reactions\.js\?v=15\.12d/.test(app));
   assert.ok(/react-glyphs\.js\?v=15\.12d/.test(rx));
   assert.ok(/react-data\.js\?v=15\.12d/.test(rx));
   assert.ok(/inky\.js\?v=15\.12c/.test(app), 'Inky was not part of this round');
-  assert.ok(/sound\.js\?v=15\.12c/.test(src('src/sound-wire.js')));
+  assert.ok(/sound\.js\?v=15\.12e/.test(src('src/sound-wire.js')));
 });
 
 console.log(n + ' round 15.12d checks passed');

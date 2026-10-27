@@ -63,11 +63,11 @@ ok('Inky patrol is frozen while a picker or report bubble is his, and released w
   assert.ok(/!pickerOpen\(\) && !inky\.bubbleHeld && inky\.celebrate\(\)/.test(app));
 });
 
-ok('15.12c modules this later round did not touch stay on 15.12c', () => {
+ok('Inky hold stays on 15.12c; sound moved with the 15.12e report chimes', () => {
   const app = src('src/app.js'), wire = src('src/sound-wire.js');
   assert.ok(/inky\.js\?v=15\.12c/.test(app), 'Inky hold is unchanged');
-  assert.ok(/sound-wire\.js\?v=15\.12c/.test(app));
-  assert.ok(/sound\.js\?v=15\.12c/.test(wire));
+  assert.ok(/sound-wire\.js\?v=15\.12e/.test(app));
+  assert.ok(/sound\.js\?v=15\.12e/.test(wire));
   assert.ok(!/app\.js\?v=15\.12b/.test(src('index.html') + app));
 });
 
