@@ -28,11 +28,13 @@ export function signatureFor(post) { const d = new Date(post.createdAt); return 
 let DATE_W = 0;
 const dateW = Sm => DATE_W || (DATE_W = Math.max(...MONTHS.flatMap(m => [28, 30, 31].map(d => measure(`${m} ${d}`, Sm)))));
 
-// Instead each layout carries its own pixel scale `u` (scroll units per font px): the normal 1.5, or, when the
-// longest line will not fit even with tighter step indents, 1.0, and only for extreme input 0.75 / 0.5. The
-// renderer snaps u down to whole device pixels, so the text stays crisp at every scale.
-export const SCALES = [1.5, 1.0, 0.75, 0.5];
-export const MAX_BOX = SCROLL_W - 26;                          // widest poem box in scroll units
+// One board brush. `u` is scroll units per font px. It used to drop to 1.0 / 0.75 / 0.5 when a line
+// missed MAX_BOX by a few units (round 15.13b). A wide compose sheet lets a 7-syllable line run that
+// long, so a desktop post painted thinner than a phone post of the same kind. The brush stays at U.
+// A stepped indent may still tighten so the line sits on the phone; if it is still wider, it keeps this
+// brush and the placer sets it as close to the paper as it can. The renderer snaps u to whole device px.
+export const SCALES = [U];
+export const MAX_BOX = SCROLL_W - 26;                          // widest poem box in scroll units, a comfort margin, not a reason to shrink the brush
 // round 15.13: a comment sits a little to the right of its parent's left edge. The parent keeps the seal.
 export const COMMENT_INDENT = 18;
 export function tuckX(parentX, commentW, indent = COMMENT_INDENT, W = SCROLL_W) {
@@ -84,8 +86,8 @@ function commentLayout(post, style) {
       sig: { t: sig, x: sigX0 + ox, y: sy + 1 }, seal: null, tick: { x: 2, y: L[0].y + 3, h: 9 } };
   };
   const steps = [...new Set([style.step, Math.min(style.step || 0, 8), 0])];
-  for (const u of SCALES) for (const st of steps) { const L = make(st, u); if (L.w * u <= MAX_BOX) return [L]; }
-  return [make(0, SCALES.at(-1))];
+  for (const st of steps) { const L = make(st, U); if (L.w * U <= MAX_BOX) return [L]; }
+  return [make(0, U)];
 }
 export function poemLayouts(post, n, style = { align: 'left', step: 12, dir: 1 }) {
   if (style.noSeal || post?.parentId) return commentLayout(post, style);
@@ -128,9 +130,10 @@ export function poemLayouts(post, n, style = { align: 'left', step: 12, dir: 1 }
       sig: { t: sig, x: sigX0 + ox, y: sy + oy + 1 }, seal: { x: x + ox, y: y + oy } };
   };
   const order = style.sealOrder || ['below-right'], steps = [...new Set([style.step, Math.min(style.step, 8), 0])];
-  // the text scale is decided by the poem alone (a seal beside it never shrinks the words)...
-  let u0 = SCALES.at(-1), st0 = 0;
-  find: for (const u of SCALES) for (const st of steps) { if (make(st, u, 'below-left').w * u <= MAX_BOX) { u0 = u; st0 = st; break find; } }
+  // the brush is the board's one size (a seal beside the words never shrinks them, and neither does a long line)...
+  const u0 = U;
+  let st0 = 0;
+  for (const st of steps) { if (make(st, u0, 'below-left').w * u0 <= MAX_BOX) { st0 = st; break; } }
   // ...then the first seal position in this post's order that still fits the phone at that scale
   // (a side seal that can't fit drops to the same side below the poem, unless the neighbour already sits there)
   const fits = pos => { const L = make(st0, u0, pos); return L.w * u0 <= MAX_BOX ? L : null; };

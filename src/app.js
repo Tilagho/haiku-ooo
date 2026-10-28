@@ -1,7 +1,7 @@
 import { checkHaiku } from './haiku.js';
 import { createStore } from './store.js?v=15.13';
-import { ScrollView } from './scroll-view.js?v=15.13';
-import { loadLibrary } from './scroll-engine2.js?v=15.13';
+import { ScrollView } from './scroll-view.js?v=15.13b';
+import { loadLibrary } from './scroll-engine2.js?v=15.13b';
 import SPRITES from './sprites6.js';
 import { Inky } from './inky.js?v=15.12c';
 import { SpeechScheduler, readMs, CheerBag } from './inky-mind.js';
