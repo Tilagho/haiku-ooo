@@ -22,6 +22,18 @@ body {
 }
 button { font: inherit; color: inherit; }
 
+/* round 15.12h: iOS long-press was selecting the whole board (Copy / Look Up / Translate, a blue wash
+   over the scroll) because only .poem opted out, and -webkit-touch-callout is not inherited.
+   A hold that opens the reaction picker must not also start a page selection. Compose fields opt
+   back in so the caret, selection, and paste callout still work. Poem tap-to-copy and the
+   contact@ address stay on their own clipboard path; they are not a native selection. */
+*:not(input):not(textarea) {
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none;
+}
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
+}
+
 /* ---------- infinite sumi background ---------- */
 #ink-layer { position: absolute; top: 0; left: 50%; width: min(100vw, 860px); transform: translateX(-50%); pointer-events: none; z-index: 0; overflow: hidden; }
 .ink-tile { position: absolute; image-rendering: pixelated; user-select: none; }

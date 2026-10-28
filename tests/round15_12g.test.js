@@ -139,13 +139,13 @@ ok('a phone star of count 1 still leaves a left-hand seal, and a numeral under a
 
 ok('cache-bust is 15.12g on the date line only', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.12g"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.12h"/.test(html));
   assert.ok(/reactions\.js\?v=15\.12g/.test(app));
   assert.ok(/react-data\.js\?v=15\.12g/.test(rx));
   assert.ok(/react-glyphs\.js\?v=15\.12d/.test(rx), 'playback was not part of this round');
   assert.ok(/report\.js\?v=15\.12e/.test(app));
-  assert.ok(/sound-wire\.js\?v=15\.12e/.test(app));
-  assert.ok(/sound\.js\?v=15\.12e/.test(src('src/sound-wire.js')));
+  assert.ok(/sound-wire\.js\?v=15\.12h/.test(app));
+  assert.ok(/sound\.js\?v=15\.12h/.test(src('src/sound-wire.js')));
   assert.ok(/inky\.js\?v=15\.12c/.test(app));
   assert.ok(/z-index: 1/.test(rx) && /z-index: 0/.test(rx), 'the numeral paints above the face');
   assert.ok(/COUNT_FROM/.test(src('src/react-data.js')));

@@ -3,11 +3,12 @@
 //   and the reading BED (wind + the distant waterfall, slowly crossfading and drifting in pan) starts then, quietly.
 // - (parked in 15.1, WATERFALL_SOUND) A waterfall on screen eases its near water in over a few seconds; off screen it fades out slowly.
 // - Credits list scrolling (15.1): a soft paper rustle following the scroll speed.
+// - Board scrolling (15.12h): a wind whoosh on the same bus as the bed, level following scroll speed, stopped when the scroll settles.
 // - Breezes (15.1): every 15-45 s a small airy breeze swells and dies over 4-10 s, drifting across the stereo field.
 // - The sound toggle (header, right of the 俳句の掲示板 line) mutes and SUSPENDS the context; the choice is kept in localStorage
 //   ('hb-sound-muted'). Hidden page: faded and suspended (src/sound.js). round 15.10i (t236u): the first tap (and any later
 //   unlock / rebuild) sets navigator.audioSession.type = "playback" so the iPhone silent switch does not mute the bed.
-import { SoundEngine, SITE_LEVELS } from './sound.js?v=15.12e';
+import { SoundEngine, SITE_LEVELS, whooshAmount, stepWhooshSpeed, WHOOSH_DEAD } from './sound.js?v=15.12h';
 import { setSfxSink, sfxLog, sfx } from './sfx.js';
 import { WATER_RE } from './waterfall.js';
 import { PX, SCROLL_W } from './scroll-engine2.js';
@@ -35,6 +36,8 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
     else if (name === 'dragEnd') snd.stopDrag();
     else if (name === 'rustleStart') snd.startRustle();
     else if (name === 'rustleEnd') snd.stopRustle();
+    else if (name === 'whooshStart') { snd.startWhoosh(); return 'played'; }   // round 15.12h: not snd.play — there is no one-shot
+    else if (name === 'whooshEnd') { snd.stopWhoosh(); return 'played'; }
     else if (name === 'typeChar') return snd.babble(p);   // round 15.3: the typewriter's babble (one tiny syllable per letter; 'merged' / 'silent' / 'warming' otherwise)
     else if (name === 'impact') { const now = performance.now(); if (now - lastImpact < 140) return 'skipped'; lastImpact = now; snd.dragImpact(p.strength ?? 0.6); }
     else snd.play(name, p);
@@ -83,6 +86,50 @@ export function mountSound({ view, inky, clock, root = document } = {}) {
       ly = y; lt = t; clearTimeout(idle);
       idle = setTimeout(() => { ly = null; if (on) { on = false; snd.updateRustle(0); sfx('rustleEnd'); } }, 150);
     }, { capture: true, passive: true }); }
+  // round 15.12h: scrolling the board whooshes. Window scroll only (the credits list is the rustle above).
+  // One voice; 30 Hz updates go straight to the engine so the sfx log is not a stream of speeds.
+  // A lone scroll event after a pause (poem insert, scroll-lock restore) is a jump, not a flick.
+  {
+    const quiet = matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 0.4 : 1;
+    const GAP = 0.12;
+    let sy = null, st = 0, sm = 0, dir = 1, on = false, raf = 0, lastEv = 0, lu = 0;
+    const end = () => {
+      const was = on; on = false; sm = 0;
+      snd.stopWhoosh();
+      if (was) sfx('whooshEnd');
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+    };
+    const frame = (now) => {
+      raf = requestAnimationFrame(frame);
+      if (snd.muted || document.hidden || document.documentElement.classList.contains('scroll-lock')) { end(); sy = null; return; }
+      const since = Math.max(0, (now - lastEv) / 1000);
+      sm = stepWhooshSpeed(sm, 1 / 60, since);
+      const amt = whooshAmount(sm) * quiet;
+      if (!on) {
+        if (amt < 0.08) { if (since > 0.2) { cancelAnimationFrame(raf); raf = 0; } return; }
+        on = true; sfx('whooshStart');
+      }
+      if (amt < 0.03 && since > 0.18) { end(); sy = null; return; }
+      if (now - lu >= 32) { lu = now; snd.updateWhoosh(amt, dir); }
+    };
+    addEventListener('scroll', () => {
+      if (document.documentElement.classList.contains('scroll-lock')) { sy = null; end(); return; }
+      const y = scrollY, t = performance.now();
+      if (sy != null) {
+        const dt = (t - st) / 1000;
+        if (dt > 0 && dt < GAP) {
+          const v = (y - sy) / Math.max(0.008, dt), inst = Math.abs(v);
+          const alpha = 1 - Math.exp(-Math.max(0.008, dt) / 0.06);
+          sm = sm + (inst - sm) * alpha;
+          if (inst > WHOOSH_DEAD) dir = Math.sign(v) || dir;
+        } else sm *= 0.2;
+      }
+      sy = y; st = t; lastEv = t;
+      if (snd.muted || document.hidden) { end(); return; }
+      if (!raf && (on || whooshAmount(sm) * quiet >= 0.08)) raf = requestAnimationFrame(frame);
+    }, { passive: true });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { end(); sy = null; } });
+  }
   const api = { waterfallSound: WATERFALL_SOUND, engine: snd, log: sfxLog, get state() { return snd.ctx?.state ?? 'none'; }, get muted() { return snd.muted; }, get bed() { return snd.bedOn; }, get near() { return near; }, button: btn, fallsOnScreen };
   return api;
 }
