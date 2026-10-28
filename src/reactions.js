@@ -280,7 +280,9 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
   function cancelHold() { if (!S.hold) return; clearTimeout(S.hold.t); S.hold.el.classList.remove('rx-holding'); S.hold = null; }
   document.addEventListener('pointerdown', e => {
     if (e.button > 0 || busy()) return;
-    if (S.picking && !e.target.closest?.('#rx-pop')) { close({ light: true }); }
+    // A tap on the Comment button is not a dismiss. pointerdown fires before the button's click,
+    // and that click is what opens compose (src/app.js writeTapped).
+    if (S.picking && !e.target.closest?.('#rx-pop') && !e.target.closest?.('#fab')) { close({ light: true }); }
     const z = poemZone(e, feed); if (!z || z.stamp) return;
     if (z.comment) return;   // a reply is reported, not reacted to, and does not enter comment mode
     cancelHold();
