@@ -409,10 +409,10 @@ export class ScrollComposer {
     const keep = comment ? { align: this.lastAlign, seal: this.lastSealPos } : null;
     const n = comment ? 0 : (post.seq > 0 ? (this.n = Math.max(this.n, post.seq), post.seq) : ++this.n);
     const R = rng(hash(this.seed, comment ? 'comment' : 'poem', comment ? post.id : n, post.id)), style = poemStyle(this.seed, comment ? hash('c', post.id) : n, post.id), A = this.art;
-    if (this.lastAlign) style.align = ALIGNS[(ALIGNS.indexOf(this.lastAlign) + 1 + (hash(this.seed, 'realign', comment ? post.id : n, post.id) % 2)) % 3];   // never the same twice running
-    this.lastAlign = style.align;
-    if (comment) style.noSeal = true;
+    if (!comment && this.lastAlign) style.align = ALIGNS[(ALIGNS.indexOf(this.lastAlign) + 1 + (hash(this.seed, 'realign', n, post.id) % 2)) % 3];   // never the same twice running
+    if (comment) { style.align = 'left'; style.step = 0; style.dir = 1; style.noSeal = true; }   // the words themselves sit in the indent, not a right-aligned box
     else { style.sealOrder = sealOrder(n, post.id, this.lastSealPos); style.sealAvoid = this.lastSealPos; }
+    this.lastAlign = style.align;
     const layouts = poemLayouts(post, n, style);
     if (!comment) this.lastSealPos = layouts[0].sealPos;
     // Tight only when this row is stacking on its own reply: a parent just above its comment, or a
