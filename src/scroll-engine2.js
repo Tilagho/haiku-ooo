@@ -33,6 +33,12 @@ const dateW = Sm => DATE_W || (DATE_W = Math.max(...MONTHS.flatMap(m => [28, 30,
 // renderer snaps u down to whole device pixels, so the text stays crisp at every scale.
 export const SCALES = [1.5, 1.0, 0.75, 0.5];
 export const MAX_BOX = SCROLL_W - 26;                          // widest poem box in scroll units
+// round 15.13: a comment sits a little to the right of its parent's left edge. The parent keeps the seal.
+export const COMMENT_INDENT = 18;
+export function tuckX(parentX, commentW, indent = COMMENT_INDENT, W = SCROLL_W) {
+  const max = W - 8 - commentW;
+  return Math.max(8, Math.min(max, parentX + indent));
+}
 // Alignment is picked per poem from the seed: left, centered or right; lines flat or stepped (down-in or down-out).
 export const ALIGNS = ['left', 'center', 'right'];
 export function poemStyle(seed, n, id) {
@@ -57,7 +63,32 @@ export function sealOrder(n, id, avoid = null) {      // a weighted shuffle of S
   return [...keyed.filter(p => p !== avoid), below[0]];   // ends with a fitting fallback that isn't the neighbour's
 }
 const SEAL_GAP_X = 12, SEAL_GAP_Y = 11;                      // font px: well clear of the text
+// A comment uses the poem's brush and byline, with no number seal and a few px reserved for a reply tick.
+function commentLayout(post, style) {
+  const F = font('main'), Sm = font('small'), lh = lineHeight(F) + 4, slh = lineHeight(Sm);
+  const src = post.text.split('\n').slice(0, 3), sig = signatureFor(post), sigW = measure(sigAuthor(post), Sm) + dateW(Sm), sigT = measure(sig, Sm);
+  const widths = src.map(t => measure(t, F)), TICK = 8;
+  const make = (step, u) => {
+    const { align, dir } = style, k = i => (dir > 0 ? i : src.length - 1 - i) * step;
+    const block = Math.max(...widths.map((w, i) => w + k(i)));
+    const L = src.map((t, i) => ({ t, y: i * lh, x: align === 'left' ? k(i) : align === 'right' ? block - widths[i] - k(i)
+      : Math.round((block - widths[i]) / 2 + (dir > 0 ? 1 : -1) * (i - 1) * step / 2) }));
+    const minX0 = Math.min(...L.map(l => l.x)), maxR0 = Math.max(...L.map((l, i) => l.x + widths[i]));
+    const sy = src.length * lh + 3;
+    const sx = align === 'left' ? minX0 + 2 : align === 'right' ? maxR0 - sigW : Math.round((minX0 + maxR0 - sigW) / 2);
+    const sigX0 = align === 'left' ? sx : sx + sigW - sigT;
+    const ox = TICK - Math.min(0, minX0, sx);
+    L.forEach(l => { l.x += ox; });
+    const w = Math.max(maxR0, sx + sigW) + ox + 1, h = sy + slh + 2;
+    return { kind: align, align, dir: style.dir, w, h, u, lines: L, step, sealPos: null, comment: true,
+      sig: { t: sig, x: sigX0 + ox, y: sy + 1 }, seal: null, tick: { x: 2, y: L[0].y + 3, h: 9 } };
+  };
+  const steps = [...new Set([style.step, Math.min(style.step || 0, 8), 0])];
+  for (const u of SCALES) for (const st of steps) { const L = make(st, u); if (L.w * u <= MAX_BOX) return [L]; }
+  return [make(0, SCALES.at(-1))];
+}
 export function poemLayouts(post, n, style = { align: 'left', step: 12, dir: 1 }) {
+  if (style.noSeal || post?.parentId) return commentLayout(post, style);
   const F = font('main'), Sm = font('small'), lh = lineHeight(F) + 4, slh = lineHeight(Sm);
   const src = post.text.split('\n').slice(0, 3), sig = signatureFor(post), sigW = measure(sigAuthor(post), Sm) + dateW(Sm), sigT = measure(sig, Sm);
   const [sealW, sealH] = sealDims(n), widths = src.map(t => measure(t, F));
@@ -372,13 +403,28 @@ export class ScrollComposer {
   get height() { return Math.ceil(((this.poems.length ? this.prevTop : 120) + 240) / PX) * PX; }
   clear(x, y, w, h, pad, own) { return !this.rects.some(r => r !== own && x < r.x + r.w + pad && x + w > r.x - pad && y < r.y + r.h + pad && y + h > r.y - pad); }
   addPost(post) {
-    const n = post.seq > 0 ? (this.n = Math.max(this.n, post.seq), post.seq) : ++this.n, R = rng(hash(this.seed, 'poem', n, post.id)), style = poemStyle(this.seed, n, post.id), A = this.art;
-    if (this.lastAlign) style.align = ALIGNS[(ALIGNS.indexOf(this.lastAlign) + 1 + (hash(this.seed, 'realign', n, post.id) % 2)) % 3];   // never the same twice running
-    this.lastAlign = style.align; style.sealOrder = sealOrder(n, post.id, this.lastSealPos); style.sealAvoid = this.lastSealPos;
-    const layouts = poemLayouts(post, n, style); this.lastSealPos = layouts[0].sealPos;
-    const gap = 120 + R() * 130, jx = R();          // about two poems to a phone screen, irregular rhythm
+    // A comment borrows the gap above the previous poem but must not take a seal number, and must not
+    // change the next real poem's align / seal (those stay a property of the top-level sequence).
+    const comment = !!post?.parentId;
+    const keep = comment ? { align: this.lastAlign, seal: this.lastSealPos } : null;
+    const n = comment ? 0 : (post.seq > 0 ? (this.n = Math.max(this.n, post.seq), post.seq) : ++this.n);
+    const R = rng(hash(this.seed, comment ? 'comment' : 'poem', comment ? post.id : n, post.id)), style = poemStyle(this.seed, comment ? hash('c', post.id) : n, post.id), A = this.art;
+    if (this.lastAlign) style.align = ALIGNS[(ALIGNS.indexOf(this.lastAlign) + 1 + (hash(this.seed, 'realign', comment ? post.id : n, post.id) % 2)) % 3];   // never the same twice running
+    this.lastAlign = style.align;
+    if (comment) style.noSeal = true;
+    else { style.sealOrder = sealOrder(n, post.id, this.lastSealPos); style.sealAvoid = this.lastSealPos; }
+    const layouts = poemLayouts(post, n, style);
+    if (!comment) this.lastSealPos = layouts[0].sealPos;
+    // Tight only when this row is stacking on its own reply: a parent just above its comment, or a
+    // comment just above an older sibling. The first reply under a poem keeps the normal sky gap, so
+    // the group hangs under the parent and the older poem stays where it was.
+    const prev = this.poems.at(-1)?.post;
+    const tight = comment ? !!(prev?.parentId && prev.parentId === post.parentId) : !!(prev?.parentId && prev.parentId === post.id);
+    const gap = tight ? 26 + R() * 14 : 120 + R() * 130, jx = R();          // about two poems to a phone screen, irregular rhythm
     let best = null;
-    for (let span = 500; !best && span <= 500 * 16; span *= 2) {
+    // A reply stack stays close. Searching the usual half-screen would open a sky between a poem and its comment.
+    const spanMax = tight ? 80 : 500 * 16;
+    for (let span = tight ? 70 : 500; !best && span <= spanMax; span *= 2) {
       const r0 = Math.ceil((this.prevTop + gap) / PX), r1 = r0 + Math.ceil(span / PX), PAD = 10;
       A.ensure(r1 + 80);
       const base = r0 - PAD, H = r1 - r0 + 2 * PAD + 60, W = AW, sat = () => new Float64Array((H + 1) * (W + 1));
@@ -409,10 +455,11 @@ export class ScrollComposer {
     }
     if (!best) { const L = layouts[0]; best = { L, x: 6, y: Math.ceil((this.prevTop + gap) / PX) * PX, bw: Math.ceil(L.w * L.u / PX), bh: Math.ceil(L.h * L.u / PX), d1: 99, fallback: true }; }
     const { L, x, y, bw, bh } = best, W = bw * PX, Hh = bh * PX;
-    const poem = { n, post, x, y, w: W, h: Hh, layout: L, overlap: best.d1, score: best.s, fallback: !!best.fallback };
+    const poem = { n, post, x, y, w: W, h: Hh, layout: L, overlap: best.d1, score: best.s, fallback: !!best.fallback, comment };
     this.rects.push(poem); this.prevTop = y + Hh;
     this.poems.push(poem);
     A.ensure(Math.ceil((this.height + 900) / PX));
+    if (keep) { this.lastAlign = keep.align; this.lastSealPos = keep.seal; }
     return { poem };
   }
 }

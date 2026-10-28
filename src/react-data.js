@@ -426,6 +426,8 @@ export function poemZone(e, feed, slop = 8) {
   if (!el) return null;
   const rec = feed.recOf(el);
   if (!rec) return null;
+  // A reply has no seal. Hold reports it; it does not open the reaction picker or comment mode.
+  if (rec.post?.parentId) return { el, rec, stamp: false, comment: true };
   const p = { x: e.clientX, y: e.clientY };
   const view = feed.viewOf(el);
   let stamp = !!(view && pointInRect(p, sealScreenRect(rec, view), slop));

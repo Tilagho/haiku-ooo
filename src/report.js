@@ -10,9 +10,9 @@
 // the gesture for scrolling) or any scroll cancels it, and the tap-to-copy only happens when the hold did not fire.
 import { TAKEDOWN_REPORTS, REPORT_MARK, LONG_PRESS_MS, LONG_PRESS_SLOP, deviceId, isReportable, ReportLedger } from './moderation.js';
 import { sfx } from './sfx.js';
-import { poemZone } from './react-data.js';
+import { poemZone } from './react-data.js?v=15.13';
 import { sealDims } from './brush-text.js';
-import { SCROLL_W } from './scroll-engine2.js';
+import { SCROLL_W } from './scroll-engine2.js?v=15.13';
 
 // the header's 俳句の掲示板 (src/style.css .noren-head .jp): 18px DotGothic16, letter-spacing 6px, #4a4550
 export const MARK_STYLE = { size: 18, spacing: 6, color: '#4a4550' };
@@ -35,7 +35,13 @@ export function mountReports({ feed, store, ask, reduced = false, onReported = (
   const recOf = el => feed.recOf(el);
   const S = { asking: null, swallowUntil: 0, hold: null };
   // round 15.11: only the number seal (and the 通報 mark) starts a report. The poem body is the reaction picker.
-  const stampAt = e => { const z = poemZone(e, feed); return z?.stamp && isReportable(z.rec.post) ? z.el : null; };
+  // The seal reports a top-level poem. A comment has no seal: holding the reply itself reports it.
+  const stampAt = e => {
+    const z = poemZone(e, feed);
+    if (!z || !isReportable(z.rec.post)) return null;
+    if (z.comment || z.stamp) return z.el;
+    return null;
+  };
 
   // ---------- long-press the seal (newest block and every older one) ----------
   function cancelHold() { if (!S.hold) return; clearTimeout(S.hold.t); S.hold.el.classList.remove('rpt-holding'); S.hold = null; }
@@ -59,7 +65,7 @@ export function mountReports({ feed, store, ask, reduced = false, onReported = (
   // right-click / the keyboard's context-menu key / Android's own long-press event: Inky asks too (never the browser menu)
   document.addEventListener('contextmenu', e => {
     const z = poemZone(e, feed); if (!z) return; e.preventDefault();
-    if (!z.stamp || S.asking || busy() || !isReportable(z.rec.post)) return;
+    if ((!z.stamp && !z.comment) || S.asking || busy() || !isReportable(z.rec.post)) return;
     cancelHold(); S.swallowUntil = performance.now() + 900; open(z.el);
   });
 
@@ -73,7 +79,7 @@ export function mountReports({ feed, store, ask, reduced = false, onReported = (
     try { yes = await ask(el, { already, threshold: TAKEDOWN_REPORTS }); } finally { el.classList.remove('rpt-target'); }
     if (!yes || already) { S.asking = null; return { id, reported: false, already }; }
     let res;
-    try { res = await store.report(id, { reporter: me }); }
+    try { res = await store.report(id, { reporter: me, comment: !!rec.post.parentId }); }
     catch (err) { S.asking = null; onReported({ id, el, error: err?.reason || 'could not report, try again' }); return { id, reported: false, error: err }; }
     ledger.add(id); S.asking = null;
     sfx('reportYes');   // round 15.12e: the ✔ went through. Not on ✕, not on "already", not when the report throws.
@@ -97,6 +103,10 @@ export function mountReports({ feed, store, ask, reduced = false, onReported = (
     const L = rec.poem.layout, pad = rec.pad, c = view.fontScale(L.u), s = view.host.clientWidth / SCROLL_W || 1;
     // the layer is scaled by s, so 18 css px on screen = 18 / s units here (exactly the header's size on the phone)
     Object.assign(m.style, { fontSize: MARK_STYLE.size / s + 'px', letterSpacing: MARK_STYLE.spacing / s + 'px', marginRight: -MARK_STYLE.spacing / s + 'px' });
+    if (rec.post?.parentId || !L.seal) {
+      Object.assign(m.style, { left: ((L.sig.x + pad) * c + 4) + 'px', top: ((L.sig.y + pad) * c) + 'px' });
+      m.dataset.side = 'sig'; return;
+    }
     const [sw, sh] = sealDims(rec.poem.n), seal = { x: (L.seal.x + pad) * c, y: (L.seal.y + pad) * c, w: sw * c, h: sh * c };
     const mark = { w: m.offsetWidth - MARK_STYLE.spacing / s, h: m.offsetHeight };
     const p = markSpot(L.sealPos, seal, mark, { left: el.offsetLeft, w: rec.W * c });

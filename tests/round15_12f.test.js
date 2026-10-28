@@ -122,11 +122,11 @@ ok('a full set that cannot sit on the seal scales clear instead of covering it',
 
 ok('cache-bust moved to 15.12g; the seal is still passed into the packer', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.12h"/.test(html));
-  assert.ok(/reactions\.js\?v=15\.12g/.test(app));
-  assert.ok(/react-data\.js\?v=15\.12g/.test(rx));
+  assert.ok(/src\/app\.js\?v=15\.13"/.test(html));
+  assert.ok(/reactions\.js\?v=15\.13/.test(app));
+  assert.ok(/react-data\.js\?v=15\.13/.test(rx));
   assert.ok(/react-glyphs\.js\?v=15\.12d/.test(rx));
-  assert.ok(/report\.js\?v=15\.12e/.test(app));
+  assert.ok(/report\.js\?v=15\.13/.test(app));
   assert.ok(/sound-wire\.js\?v=15\.12h/.test(app));
   assert.ok(/sound\.js\?v=15\.12h/.test(src('src/sound-wire.js')));
   assert.ok(/sigY: L\.sig\.y/.test(rx) && /avoid: \{ x: L\.seal\.x/.test(rx), 'the row passes the seal rect into the packer');

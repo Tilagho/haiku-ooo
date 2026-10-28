@@ -3,20 +3,20 @@
 // Hold the number seal to report — that stays in src/report.js. Counts live in haiku-ooo Firestore
 // (poemRx/{poemId} + poemRx/{poemId}/by/{uid}); see firestore.reactions.rules.
 import { drawLine, font, measure, rng, hash, sealDims } from './brush-text.js';
-import { signatureFor, sigAuthor, SCROLL_W } from './scroll-engine2.js';
+import { signatureFor, sigAuthor, SCROLL_W } from './scroll-engine2.js?v=15.13';
 import { renderBubble, U as BU } from './pixel-bubble.js';
 import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
-} from './react-data.js?v=15.12g';
+} from './react-data.js?v=15.13';
 import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD, GLYPH_PLAY_MS, planPlays } from './react-glyphs.js?v=15.12d';
 import { sfx } from './sfx.js';
 
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)
 const dateOf = post => signatureFor(post).slice(sigAuthor(post).length);
 
-export function mountReactions({ feed, store, inky, inkyFree = () => false, reduced = false, busy = () => false, hush = () => {}, onFail = () => {} } = {}) {
+export function mountReactions({ feed, store, inky, inkyFree = () => false, reduced = false, busy = () => false, hush = () => {}, onFail = () => {}, onHoldPoem = () => {} } = {}) {
   if (!document.getElementById('rx-css')) { const st = document.createElement('style'); st.id = 'rx-css'; st.textContent = RX_CSS; document.head.appendChild(st); }
   setGlyphMotion(reduced);
   loadSprites();
@@ -62,6 +62,10 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     return el.dataset.label;
   }
   function composeLabel(el, c) {
+    if (el.dataset.comment) {
+      el.setAttribute('aria-label', baseLabel(el) + (el.dataset.reportable ? ', hold to report' : ''));
+      return;
+    }
     const bits = RX_ORDER.filter(k => (c?.[k] | 0) > 0).map(k => `${RX_LABEL[k]} ${c[k]}`).join(', ');
     let s = baseLabel(el);
     if (bits) s += `, reactions: ${bits}`;
@@ -73,6 +77,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
   function renderRow(el) {
     const rec = feed.recOf(el), view = feed.viewOf(el);
     if (!rec || !view || !view.host.clientWidth) return;
+    if (rec.post?.parentId) { composeLabel(el); return; }   // v1: no reaction glyphs on comments
     const id = rec.post.id, c = counts.get(id) || emptyCounts();
     composeLabel(el, c);
     const active = RX_ORDER.filter(k => (c[k] | 0) > 0);
@@ -211,6 +216,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     // His bubble, not the poem's: stop the roam slide before the picker is measured, and keep him there until close.
     inky?.holdBubble?.('picker', !poemAnchor);
     if (!poemAnchor) { try { inky.setMood('happy'); } catch {} }
+    if (!rec.post?.parentId) onHoldPoem(rec.post);   // hold a top-level poem: the write button becomes "comment"
     try { await loadSprites(); } catch {}
     if (!mine.has(id) && store.myReaction) {
       try { mine.set(id, await Promise.race([store.myReaction(id), new Promise(r => setTimeout(() => r(mine.get(id) ?? null), 500))])); } catch {}
@@ -275,6 +281,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     if (e.button > 0 || busy()) return;
     if (S.picking && !e.target.closest?.('#rx-pop')) { close({ light: true }); }
     const z = poemZone(e, feed); if (!z || z.stamp) return;
+    if (z.comment) return;   // a reply is reported, not reacted to, and does not enter comment mode
     cancelHold();
     const x = e.clientX, y = e.clientY;
     S.hold = { el: z.el, x, y, pid: e.pointerId, t: setTimeout(() => {
@@ -291,7 +298,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
   document.addEventListener('contextmenu', e => {
     const z = poemZone(e, feed); if (!z) return;
     e.preventDefault();
-    if (z.stamp || busy() || S.picking) return;
+    if (z.stamp || z.comment || busy() || S.picking) return;
     cancelHold(); S.swallowUntil = performance.now() + 900; open(z.el);
   });
   addEventListener('keydown', e => { if (e.key === 'Escape' && S.picking) { e.preventDefault(); close({ light: true }); } }, true);

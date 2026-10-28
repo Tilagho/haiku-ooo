@@ -764,9 +764,18 @@ export function mountCompose(deps) {
   const fabAnim = (k, o) => { try { return deps.fab?.animate(k, o); } catch { return null; } };
 
   // ---------- OPEN: board Inky dives in -> black flood -> scroll unrolls -> red Inky swings in from the right ----------
-  let homeInky = null;
-  async function open() {
+  let homeInky = null, replyParent = null;
+  function replyMode(on) {
+    replyParent = on?.id && !on.parentId ? on : null;
+    $('#cscroll').setAttribute('aria-label', replyParent ? 'comment on this haiku' : 'write a haiku');
+    $('#cpoem').setAttribute('aria-label', (replyParent ? 'your comment' : 'your haiku') + ': three lines of 5, 7 and 5 syllables. return goes to the next line');
+    $('#cpost').setAttribute('aria-label', replyParent ? 'seal and post this comment' : 'seal and post');
+    $('#cback').setAttribute('aria-label', replyParent ? 'back to the board, discard this comment' : 'back to the board, discard this haiku');
+    if (replyParent) body.dataset.compose = 'comment'; else delete body.dataset.compose;
+  }
+  async function open(opts = {}) {
     if (opened || body.classList.contains('composing')) return;
+    replyMode(opts.parent);
     resetSpeech();                                                   // 14.8: no bubble, queue or timer of an earlier session survives into this open
     lockScroll(); body.classList.add('composing'); html.classList.add('composing'); busy = true; rejects = hintAt = 0; denied = false; denyMsg = ''; body.classList.remove('is-denied');
     syncViewport();
@@ -803,7 +812,8 @@ export function mountCompose(deps) {
     await inky.whip([[innerWidth + 90, vvt + vvh * .56], [innerWidth * .62, vvt + vvh * .74], [innerWidth * .36, vvt + vvh * .9], [innerWidth * .48, vvt + vvh * .8], [innerWidth * .26, vvt + vvh * .76], [d.x, d.foot]], .95, { splash: 10, whoosh: false });   // swooshIn just above
     await done; busyScroll = false; unrolling = false;
     inky.mode = 'coach'; inky.dock = dock; inky.setMood('happy'); inky.look = 1;
-    if (!(KB_MODE === 'late' && coarse)) say('hi! I\'m counting.<br>give me 5-7-5', bubbleHold('hi! I\'m counting. give me 5-7-5'));   // 14.8: in the tap-to-write flow his FIRST words are 'tap to write' (this greeting used to flash first)
+    const hello = replyParent ? 'a reply.<br>still 5-7-5' : 'hi! I\'m counting.<br>give me 5-7-5';
+    if (!(KB_MODE === 'late' && coarse)) say(hello, bubbleHold(hello.replace(/<br>/g, ' ')));   // 14.8: in the tap-to-write flow his FIRST words are 'tap to write' (this greeting used to flash first)
   }
   async function rollUp() {
     body.classList.remove('opened');
@@ -830,6 +840,8 @@ export function mountCompose(deps) {
   }
   function restoreBoard() {
     const bi = deps.inky, je = springEasing(SPRINGS.drop);
+    replyMode(null);                                         // label swap happens while the button is still rolled shut
+    deps.onFabRestore?.();
     fabAnim([{ transform: 'translateX(-50%) translateY(140px) scale(.8,1.2)' }, { transform: 'translateX(-50%) translateY(0) scale(1)' }], { duration: je.duration, easing: je.easing, fill: 'forwards' });
     deps.fabArt?.unroll?.();
     clock.wait(1200).then(() => { bi.setMood('happy'); bi.mode = 'roam'; bi.floor = bi.pageFloor(); });
@@ -875,10 +887,11 @@ export function mountCompose(deps) {
     const name = cleanName(nameIn.value).trim();
     busy = true;
     let post;
-    try { post = await deps.store.create(text, { author: name }); }       // the store re-checks; a duplicate is refused here
+    const parent = replyParent;
+    try { post = await deps.store.create(text, parent ? { author: name, parentId: parent.id, parentSeq: parent.seq } : { author: name }); }       // the store re-checks; a duplicate is refused here
     catch (err) { busy = false; return deny(err.reason || 'could not post. try again?'); }
     inky.tapping = false; rejects = hintAt = 0;
-    inky.setMood('cheer'); inky.jump(1.2); inky.sparkle(16); say(name ? `signed, ${esc(name)}!` : 'sealing it!', 1200);
+    inky.setMood('cheer'); inky.jump(1.2); inky.sparkle(16); say(name ? `signed, ${esc(name)}!` : (parent ? 'tucking it in!' : 'sealing it!'), 1200);
     await clock.wait(550);
     // Inky travels right across the scroll and presses the wax seal
     const pr = $('#cpost .wax').getBoundingClientRect(), tx = pr.left + pr.width / 2, ty = pr.top + pr.height / 2;
@@ -937,20 +950,25 @@ export function mountCompose(deps) {
 
   // ---------- the poem lands on the board: the black drains into Inky, the poem types in, its seal stamps on ----------
   async function installPost(post) {
-    unlockTo = 0;                                           // newest is on top: be there before the black lifts
-    homeInky = { x: innerWidth * .2, foot: innerHeight - 78 };
+    const reply = !!post?.parentId;
+    unlockTo = reply ? undefined : 0;                       // a new poem is the top; a reply stays where the parent was
+    if (!reply) homeInky = { x: innerWidth * .2, foot: innerHeight - 78 };
     sfx('inkWash');                                         // published: the whole bucket of ink washes away
     const drained = drainHome();
-    await clock.wait(700);
+    await clock.wait(reply ? 400 : 700);
     let added = null;
-    try { added = deps.view.add(post, { animate: true }); } catch (e) { console.warn('compose: could not add the poem', e); }
-    if (added?.node) {
+    try {
+      const place = deps.placePost || ((p, o) => deps.view.add(p, o));
+      added = await Promise.resolve(place(post, { animate: true }));
+    } catch (e) { console.warn('compose: could not add the poem', e); }
+    if (added?.node && !reply) {
       added.node.setAttribute('aria-label', `haiku ${added.poem?.n ?? ''}: ${post.text.replace(/\n/g, ' / ')}${post.author ? ', by ' + post.author : ''}`);
-      deps.view.scrollToPoem(added.node, 'auto');
     }
+    if (added?.node) deps.view.scrollToPoem(added.node, 'auto');
     await drained;
     restoreBoard();
     window.dispatchEvent(new CustomEvent('haiku:composeclosed', { detail: { posted: true, post } }));
+    if (reply) { deps.onComment?.(post); return added?.node; }
     // round 15.10: board Inky's celebration starts the moment the new poem's number seal SETTLES (haiku:sealed, ~0.4 s after the stamp's
     // impact, as its approval tone resolves) rather than at `played` (which waits another 0.8 s for the ink bleed to clear)
     const sealed = new Promise(res => { const on = e => { if (e.detail?.id === post.id) { removeEventListener('haiku:sealed', on); res(); } }; addEventListener('haiku:sealed', on); clock.wait(15000).then(() => { removeEventListener('haiku:sealed', on); res(); }); });

@@ -1,0 +1,94 @@
+// Round 15.13 — PASTE these matches into the LIVE haiku-ooo Firestore rules.
+// Do NOT deploy this file by itself. It is not the whole ruleset. Replacing production rules with
+// only this block would lock posting and reporting. The full rules live in the Firebase console
+// (project haiku-ooo, never tiago.ooo) and are not in this repo.
+//
+// Put the matches next to match /haikus/{id}, inside the same `match /databases/{database}/documents`.
+//
+// Comments are flat replies under a top-level poem. They do NOT take a kanji seal: there is no `seq`
+// field and haikuMeta/counter is not touched. The parent keeps its number.
+//
+//   comments/{id}                  { parentId, parentSeq, text, author, uid, createdAt, reports, removed, hash, comment }
+//   comments/{id}/reports/{uid}    { at }
+//   commentTexts/{hash}            { post, uid }     one comment per normalized text
+//   commentPosters/{uid}           { last, windowStart, n }   20s gap, 12 per hour (separate from poem posters)
+//
+// The 5-7-5 count cannot run inside rules (same as poems). Rules enforce the shape: exactly 3 non-empty
+// lines, each <= 80 chars, whole text <= 220. The client still runs checkHaiku() before the write.
+//
+// Composite index the first comments query will ask for (create it when the console offers the link):
+//   collection comments: removed ASC, parentId ASC
+//
+// Reactions are not stored on comments in this round. Reporting uses the subcollection below.
+
+    function signedIn() { return request.auth != null; }
+    function haikuShape(text) {
+      return text is string && text.size() <= 220 && text.matches('[^\\n\\r]{1,80}\\n[^\\n\\r]{1,80}\\n[^\\n\\r]{1,80}');
+    }
+    function sampleParent() {
+      return request.resource.data.parentId.matches('sample-(0[1-9]|1[0-2])')
+        && request.resource.data.parentSeq >= 1 && request.resource.data.parentSeq <= 12;
+    }
+    function poemParent() {
+      return exists(/databases/$(database)/documents/haikus/$(request.resource.data.parentId))
+        && get(/databases/$(database)/documents/haikus/$(request.resource.data.parentId)).data.seq == request.resource.data.parentSeq
+        && get(/databases/$(database)/documents/haikus/$(request.resource.data.parentId)).data.removed == false;
+    }
+
+    match /comments/{id} {
+      allow read: if resource.data.removed == false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['parentId', 'parentSeq', 'text', 'author', 'uid', 'createdAt', 'reports', 'removed', 'hash', 'comment'])
+        && !request.resource.data.keys().hasAny(['seq'])
+        && request.resource.data.comment == true
+        && request.resource.data.parentId is string && request.resource.data.parentId.size() > 0 && request.resource.data.parentId.size() <= 128
+        && request.resource.data.parentSeq is int
+        && (sampleParent() || poemParent())
+        && haikuShape(request.resource.data.text)
+        && request.resource.data.author is string && request.resource.data.author.size() <= 12
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.reports == 0 && request.resource.data.removed == false
+        && request.resource.data.hash is string && request.resource.data.hash.size() == 64;
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reports', 'removed'])
+        && request.resource.data.reports == resource.data.reports + 1
+        && request.resource.data.removed == (request.resource.data.reports >= 3)
+        && existsAfter(/databases/$(database)/documents/comments/$(id)/reports/$(request.auth.uid))
+        && !exists(/databases/$(database)/documents/comments/$(id)/reports/$(request.auth.uid));
+      allow delete: if false;
+
+      match /reports/{uid} {
+        allow read: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn() && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['at'])
+          && request.resource.data.at == request.time;
+        allow update, delete: if false;
+      }
+    }
+
+    match /commentTexts/{hash} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['post', 'uid'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.post is string
+        && existsAfter(/databases/$(database)/documents/comments/$(request.resource.data.post));
+      allow update, delete: if false;
+    }
+
+    match /commentPosters/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['last', 'windowStart', 'n'])
+        && request.resource.data.n == 1
+        && request.resource.data.last == request.time
+        && request.resource.data.windowStart == request.time;
+      allow update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['last', 'windowStart', 'n'])
+        && request.resource.data.last == request.time
+        && request.resource.data.n is int && request.resource.data.n > 0 && request.resource.data.n <= 12
+        && request.resource.data.n == resource.data.n + 1
+        && request.resource.data.windowStart == resource.data.windowStart;
+      allow delete: if false;
+    }
