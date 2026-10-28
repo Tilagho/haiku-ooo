@@ -16,7 +16,7 @@ import { mountCompose } from './compose.js?v=15.13';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.13';     // round 15.13: a comment (no seal) reports from a hold on the reply itself
-import { mountReactions } from './reactions.js?v=15.13'; // round 15.13: hold a top-level poem also arms comment mode; replies are not reacted to
+import { mountReactions } from './reactions.js?v=15.13c'; // round 15.13c: dismissing the hold rolls Comment shut, then reopens Write
 import { Feed } from './feed.js?v=15.13';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js?v=15.12h';   // round 15.12h: board scroll whoosh; report chimes still ride play()
 
@@ -222,14 +222,14 @@ let commentTarget = null;   // round 15.13: the top-level poem a hold armed for 
 const composing = () => !!compose?.opened || !!compose?.busy || document.body.classList.contains('composing');
 let closeReactions = () => {};
 async function writeTapped() {
-  closeReactions();
+  suppressFabReturn = true; closeReactions(); suppressFabReturn = false;   // tapping Comment opens compose; it does not count as dismissing the hold
   if (composing() || rolling) return; rolling = true;
   sfx('fabRoll');                                   // round 15.2: the button rolls itself up: the crunchy old-paper roll (the write scroll's roll-up sound), once, at the tap
   try { await fabArt?.rollUp(); } finally { rolling = false; }
   window.dispatchEvent(new CustomEvent('haiku:write'));
   await (window.HB?.onWrite || openCompose)();
 }
-const openCompose = () => { closeReactions(); const parent = commentTarget; return compose?.open(parent ? { parent } : undefined); };
+const openCompose = () => { suppressFabReturn = true; closeReactions(); suppressFabReturn = false; const parent = commentTarget; return compose?.open(parent ? { parent } : undefined); };
 $('#fab')?.addEventListener('click', writeTapped);
 
 // round 15.10 (Tiago t204u, t208u): YOUR poem has landed and its number seal just settled: board Inky celebrates (src/inky.js celebrate:
@@ -275,13 +275,32 @@ inky.onDragStart = () => popBubble();                 // picked up: whatever he 
 const wind = mountWind({ view, reduced });            // the leaf-blower gust for the write button + the poem scrolls (src/wind.js)
 const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl, { wind: () => wind.at(.92) }) : null;
 const WRITE_LABEL = 'write a haiku', COMMENT_LABEL = 'comment';
-async function morphFab(label) {
-  if (!fabArt || fabArt.label === label || composing() || rolling) return;
-  if (window.HBBoot && !window.HBBoot.gone) return;
-  rolling = true;
-  sfx('fabRoll');                                  // the paper rolls up; the new word unrolls in the same shape
-  try { await fabArt.rollUp(); fabArt.setLabel(label); await fabArt.unroll(); }
-  finally { rolling = false; }
+let suppressFabReturn = false, morphWant = null, morphRunning = null;
+// Roll shut, swap the word while the paper is hidden, unroll. A newer want (dismiss during the
+// open) is picked up after the roll-up, so Comment never unrolls if the hold is already gone.
+function morphFab(label) {
+  if (!fabArt || composing()) return morphRunning;
+  if (window.HBBoot && !window.HBBoot.gone) return morphRunning;
+  morphWant = label;
+  if (morphRunning) return morphRunning;
+  morphRunning = (async () => {
+    try {
+      while (fabArt && morphWant && fabArt.label !== morphWant && !composing()) {
+        const want = morphWant;
+        rolling = true;
+        sfx('fabRoll');
+        await fabArt.rollUp();
+        const next = (!composing() && morphWant) || want;
+        if (fabArt.label !== next) fabArt.setLabel(next);
+        if (morphWant && morphWant !== next) continue;   // hold cancelled while shut: reopen as Write, don't flash Comment
+        await fabArt.unroll();
+      }
+    } finally {
+      rolling = false; morphRunning = null;
+      if (morphWant && fabArt && fabArt.label !== morphWant && !composing()) morphFab(morphWant);
+    }
+  })();
+  return morphRunning;
 }
 function holdForComment(post) {
   if (!post?.id || post.parentId || composing()) return;
@@ -289,8 +308,16 @@ function holdForComment(post) {
   commentTarget = { id: post.id, seq: post.seq, text: post.text, author: post.author || '' };
   if (fabArt?.label !== COMMENT_LABEL) morphFab(COMMENT_LABEL);
 }
+// Click-away, Escape, or a scroll. Not a placed reaction, and not the tap that opens compose.
+function dismissCommentHold() {
+  if (suppressFabReturn || composing()) return;
+  if (!commentTarget && fabArt?.label !== COMMENT_LABEL) return;
+  commentTarget = null;
+  morphFab(WRITE_LABEL);
+}
 function leaveCommentMode() {
   commentTarget = null;
+  morphWant = WRITE_LABEL;   // compose already rolled the button shut; it unrolls Write itself
   if (fabArt && fabArt.label !== WRITE_LABEL) fabArt.setLabel(WRITE_LABEL);
 }
 function cheerComment() {
@@ -325,7 +352,7 @@ reports = mountReports({ feed, store, ask, reduced, busy: () => composing() || !
 } });
 // round 15.11: hold the poem body → Inky's bubble of six glyphs. Hold the seal → report (above).
 reactions = mountReactions({ feed, store, inky, inkyFree, reduced, busy: () => composing() || !!asking || !!reports?.asking,
-  hush: () => { if (!asking) popBubble(); }, onHoldPoem: holdForComment,
+  hush: () => { if (!asking) popBubble(); }, onHoldPoem: holdForComment, onDismissHold: dismissCommentHold,
   onFail: msg => { const x = innerWidth / 2, y = innerHeight / 2; if (!composing() && inkyFree()) { inky.setMood('worry'); say(msg, 1600); } else floatNote(msg, x, y); } });
 pickerOpen = () => !!reactions?.picking;
 closeReactions = () => reactions?.close();
