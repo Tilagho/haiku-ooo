@@ -16,7 +16,7 @@ import { sfx } from './sfx.js';
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)
 const dateOf = post => signatureFor(post).slice(sigAuthor(post).length);
 
-export function mountReactions({ feed, store, inky, inkyFree = () => false, reduced = false, busy = () => false, hush = () => {}, onFail = () => {}, onHoldPoem = () => {} } = {}) {
+export function mountReactions({ feed, store, inky, inkyFree = () => false, reduced = false, busy = () => false, hush = () => {}, onFail = () => {}, onHoldPoem = () => {}, onDismissHold = () => {} } = {}) {
   if (!document.getElementById('rx-css')) { const st = document.createElement('style'); st.id = 'rx-css'; st.textContent = RX_CSS; document.head.appendChild(st); }
   setGlyphMotion(reduced);
   loadSprites();
@@ -200,6 +200,7 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     S.picking = null;
     inky?.holdBubble?.('picker', false);   // the bubble is leaving: he may patrol again
     if (shown && !placed) sfx('pickerBack');   // tap-out / escape / scroll. A placed (or cleared) kind keeps reactSay / poof only.
+    if (!placed) onDismissHold();   // click-away / escape / scroll leaves comment mode; a placed face does not
     pop.classList.remove('show');
     const done = () => { if (gen !== popGen) return; pop.hidden = true; grid.querySelectorAll('.rx-g').forEach(untrackGlyph); grid.replaceChildren(); };
     if (light && !reduced && shown) pop.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 140, easing: 'steps(3, end)', fill: 'forwards' }).finished.then(done, done);

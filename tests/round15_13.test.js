@@ -103,7 +103,7 @@ ok('hold a poem arms comment mode; hold a reply does not; publish clears it', ()
   assert.ok(/if \(!rec\.post\?\.parentId\) onHoldPoem\(rec\.post\)/.test(rx));
   assert.ok(/if \(!z \|\| z\.stamp\) return/.test(rx));
   assert.ok(/if \(z\.comment\) return/.test(rx));
-  assert.ok(/fabArt\.setLabel\(label\)/.test(app) && /COMMENT_LABEL = 'comment'/.test(app));
+  assert.ok(/fabArt\.setLabel\(next\)/.test(app) && /COMMENT_LABEL = 'comment'/.test(app));
   assert.ok(/onFabRestore: leaveCommentMode/.test(app));
   assert.ok(/parentId: parent\.id, parentSeq: parent\.seq/.test(compose));
   assert.ok(/comment on this haiku/.test(compose) && /a reply\.<br>still 5-7-5/.test(compose));
@@ -119,7 +119,7 @@ ok('hold a poem arms comment mode; hold a reply does not; publish clears it', ()
 
 ok('cache-bust for this round is 15.13; whoosh and Inky stay put', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.13b"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.13c"/.test(html));
   assert.ok(/store\.js\?v=15\.13/.test(app));
   assert.ok(/scroll-view\.js\?v=15\.13b/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(app));
