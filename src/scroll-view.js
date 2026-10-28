@@ -3,7 +3,7 @@
 // background pixel on screen is the same size. Poems are small <canvas> bitmaps on top. Everything sits in one
 // 390-unit-wide layer scaled to the phone width and positioned with CSS `bottom`, so new posts grow the scroll
 // upward without touching older nodes.
-import { ScrollComposer, SCROLL_W, U, AW, PX, paintRows, tuckX } from './scroll-engine2.js?v=15.13';
+import { ScrollComposer, SCROLL_W, U, AW, PX, paintRows, tuckX } from './scroll-engine2.js?v=15.13b';
 import { drawLine, drawSeal, sealDims, SEAL_PX, ditherBacking, font, rng, hash } from './brush-text.js';
 import { clock } from './clock.js';
 import { prefersReducedMotion } from './spring.js';
