@@ -16,7 +16,7 @@ import { mountCompose } from './compose.js?v=15.13';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.13';     // round 15.13: a comment (no seal) reports from a hold on the reply itself
-import { mountReactions } from './reactions.js?v=15.13c'; // round 15.13c: dismissing the hold rolls Comment shut, then reopens Write
+import { mountReactions } from './reactions.js?v=15.13d'; // round 15.13d: a Comment tap opens compose; only a real dismiss rolls back to Write
 import { Feed } from './feed.js?v=15.13';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js?v=15.12h';   // round 15.12h: board scroll whoosh; report chimes still ride play()
 
