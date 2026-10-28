@@ -235,7 +235,7 @@ ok('round 15.10g: no 5-7-5 chips; the board ends with おわり / The End + inqu
   assert.ok(/<p class="end-jp" lang="ja">おわり<\/p>[\s\S]{0,300}<p class="end-en">The End<\/p>[\s\S]*href="mailto:contact@haiku\.ooo"/.test(html), 'round 15.10g4: The End / おわり (periods dropped so both lines read centred)');
   assert.ok(!/おわり。|The End\./.test(html.replace(/<!--[\s\S]*?-->/g, '')), 'round 15.10g4: no trailing periods in the end copy');
   assert.ok(!/（おわり）|\(the end\)/.test(html), 'no parenthesised end copy');
-  assert.ok(/style\.css\?v=15\.10h2/.test(html) && /app\.js\?v=15\.10j/.test(html));   // 15.10j bumped app.js (noren); style stays 15.10h2
+  assert.ok(/style\.css\?v=15\.12h/.test(html) && /app\.js\?v=15\.12h/.test(html));   // 15.12h bumped app.js (scroll whoosh) and style.css (iOS selection)
   assert.ok(/\.scroll-end \.end-jp \{[^}]*font: 400 var\(--crfs\)\/1 'FindersKeepers', 'DotGothic16'[^}]*letter-spacing: normal[^}]*color: #6b6670/.test(css), 'jp: FindersKeepers first, DotGothic16 kana fallback, © grey');
   assert.ok(/\.scroll-end \.end-en \{[^}]*font: 400 var\(--crfs\)\/1 var\(--small\)[^}]*color: #6b6670/.test(css), 'en: © row voice');
   assert.ok(/\.scroll-end \.end-mail \{[^}]*font: 400 var\(--crfs\)\/1 var\(--small\)[^}]*color: #6b6670/.test(css), 'mail: © row voice');
@@ -258,7 +258,7 @@ ok('round 15.10h: staged boot — fill bar, ~1 s minimum beat, board fades in, b
   assert.ok(/<html lang="en" class="hb-booting">/.test(html), 'board starts hidden');
   assert.ok(/<span class="bi-bar" aria-hidden="true"><i class="bi-fill"><\/i><\/span><\/div>\s*<script src="src\/boot-inky\.js\?v=15\.10h2"><\/script>/.test(html), 'fill bar + classic boot script right after the loader');
   assert.ok(!/bi-puddle/.test(html + css), 'old puddle gone');
-  assert.ok(/src\/style\.css\?v=15\.10h2"/.test(html) && /src\/app\.js\?v=15\.10j"/.test(html) && /src\/boot-inky\.js\?v=15\.10h2"/.test(html), 'cache-bust (15.10j app, 15.10h2 boot/style)');
+  assert.ok(/src\/style\.css\?v=15\.12h"/.test(html) && /src\/app\.js\?v=15\.12h"/.test(html) && /src\/boot-inky\.js\?v=15\.10h2"/.test(html), 'cache-bust (15.12h app/style, 15.10h2 boot)');
   assert.ok(/html\.hb-booting body > :not\(#boot-inky\):not\(\.bi-cv\):not\(script\) \{ opacity: 0 !important;/.test(css), 'board hidden while booting');
   // round 15.10h2 (t235u): only the sumi background fades; everything else just appears
   assert.ok(/html\.hb-reveal \.art-layer \.bg6, html\.hb-reveal #ink-layer \{ animation: hb-bg-in var\(--hb-fade, 560ms\) steps\(7\) both/.test(css), 'background-only stepped fade');
@@ -289,8 +289,8 @@ ok('round 15.10i: playback audio session so the iPhone silent switch does not mu
   assert.ok(unlock.includes('playbackSession()') && unlock.indexOf('playbackSession()') < unlock.indexOf('new AC('), 'session before new AudioContext');
   assert.ok(/playbackSession\(\); this\.ctx\.resume/.test(sound), 're-applied before resume');
   assert.ok(/rebuild\(\)[\s\S]{0,500}return this\.unlock\(\)/.test(sound), 'rebuild goes back through unlock');
-  assert.ok(/from '\.\/sound\.js\?v=15\.10i'/.test(wire) && /from '\.\/sound-wire\.js\?v=15\.10i'/.test(app));
-  assert.ok(/src\/style\.css\?v=15\.10h2"/.test(html) && /src\/boot-inky\.js\?v=15\.10h2"/.test(html) && /compose\.css\?v=15\.10f5c"/.test(html));   // 15.10j bumped app.js for the noren; sound imports stay 15.10i
+  assert.ok(/from '\.\/sound\.js\?v=15\.12h'/.test(wire) && /from '\.\/sound-wire\.js\?v=15\.12h'/.test(app));
+  assert.ok(/src\/style\.css\?v=15\.12h"/.test(html) && /src\/boot-inky\.js\?v=15\.10h2"/.test(html) && /compose\.css\?v=15\.10f5c"/.test(html));   // 15.12h bumped style; boot and compose stay
   assert.ok(!/audioSession is never touched|deliberately NOT touched/.test(sound + wire));
   assert.ok(/projectId: 'haiku-ooo'/.test(src('src/config.js')));
 });
@@ -314,6 +314,6 @@ ok('round 15.10j: every flag, the period included, hangs from two cloth loops', 
   const dot = N.flags.find(F => F.dot), u = N.flags[dot.k - 1], o = N.flags[dot.k + 1];
   assert.equal(dot.ch, '.'); assert.equal(u.ch, 'u'); assert.equal(o.ch, 'o');
   assert.ok(/from '\.\/noren\.js\?v=15\.10j'/.test(app) && /from '\.\/wind\.js\?v=15\.10j'/.test(app) && /from '\.\/noren\.js\?v=15\.10j'/.test(wind));
-  assert.ok(/src\/app\.js\?v=15\.10j"/.test(html) && /src\/style\.css\?v=15\.10h2"/.test(html) && /src\/boot-inky\.js\?v=15\.10h2"/.test(html) && /compose\.css\?v=15\.10f5c"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.12h"/.test(html) && /src\/style\.css\?v=15\.12h"/.test(html) && /src\/boot-inky\.js\?v=15\.10h2"/.test(html) && /compose\.css\?v=15\.10f5c"/.test(html));
 });
 console.log(`${n} board checks passed`);

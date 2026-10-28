@@ -14,6 +14,7 @@
 //                                                // hitmarker (bird hit) | sadNotes (backing out of quitting) | stampFail | stampSuccess
 //                                                // inkWash (publish) | eggReveal | scurry   ('inky' param accepted and ignored: one set)
 //   snd.startDrag(); snd.updateDrag(speed01); snd.dragImpact(strength01); snd.stopDrag();
+//   snd.startWhoosh(); snd.updateWhoosh(amount, dir); snd.stopWhoosh();   // round 15.12h: scroll gust on the wind bus (amount 0..1, dir -1..1)
 //   snd.set('wind', { volume: .4 }); snd.setMuted(true); snd.settings -> JSON
 //   snd.attach(offlineCtx); snd.pump(seconds)    // the same graph inside an OfflineAudioContext (tests / WAV renders)
 //
@@ -55,7 +56,7 @@ export class SoundEngine {
     this.settings = clone(DEFAULTS);
     for (const src of [saved, settings]) if (src) for (const g in src) if (this.settings[g]) Object.assign(this.settings[g], src[g]);
     this.muted = persist ? ls.get(MUTE_KEY) === '1' : false;
-    this.ctx = null; this._pending = null; this._queue = []; this.ready = Promise.resolve(); this.amb = {}; this.drag = null; this.timer = null; this.until = 0;
+    this.ctx = null; this._pending = null; this._queue = []; this.ready = Promise.resolve(); this.amb = {}; this.drag = null; this.whoosh = null; this.timer = null; this.until = 0;
     this._vis = () => this._visibility();
   }
   // ---------- context ----------
@@ -138,14 +139,14 @@ export class SoundEngine {
     this.muted = !!m; if (this.persist) ls.set(MUTE_KEY, m ? '1' : '0'); if (!this.ctx) return;
     this.master.gain.setTargetAtTime(m ? 0 : this.settings.master.volume, this.now, 0.15);
     if (!this._live()) return;
-    if (m) { clearTimeout(this._susT); this._susT = setTimeout(() => this.muted && this.ctx.suspend?.(), 600); }
+    if (m) { this.stopWhoosh(); clearTimeout(this._susT); this._susT = setTimeout(() => this.muted && this.ctx.suspend?.(), 600); }
     else if (!document.hidden) { clearTimeout(this._susT); playbackSession(); this.ctx.resume?.().then(() => this.pump()); }   // round 15.10i (t236u): session may have reset while suspended
   }
   _live() { const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext); return !!AC && this.ctx instanceof AC; }
   _save() { if (this.persist) ls.set(KEY, JSON.stringify(this.settings)); }
   _visibility() {
     if (!this.ctx || !this._live()) return;
-    if (document.hidden) { this.master.gain.setTargetAtTime(0, this.now, 0.08); clearTimeout(this._susT); this._susT = setTimeout(() => document.hidden && this.ctx.suspend(), 400); this._kick = true; }   // hidden: fade, then suspend
+    if (document.hidden) { this.stopWhoosh(); this.master.gain.setTargetAtTime(0, this.now, 0.08); clearTimeout(this._susT); this._susT = setTimeout(() => document.hidden && this.ctx.suspend(), 400); this._kick = true; }   // hidden: fade, then suspend
     else if (!this.muted) { clearTimeout(this._susT); playbackSession(); this.ctx.resume().then(() => this._wake()).catch(() => {}); this._watch(); }   // round 15.10i (t236u): re-apply playback before resume (iOS may still refuse until the next tap)
   }
   // back on the page and running again: the level the hide faded to 0 comes back (before 15.4 a tap-resume left it at 0 = silent until reload)
@@ -159,7 +160,7 @@ export class SoundEngine {
   rebuild() {                                    // inside a tap: throw away the dead context and build a fresh one (unlock re-applies the playback session, 15.10i)
     const old = this.ctx; if (!old || !this._live()) return this.unlock();
     clearInterval(this.timer); clearTimeout(this._susT); clearTimeout(this._watchT); try { old.onstatechange = null; old.close?.(); } catch {}
-    this.ctx = null; this.amb = {}; this.drag = null; this.bedOn = false; this.breezeOn = false; this._floodP = null; this._babbleP = null; this.flood = null; this.babbleBank = null; this.babbleOut = null; this._babLive = []; this._dead = false; this._kick = false;
+    this.ctx = null; this.amb = {}; this.drag = null; this.whoosh = null; this.bedOn = false; this.breezeOn = false; this._floodP = null; this._babbleP = null; this.flood = null; this.babbleBank = null; this.babbleOut = null; this._babLive = []; this._dead = false; this._kick = false;
     return this.unlock();
   }
   _wake() { if (this.ctx?.state !== 'running') return; this._restoreGain(); this.pump(); }
@@ -289,6 +290,16 @@ export class SoundEngine {
   startRustle(when) { if (!this.ctx) return this._defer(() => this.startRustle()); this.stopRustle(when); this.rustle = rustleVoice(this, when ?? this.now); }
   updateRustle(speed, when) { this.rustle?.update(clamp(speed), when ?? this.now); }
   stopRustle(when) { this.rustle?.stop(when ?? this.now); this.rustle = null; }
+  // round 15.12h: the board scroll's whoosh. One voice on the wind bus (with the bed, not instead of it).
+  // A scroll before unlock is dropped — deferring it would play the gust late, after the finger is gone.
+  startWhoosh(when) { if (!this.ctx || this.muted) return; if (this.whoosh) return; this.whoosh = whooshVoice(this, when ?? this.now); }
+  updateWhoosh(amount, dir = 0, when) {
+    if (!this.ctx || this.muted) return;
+    const a = Math.max(0, Math.min(1, +amount || 0));
+    if (!this.whoosh) { if (a <= 0) return; this.whoosh = whooshVoice(this, when ?? this.now); }
+    this.whoosh.update(a, Math.max(-1, Math.min(1, +dir || 0)), when ?? this.now);
+  }
+  stopWhoosh(when) { const w = this.whoosh; if (!w) return; this.whoosh = null; try { w.stop(when ?? this.now); } catch {} }
   startDrag(inky = 'black', when) { if (!this.ctx) return this._defer(() => this.startDrag(inky)); this.stopDrag(when); this.drag = churnVoice(this, inky, when ?? this.now); }
   updateDrag(speed, when) { this.drag?.update(clamp(speed), when ?? this.now); }
   stopDrag(when) { this.drag?.stop(when ?? this.now); this.drag = null; }
@@ -1141,6 +1152,63 @@ function mapPaper(E, t, { dur, open }) {
   if (!open) { const T = t + dur * 0.9; wash(E, T, d, { dur: 0.12, f0: 900, f1: 250, amp: 0.5, type: 'brown', attack: 0.003 }); }   // the roll settles: a soft paper 'flup'
 }
 function lfoOn(E, f, depth, param) { const o = E.ctx.createOscillator(), g = E.gain(depth); o.frequency.value = f; o.connect(g).connect(param); o.start(E.now); o.stop(E.now + 30); }
+// ---------- round 15.12h: scroll whoosh. Same air as breeze() (pink noise, a band that opens as it gets faster, a quiet
+// whistle only on a real fling) but the envelope IS the scroll: amount 0..1 from whooshAmount, gone when stop() runs.
+// It feeds the wind bus, so the 0.048 site level keeps it a gesture on top of the bed, not a second ambience. ----------
+export const WHOOSH_DEAD = 220, WHOOSH_FULL = 2400;   // css px/s. under DEAD is reading; FULL is a fast fling
+export function whooshAmount(pxPerSec) {
+  const v = Math.abs(+pxPerSec || 0);
+  if (!(v > WHOOSH_DEAD)) return 0;
+  return Math.tanh(((v - WHOOSH_DEAD) / (WHOOSH_FULL - WHOOSH_DEAD)) * 1.4);
+}
+// gain into the wind bus. The bed's own layers sit near ~1 and a breeze's air peaks near 1.7, so a gentle flick
+// (amount ~0.2 -> ~1.0) is a soft layer and a full fling (~2.4) speaks over the bed without replacing it.
+export function whooshLevel(amount) {
+  const a = Math.max(0, Math.min(1, +amount || 0));
+  if (a <= 0) return 0;
+  return 0.55 + 1.85 * Math.pow(a, 0.85);
+}
+// speed bleed after the last scroll sample (seconds). sinceEvent under 40 ms means samples are still arriving.
+export const WHOOSH_RELEASE = 0.14;
+export function stepWhooshSpeed(speed, dt, sinceEvent) {
+  const s = Math.max(0, +speed || 0), since = Math.max(0, +sinceEvent || 0), h = Math.max(0, +dt || 0);
+  if (since <= 0.04) return s;
+  return s * Math.exp(-Math.min(0.05, h) / WHOOSH_RELEASE);
+}
+function whooshVoice(E, t0) {
+  const out = E.gain(0), lp = E.filt('lowpass', 1800, 0.6), p = E.pan(0);
+  out.connect(lp).connect(p).connect(E.bus.wind);
+  const air = E.src('pink', t0), band = E.filt('bandpass', 480, 0.7), ag = E.gain(1);
+  air.connect(band).connect(ag).connect(out);
+  const body = E.src('brown', t0), blp = E.filt('lowpass', 280, 0.7), bg = E.gain(0);
+  body.connect(blp).connect(bg).connect(out);
+  const wh = E.src('white', t0), hb = E.filt('bandpass', 1400, 14), hg = E.gain(0);
+  wh.connect(hb).connect(hg).connect(out);
+  const flutter = E.lfo(4.2, 70, band.frequency);
+  let prev = 0, stopped = false;
+  return {
+    update(amount, dir, t) {
+      if (stopped) return;
+      const a = Math.max(0, Math.min(1, amount || 0)), tc = a >= prev ? 0.035 : 0.1;
+      prev = a;
+      out.gain.setTargetAtTime(whooshLevel(a), t, tc);
+      band.frequency.setTargetAtTime(420 * Math.pow(6, a), t, 0.06);          // ~420 Hz whisper -> ~2500 Hz fling
+      lp.frequency.setTargetAtTime(1400 + 2000 * a, t, 0.08);
+      bg.gain.setTargetAtTime(0.22 * Math.pow(a, 1.15), t, 0.08);
+      const whistle = Math.max(0, (a - 0.5) / 0.5);
+      hg.gain.setTargetAtTime(0.045 * whistle * whistle, t, 0.07);
+      hb.frequency.setTargetAtTime(1100 + 1400 * a, t, 0.08);
+      p.pan.setTargetAtTime(Math.max(-1, Math.min(1, dir || 0)) * 0.3 * Math.min(1, a + 0.1), t, 0.12);
+    },
+    stop(t) {
+      if (stopped) return;
+      stopped = true;
+      out.gain.setTargetAtTime(0, t, 0.08);
+      const end = t + 0.5;
+      for (const n of [air, body, wh, flutter.o]) { try { n.stop(end); } catch {} }
+    },
+  };
+}
 // ---------- round 15.1: the credits-scroll rustle (the scroll open / close family, quieter): a fluttering paper band + crisp ticks, both
 // following the scroll speed; ticks are scheduled only ~80 ms ahead from each update (no timers of its own), so it stops when the updates do ----------
 function rustleVoice(E, t0) {
