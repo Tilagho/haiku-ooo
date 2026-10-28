@@ -47,6 +47,14 @@ export function normalizeCounts(data) {
 // Round 15.12d: 6 → 16 (+10). At the poem's usual 1.5 scale that is about 15 CSS px more on a phone,
 // so the faces are not sitting on the name and the date. TIGHT_GAPS still packs when the open gap would clip.
 export const DATE_GAP = 16;
+// A count of 1 is the face by itself. The numeral is painted from 2 up (round 15.12g),
+// centered under the face, the way a Teams reaction stacks its count.
+export const COUNT_FROM = 2;
+// Paper between the resting box and the digit, in art px. Eyes and the heart's halves
+// leave the box sideways or upward, so this gap keeps the numeral clear of them.
+// The relieved drip does fall (13 art px on the 1× strip) but it paints behind the
+// numeral — reserving that reach would drop one count off the line the other faces share.
+export const COUNT_UNDER_ART = 2;
 // Square picker cell, in art px: the largest resting face (the star). Every mobile cell is this
 // size so the six glyphs share one grid; animation frames may overflow the cell.
 export const PICKER_CELL = Math.max(...RX_ORDER.map(k => Math.max(GLYPH_BOX[k].ow, GLYPH_BOX[k].oh)));
@@ -65,6 +73,9 @@ export function pickerGlyphOrigin(kind, cssPx) {
 
 // Date-line cluster, in font px. `scale` is font px per reaction art px. Glyphs center on the
 // small-font cap. A signature and its date are one block: glyphs never sit between them.
+// A count of 1 draws no numeral. From 2 up the numeral is centered under its face, a short
+// gap below the resting box. The row grows downward to hold it; the signature stays on the
+// date line. A drip that falls past the box paints behind the numeral.
 // `side: 'before'` puts glyphs to the left of that whole block (the date still ends the row);
 // `side: 'after'` puts them to the right of it. Unsigned poems have no author, so the block is
 // the date alone. No separator character either way — `gaps.date` is air.
@@ -77,14 +88,24 @@ export function layoutByline({ counts, author = '', date, measure, scale, ascent
   const kinds = RX_ORDER.filter(k => (counts?.[k] | 0) > 0);
   const run = [];
   let rx = 0;
+  // Cap-height digits start this far below the em top (small font: ascent 11, digit y -7).
+  const inkTop = ascent - cap;
   kinds.forEach((k, i) => {
     const g = GLYPH_BOX[k];
     const w = Math.max(1, Math.round(g.ow * scale)), h = Math.max(1, Math.round(g.oh * scale));
-    run.push({ type: 'glyph', kind: k, x: rx, y: Math.round(capCenter - h / 2), w, h });
-    rx += w + gGap;
-    const t = String(counts[k] | 0), tw = measure(t);
-    run.push({ type: 'text', t, x: rx, y: 0, w: tw, count: true });
-    rx += tw;
+    const n = counts[k] | 0;
+    const show = n >= COUNT_FROM;
+    const t = show ? String(n) : '';
+    const tw = show ? measure(t) : 0;
+    // The wider of the face and its numeral. Both are centered in that cluster.
+    const cluster = Math.max(w, tw);
+    const gy = Math.round(capCenter - h / 2);
+    run.push({ type: 'glyph', kind: k, x: rx + Math.round((cluster - w) / 2), y: gy, w, h });
+    if (show) {
+      const cy = Math.ceil(gy + h + COUNT_UNDER_ART * scale - inkTop);
+      run.push({ type: 'text', t, x: rx + Math.round((cluster - tw) / 2), y: cy, w: tw, count: true });
+    }
+    rx += cluster;
     if (i < kinds.length - 1) rx += kGap;
   });
   const items = [];
@@ -100,7 +121,12 @@ export function layoutByline({ counts, author = '', date, measure, scale, ascent
     signature();
   }
   let top = 0, bot = ascent + descent;
-  for (const it of items) if (it.type === 'glyph') { top = Math.min(top, it.y); bot = Math.max(bot, it.y + it.h); }
+  for (const it of items) {
+    const ih = it.type === 'glyph' ? it.h : it.count ? ascent + descent : 0;
+    if (!ih) continue;
+    top = Math.min(top, it.y);
+    bot = Math.max(bot, it.y + ih);
+  }
   const shift = -top;
   if (shift) for (const it of items) it.y += shift;
   const dateItem = items.find(i => i.date);

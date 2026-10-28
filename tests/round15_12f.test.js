@@ -1,5 +1,5 @@
 // Round 15.12f: a date-line face and its count must not paint on that poem's number seal.
-// The signature and the date stay one block. Counts of 1 stay visible.
+// The signature and the date stay one block. Round 15.12g hides a count of 1; the face still moves.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { font, measure, sealDims } from '../src/brush-text.js';
@@ -57,14 +57,15 @@ ok('a phone star on a left-hand seal moves to the right of the date, count and a
   assert.equal(fit.scale, 1);
   assert.equal(fit.placed.left, L.sig.x, 'the signature stays where the poem painted it');
   assert.equal(fit.layout.gaps.date, DATE_GAP, 'one star still gets the open gap');
-  assert.equal(fit.layout.items.find(i => i.count).t, '1', 'a count of 1 stays visible');
+  assert.equal(fit.layout.items.find(i => i.count), undefined, 'a count of 1 is not painted');
+  assert.ok(fit.layout.items.some(i => i.type === 'glyph' && i.kind === 'star'));
   assert.equal(reactionHitsRect(fit.layout, fit.placed.left, L.sig.y, avoid, fit.scale), false);
   glued(fit.layout);
   // The same collision at the dpr 3 art size.
   const dpr3 = fitByline({ ...opts, scale: 1.5, leftLimit: -9.75 });
   assert.equal(dpr3.placed.side, 'after');
   assert.equal(reactionHitsRect(dpr3.layout, dpr3.placed.left, L.sig.y, avoid, dpr3.scale), false);
-  assert.equal(dpr3.layout.items.find(i => i.count).t, '1');
+  assert.equal(dpr3.layout.items.find(i => i.count), undefined);
 });
 
 ok('a seal that does not meet the date line keeps the old side', () => {
@@ -88,7 +89,8 @@ ok('a count that is the only overlap still leaves the seal, and a name stays glu
   const post = { text: FROG, author: 'moth', createdAt: Date.UTC(2026, 9, 24), id: 'named' };
   const { L, avoid } = layoutOf(post, 1, { align: 'center', step: 0, dir: 1, sealOrder: ['left-3'] });
   assert.equal(L.sealPos, 'left-3');
-  const opts = byline(L, post, { counts: { star: 1 }, leftLimit: -40, rightLimit: 500, avoid });
+  // A numeral exists only from 2 up (15.12g). It still has to leave the seal.
+  const opts = byline(L, post, { counts: { star: 2 }, leftLimit: -40, rightLimit: 500, avoid });
   const before = fitByline({ ...opts, avoid: undefined, sigY: undefined });
   assert.equal(before.placed.side, 'before');
   const rowTop = L.sig.y - before.layout.shift;
@@ -97,7 +99,7 @@ ok('a count that is the only overlap still leaves the seal, and a name stays glu
   assert.equal(reactionHitsRect(before.layout, before.placed.left, L.sig.y, countOnly), true);
   const fit = fitByline({ ...opts, avoid: countOnly });
   assert.equal(reactionHitsRect(fit.layout, fit.placed.left, L.sig.y, countOnly, fit.scale), false);
-  assert.equal(fit.layout.items.find(i => i.count).t, '1');
+  assert.equal(fit.layout.items.find(i => i.count).t, '2');
   glued(fit.layout);
   const author = fit.layout.items.find(i => i.t === 'moth, ');
   const date = fit.layout.items.find(i => i.date);
@@ -115,21 +117,20 @@ ok('a full set that cannot sit on the seal scales clear instead of covering it',
   assert.equal(reactionHitsRect(fit.layout, fit.placed.left, L.sig.y, avoid, fit.scale), false);
   assert.ok(fit.scale < 1, 'the row scales once the clear side is wider than the clip');
   glued(fit.layout);
-  for (const it of fit.layout.items) if (it.count) assert.ok(Number(it.t) >= 1);
+  for (const it of fit.layout.items) if (it.count) assert.ok(Number(it.t) >= 2);
 });
 
-ok('cache-bust is 15.12f on the date line only', () => {
+ok('cache-bust moved to 15.12g; the seal is still passed into the packer', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.12f"/.test(html));
-  assert.ok(/reactions\.js\?v=15\.12f/.test(app));
-  assert.ok(/react-data\.js\?v=15\.12f/.test(rx));
+  assert.ok(/src\/app\.js\?v=15\.12g"/.test(html));
+  assert.ok(/reactions\.js\?v=15\.12g/.test(app));
+  assert.ok(/react-data\.js\?v=15\.12g/.test(rx));
   assert.ok(/react-glyphs\.js\?v=15\.12d/.test(rx));
   assert.ok(/report\.js\?v=15\.12e/.test(app));
   assert.ok(/sound-wire\.js\?v=15\.12e/.test(app));
   assert.ok(/sound\.js\?v=15\.12e/.test(src('src/sound-wire.js')));
   assert.ok(/sigY: L\.sig\.y/.test(rx) && /avoid: \{ x: L\.seal\.x/.test(rx), 'the row passes the seal rect into the packer');
   assert.ok(!/firestore\.rules/.test(app + rx + src('src/react-data.js')));
-  assert.ok(!/> 1/.test(src('src/react-data.js').slice(src('src/react-data.js').indexOf('function layoutByline'), src('src/react-data.js').indexOf('function placeByline'))), 'counts are not hidden at 1');
 });
 
 console.log(n + ' round 15.12f checks passed');
