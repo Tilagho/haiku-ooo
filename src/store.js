@@ -10,6 +10,8 @@
 //   }
 //   type Post = { id, seq /* its permanent number = the kanji seal */, text /* 3 lines joined by \n */, createdAt /* ms */,
 //                 author? ('' = unsigned), sample? }
+//   type Comment = { id, parentId, parentSeq, text, createdAt, author?, comment: true }
+//                 A comment has no seq seal. list() returns it on `comments`, never inside `posts`.
 //   list() never returns a poem that has been taken down (TAKEDOWN_REPORTS unique reporters); its number is simply skipped.
 //   Paging is by seq (round 15.6b): newest first, `beforeSeq` walks back in time as the reader scrolls down,
 //   `afterSeq` fetches poems newer than what is on screen (other people's posts, src/feed.js).
@@ -25,9 +27,16 @@ import { SEED } from './seed.js';
 import { tally, isRemoved, isReportable, deviceId } from './moderation.js';
 import { applyCounts, emptyCounts, isKind, normalizeCounts } from './react-data.js';
 import { API_BASE, FIREBASE } from './config.js';
-import { FirestoreStore } from './firebase-store.js?v=15.11';
+import { FirestoreStore } from './firebase-store.js?v=15.13';
 
 const KEY = 'haiku-board:posts:v1', REPORTS_KEY = 'haiku-board:reports:v1', RX_KEY = 'haiku-board:reactions:v1';
+// ?api=local&demo=comments paints these under the newest sample (sample-01) so the board can be tried offline.
+export const DEMO_COMMENTS = [
+  { id: 'demo-comment-1', parentId: 'sample-01', author: 'ink', createdAt: Date.UTC(2026, 9, 27, 16, 0),
+    text: 'a smaller voice sits\njust under the quiet pond\nstill counting ripples' },
+  { id: 'demo-comment-2', parentId: 'sample-01', author: '', createdAt: Date.UTC(2026, 9, 27, 18, 30),
+    text: 'tucked beside the brush\na small note learning to bow\nthen fades into mist' },
+];
 // one page of a newest-first list already numbered by seq
 export function pageOf(all, { beforeSeq = Infinity, afterSeq = 0, limit = 24 } = {}) {
   limit = Math.max(1, Math.min(200, +limit || 24));
@@ -46,15 +55,28 @@ export class LocalStore {
   get shared() { return false; }
   _load() { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } }
   _save() { try { localStorage.setItem(KEY, JSON.stringify(this.mine.slice(0, 500))); } catch {} }
-  // every post (taken down or not) numbered oldest = 1, then the taken-down ones dropped, newest first
-  _all() {
-    const all = [...this.mine, ...SEED].sort((a, b) => a.createdAt - b.createdAt).map((p, i) => ({ ...p, seq: i + 1 }));
+  // top-level poems only, numbered oldest = 1. Comments live in `mine` too but never take a seal.
+  _tops() {
+    const all = [...this.mine.filter(p => !p.parentId), ...SEED].sort((a, b) => a.createdAt - b.createdAt).map((p, i) => ({ ...p, seq: i + 1 }));
     return all.filter(p => !isRemoved(this.reports, p.id)).reverse();
+  }
+  _all() { return this._tops(); }
+  _comments() {
+    const seqOf = new Map();
+    [...this.mine.filter(p => !p.parentId), ...SEED].sort((a, b) => a.createdAt - b.createdAt).forEach((p, i) => seqOf.set(p.id, i + 1));
+    return this.mine.filter(p => p.parentId && seqOf.has(p.parentId) && !isRemoved(this.reports, p.parentId) && !isRemoved(this.reports, p.id))
+      .map(p => ({ ...p, parentSeq: seqOf.get(p.parentId), comment: true }));
+  }
+  seedDemo(list = DEMO_COMMENTS) {
+    let n = 0;
+    for (const c of list) if (c?.parentId && !this.mine.some(p => p.id === c.id)) { this.mine.push({ ...c, comment: true }); n++; }
+    if (n) this._save();
+    return n;
   }
   // on this per-device store the reports live on this device only (so one device = at most one report: nothing is ever
   // taken down locally); the shared count lives on the server (RemoteStore)
   async report(id, { reporter } = {}) {
-    const post = this._all().find(p => p.id === id);
+    const post = this._tops().find(p => p.id === id) || this._comments().find(p => p.id === id);
     if (!isReportable(post)) throw Object.assign(new Error('not reportable'), { reason: 'that haiku cannot be reported' });
     const r = tally(this.reports, id, [reporter]);
     try { localStorage.setItem(REPORTS_KEY, JSON.stringify(this.reports)); } catch {}
@@ -73,15 +95,31 @@ export class LocalStore {
   }
   async reactionCounts(ids) { const out = {}; for (const id of ids || []) out[id] = normalizeCounts(this.rx[id]?.counts); return out; }
   async myReaction(id) { const k = this.rx[id]?.by?.[deviceId()]; return isKind(k) ? k : null; }
-  async list(o = {}) { return pageOf(this._all(), o); }
-  async create(text, { author = '' } = {}) {
+  async list(o = {}) {
+    const page = pageOf(this._tops(), o);
+    const ids = new Set(page.posts.map(p => p.id));
+    return { ...page, comments: this._comments().filter(c => ids.has(c.parentId)) };
+  }
+  async listComments(parentIds) {
+    const ids = new Set(parentIds || []);
+    return this._comments().filter(c => ids.has(c.parentId));
+  }
+  async create(text, { author = '', parentId = null } = {}) {
     const r = checkHaiku(text);
     if (!r.ok) throw Object.assign(new Error(r.reason), { reason: r.reason, check: r });
-    if (this._all().some(p => p.text.toLowerCase() === r.normalized.toLowerCase())) throw Object.assign(new Error('already posted'), { reason: 'that haiku is already on the scroll' });
-    const post = { id: 'local-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: r.normalized, createdAt: Date.now(), author: String(author || '').trim().slice(0, 12) };
-    this.mine.unshift(post); this._save(); return this._all().find(p => p.id === post.id);
+    const norm = r.normalized;
+    if ([...this._tops(), ...this._comments()].some(p => p.text.toLowerCase() === norm.toLowerCase())) throw Object.assign(new Error('already posted'), { reason: 'that haiku is already on the scroll' });
+    author = String(author || '').trim().slice(0, 12);
+    if (parentId) {
+      const parent = this._tops().find(p => p.id === parentId);
+      if (!parent || parent.parentId) throw Object.assign(new Error('no parent'), { reason: 'that haiku is not on the scroll' });
+      const post = { id: 'local-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), parentId, parentSeq: parent.seq, text: norm, createdAt: Date.now(), author, comment: true };
+      this.mine.unshift(post); this._save(); return { ...post };
+    }
+    const post = { id: 'local-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), text: norm, createdAt: Date.now(), author };
+    this.mine.unshift(post); this._save(); return this._tops().find(p => p.id === post.id);
   }
-  async count() { return this._all().length; }
+  async count() { return this._tops().length; }
 }
 
 export class RemoteStore {
@@ -97,9 +135,11 @@ export class RemoteStore {
     const q = new URLSearchParams({ limit }); if (beforeSeq && isFinite(beforeSeq)) q.set('beforeSeq', beforeSeq); if (afterSeq) q.set('afterSeq', afterSeq);
     return this._json(`/posts?${q}`, { cache: 'no-store' }, 'load failed');
   }
-  async create(text, { author = '' } = {}) {
+  async create(text, { author = '', parentId = null } = {}) {
+    if (parentId) throw Object.assign(new Error('no comments'), { reason: 'comments need this phone (?api=local) or Firebase' });
     return this._json('/posts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, author }) }, 'rejected');
   }
+  async listComments() { return []; }
   async report(id, { reporter } = {}) {
     return this._json(`/posts/${encodeURIComponent(id)}/report`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reporter }) }, 'could not report, try again');
   }
@@ -113,7 +153,11 @@ export class RemoteStore {
 // FIREBASE config (src/config.js, production), then API_BASE, then the per-device LocalStore
 export function createStore({ search = globalThis.location?.search || '', base = API_BASE, firebase = FIREBASE, firebaseOpts = {} } = {}) {
   const q = new URLSearchParams(search).get('api');
-  if (q === 'local') return new LocalStore();
+  if (q === 'local') {
+    const s = new LocalStore();
+    if (new URLSearchParams(search).get('demo') === 'comments') s.seedDemo();
+    return s;
+  }
   // local testing only: ?fbemu=8180 (&authemu=9199) = the Firebase emulators (demo project), never on a real host
   const emu = new URLSearchParams(search).get('fbemu'), host = globalThis.location?.hostname || '';
   if (emu && /^(localhost|127\.0\.0\.1)$/.test(host)) return new FirestoreStore({ apiKey: 'demo-key', authDomain: 'demo-haiku.firebaseapp.com', projectId: 'demo-haiku', appId: '1:1:web:1' },

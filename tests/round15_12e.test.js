@@ -58,13 +58,13 @@ ok('Inky still holds under the report bubble, and the new cues share the one-sho
 
 ok('report chimes stay on 15.12e; the board entry moved with the 15.12g count clearance', () => {
   const html = src('index.html'), app = src('src/app.js'), wire = src('src/sound-wire.js');
-  assert.ok(/src\/app\.js\?v=15\.12h"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.13"/.test(html));
   assert.ok(/sound-wire\.js\?v=15\.12h/.test(app));
-  assert.ok(/report\.js\?v=15\.12e/.test(app));
+  assert.ok(/report\.js\?v=15\.13/.test(app));
   assert.ok(/sound\.js\?v=15\.12h/.test(wire));
-  assert.ok(/reactions\.js\?v=15\.12g/.test(app), 'the date line moved for the count clearance');
+  assert.ok(/reactions\.js\?v=15\.13/.test(app), 'the date line moved for the count clearance');
   assert.ok(/inky\.js\?v=15\.12c/.test(app));
-  assert.ok(/store\.js\?v=15\.11/.test(app));
+  assert.ok(/store\.js\?v=15\.13/.test(app));
   assert.ok(!/firestore\.rules/.test(app + wire + src('src/sound.js') + src('src/report.js')));
 });
 

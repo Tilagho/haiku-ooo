@@ -137,13 +137,18 @@ export function renderScrollButton(art, out, { t = 0, p = 0, gust = gustAt(t), b
 }
 
 export function mountScrollButton(button, { label = 'write a haiku', wind = () => 0 } = {}) {
-  const art = drawScrollButton(label), cv = document.createElement('canvas');
-  const CW = art.W + 2 * WIND_PAD_X, CH = art.H + WIND_PAD_Y;        // padded for the wind; negative margins keep the button's box
-  cv.width = CW; cv.height = CH; cv.className = 'fab-art';
-  Object.assign(cv.style, { width: CW * SCALE + 'px', height: CH * SCALE + 'px', margin: `${-WIND_PAD_Y * SCALE}px ${-WIND_PAD_X * SCALE}px 0` });
-  const ctx = cv.getContext('2d'), img = ctx.createImageData(CW, CH);
+  let art = drawScrollButton(label), cv = document.createElement('canvas');
+  const sizeCanvas = () => {
+    const CW = art.W + 2 * WIND_PAD_X, CH = art.H + WIND_PAD_Y;        // padded for the wind; negative margins keep the button's box
+    cv.width = CW; cv.height = CH;
+    Object.assign(cv.style, { width: CW * SCALE + 'px', height: CH * SCALE + 'px', margin: `${-WIND_PAD_Y * SCALE}px ${-WIND_PAD_X * SCALE}px 0` });
+    img = ctx.createImageData(CW, CH);
+  };
+  cv.className = 'fab-art';
+  const ctx = cv.getContext('2d');
+  let img; sizeCanvas();
   const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const api = { canvas: cv, art, p: 0, t0: clock.now(), rolling: null, still: reduced, blow: 0 };
+  const api = { canvas: cv, art, label, p: 0, t0: clock.now(), rolling: null, still: reduced, blow: 0 };
   let key = '';
   api.paint = (t = (clock.now() - api.t0) / 1000) => {
     const g = wind() || 0; api.blow = reduced ? g * .15 : g;          // reduced motion: only a mild lean, no ripple animation
@@ -163,7 +168,19 @@ export function mountScrollButton(button, { label = 'write a haiku', wind = () =
   // round 15.10h2 (t234u): the boot open is the close run backwards: p(k) = 1 - rollUpEase(1 - k) at rollUp's own 540 ms (the knock first, then decelerating apart)
   api.openReverse = (ms = 540) => reduced ? (api.p = 0, api.paint(), Promise.resolve()) : tween(0, ms, k => 1 - ROLL_EASE(1 - k));
   api.unroll = (ms = 700) => reduced ? (api.p = 0, api.paint(), Promise.resolve()) : tween(0, ms, k => { const s = 1 - k; return 1 - s * s * s + Math.sin(k * Math.PI) * .06 * (1 - k); });   // progress 0 -> 1 (ends fully open, p = 0)
+  // Swap the words while the paper is rolled shut (p = 1), then unroll. Wind lean uses the new art on the next paint.
+  api.setLabel = (next) => {
+    if (!next || next === api.label) return api;
+    api.label = next;
+    art = drawScrollButton(next); api.art = art;
+    sizeCanvas(); key = '';
+    sr.textContent = next;
+    button.setAttribute('aria-label', next);
+    api.paint();
+    return api;
+  };
   button.replaceChildren(cv); const sr = document.createElement('span'); sr.className = 'sr'; sr.textContent = label; button.append(sr);
+  button.setAttribute('aria-label', label);
   api.paint(0);
   clock.onTick(() => api.paint());                                    // (reduced: repaints only when the lean changes, see key)
   return api;

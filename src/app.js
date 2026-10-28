@@ -1,7 +1,7 @@
 import { checkHaiku } from './haiku.js';
-import { createStore } from './store.js?v=15.11';
-import { ScrollView } from './scroll-view.js?v=15.11';
-import { loadLibrary } from './scroll-engine2.js';
+import { createStore } from './store.js?v=15.13';
+import { ScrollView } from './scroll-view.js?v=15.13';
+import { loadLibrary } from './scroll-engine2.js?v=15.13';
 import SPRITES from './sprites6.js';
 import { Inky } from './inky.js?v=15.12c';
 import { SpeechScheduler, readMs, CheerBag } from './inky-mind.js';
@@ -9,15 +9,15 @@ import { renderBubble, U as BU } from './pixel-bubble.js';
 import { clock } from './clock.js';
 import { copyText } from './share.js';
 import { mountWind } from './wind.js?v=15.10j';
-import { mountScrollButton } from './scroll-button.js';
+import { mountScrollButton } from './scroll-button.js?v=15.13';
 import { sfx } from './sfx.js';
 import { mountNoren } from './noren.js?v=15.10j';   // round 15.10j (t237u): period flag gets two chichi, same as the other eight
-import { mountCompose } from './compose.js';
+import { mountCompose } from './compose.js?v=15.13';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
-import { mountReports } from './report.js?v=15.12e';     // round 15.12e: a successful ✔ plays reportYes; the ask itself stays in app.js
-import { mountReactions } from './reactions.js?v=15.12g'; // round 15.12g: date-line counts paint from 2, clear of the face
-import { Feed } from './feed.js';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
+import { mountReports } from './report.js?v=15.13';     // round 15.13: a comment (no seal) reports from a hold on the reply itself
+import { mountReactions } from './reactions.js?v=15.13'; // round 15.13: hold a top-level poem also arms comment mode; replies are not reacted to
+import { Feed } from './feed.js?v=15.13';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js?v=15.12h';   // round 15.12h: board scroll whoosh; report chimes still ride play()
 
 const $ = s => document.querySelector(s);
@@ -25,6 +25,7 @@ const $ = s => document.querySelector(s);
 // shared scroll cannot be reached (see `booted` below)
 const store = { cur: createStore(), get shared() { return this.cur.shared; }, list(o) { return this.cur.list(o); }, create(t, o) { return this.cur.create(t, o); },
   report(id, o) { return this.cur.report(id, o); }, count() { return this.cur.count(); },
+  listComments(ids) { return this.cur.listComments ? this.cur.listComments(ids) : []; },
   react(id, kind) { return this.cur.react(id, kind); }, reactionCounts(ids) { return this.cur.reactionCounts(ids); }, myReaction(id) { return this.cur.myReaction(id); } };
 const bubble = $('#bubble'), bcv = document.createElement('canvas'); bcv.className = 'bcv';
 const reduced = prefersReducedMotion();
@@ -217,6 +218,7 @@ clock.onTick(() => {
 // ---------- the write button: tap -> both rolled ends wind in and meet in the middle -> then the compose flow ----------
 // HB.onWrite (default: the compose flow, src/compose.js) runs after the roll-up; `haiku:write` fires on window at the same moment.
 let rolling = false;
+let commentTarget = null;   // round 15.13: the top-level poem a hold armed for a reply. Cleared when compose closes.
 const composing = () => !!compose?.opened || !!compose?.busy || document.body.classList.contains('composing');
 let closeReactions = () => {};
 async function writeTapped() {
@@ -227,7 +229,7 @@ async function writeTapped() {
   window.dispatchEvent(new CustomEvent('haiku:write'));
   await (window.HB?.onWrite || openCompose)();
 }
-const openCompose = () => { closeReactions(); return compose?.open(); };
+const openCompose = () => { closeReactions(); const parent = commentTarget; return compose?.open(parent ? { parent } : undefined); };
 $('#fab')?.addEventListener('click', writeTapped);
 
 // round 15.10 (Tiago t204u, t208u): YOUR poem has landed and its number seal just settled: board Inky celebrates (src/inky.js celebrate:
@@ -272,13 +274,44 @@ inky.onPopUp = () => { if (bubble.hidden) say('…ow.', 1000); };
 inky.onDragStart = () => popBubble();                 // picked up: whatever he was saying pops
 const wind = mountWind({ view, reduced });            // the leaf-blower gust for the write button + the poem scrolls (src/wind.js)
 const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl, { wind: () => wind.at(.92) }) : null;
+const WRITE_LABEL = 'write a haiku', COMMENT_LABEL = 'comment';
+async function morphFab(label) {
+  if (!fabArt || fabArt.label === label || composing() || rolling) return;
+  if (window.HBBoot && !window.HBBoot.gone) return;
+  rolling = true;
+  sfx('fabRoll');                                  // the paper rolls up; the new word unrolls in the same shape
+  try { await fabArt.rollUp(); fabArt.setLabel(label); await fabArt.unroll(); }
+  finally { rolling = false; }
+}
+function holdForComment(post) {
+  if (!post?.id || post.parentId || composing()) return;
+  if (window.HBBoot && !window.HBBoot.gone) return;
+  commentTarget = { id: post.id, seq: post.seq, text: post.text, author: post.author || '' };
+  if (fabArt?.label !== COMMENT_LABEL) morphFab(COMMENT_LABEL);
+}
+function leaveCommentMode() {
+  commentTarget = null;
+  if (fabArt && fabArt.label !== WRITE_LABEL) fabArt.setLabel(WRITE_LABEL);
+}
+function cheerComment() {
+  clock.wait(1300).then(() => {
+    if (composing() || !inkyFree() || asking || pickerOpen()) return;
+    inky.setMood('cheer'); inky.jump(.6); say('tucked under!', 1400);
+    clock.wait(1200).then(() => inky.mode === 'roam' && inky.setMood('happy'));
+  });
+}
 // round 15.10h2 (t234u): the write button boots rolled shut and, once boot Inky has swooshed off, opens as its own roll-up played
 // backwards (scroll-button.js openReverse) with the same old-paper roll sound as the close (fabRoll)
 if (fabArt && window.HBBoot && !window.HBBoot.gone) { fabArt.p = 1; fabArt.paint(0);
   addEventListener('hb:bootgone', () => { if (rolling || composing() || fabArt.p < 1) return; sfx('fabRoll'); fabArt.openReverse(); }, { once: true }); }
 const norenEl = $('#noren'), noren = norenEl ? mountNoren(norenEl) : null;
 const credits = mountCredits({ clock, reduced });   // round 14.5: the © line's 'credits' scroll (src/credits.js)
-const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; }, celebrate: celebratePost });
+function placePost(post, opts) {
+  if (post?.parentId) return feed.insertComment(post, { animate: !!opts?.animate });
+  return view.add(post, opts);
+}
+const compose = mountCompose({ inky, view, store, fab: fabEl, fabArt, hideBoardBubble: () => { bubble.hidden = true; }, celebrate: celebratePost,
+  onFabRestore: leaveCommentMode, onComment: cheerComment, placePost });
 const sound = mountSound({ view, inky, clock });
 // round 15.6: reports. Inky thanks whoever reported (or a small float note if he is busy elsewhere)
 // round 15.6b: the shared scroll (src/feed.js) and reports (src/report.js: Inky asks, then thanks whoever reported)
@@ -292,7 +325,7 @@ reports = mountReports({ feed, store, ask, reduced, busy: () => composing() || !
 } });
 // round 15.11: hold the poem body → Inky's bubble of six glyphs. Hold the seal → report (above).
 reactions = mountReactions({ feed, store, inky, inkyFree, reduced, busy: () => composing() || !!asking || !!reports?.asking,
-  hush: () => { if (!asking) popBubble(); },
+  hush: () => { if (!asking) popBubble(); }, onHoldPoem: holdForComment,
   onFail: msg => { const x = innerWidth / 2, y = innerHeight / 2; if (!composing() && inkyFree()) { inky.setMood('worry'); say(msg, 1600); } else floatNote(msg, x, y); } });
 pickerOpen = () => !!reactions?.picking;
 closeReactions = () => reactions?.close();
@@ -317,5 +350,5 @@ window.HB = { feed, ask, asking: () => asking, sound, reports, reactions, credit
   rollUpButton: ms => fabArt?.rollUp(ms) ?? Promise.resolve(), unrollButton: ms => fabArt?.unroll(ms) ?? Promise.resolve(), copyText, copyPoem, lastCopied: () => lastCopied, stampDemo,
   typePoem: (el, o) => view.typePoem(el, o), stampSeal: (el, o) => view.stampSeal(el, o), addPost: addNewPost,
   openSheet: openCompose, closeSheet: () => compose?.cancel(), openCompose, rows: compose.inputs.map(input => ({ input })), store, checkHaiku, say, speech, popBubble,
-  celebratePost, cheers,
+  celebratePost, cheers, commentTarget: () => commentTarget, holdForComment, leaveCommentMode,
   isBusy: () => !!compose?.busy, fill: (lines, name) => compose.fill(lines, name), submit: () => compose.submit() };

@@ -13,6 +13,12 @@
 //   haikuMeta/counter           { seq, last }             the last permanent number handed out, and to which poem
 //   haikuTexts/{sha256}         { post, uid }             duplicate lock: one poem per normalized (lower-cased) text
 //   haikuPosters/{uid}          { last, windowStart, n }  rate limit: MIN_GAP_S between posts, PER_HOUR per uid per hour
+//   comments/{id}              { parentId, parentSeq, text, author, uid, createdAt, reports, removed, hash, comment: true }
+//                               NO seq. The parent's seal is unchanged. Flat only: parentId is a haiku or sample-XX.
+//   comments/{id}/reports/{uid}  one report per anonymous uid
+//   commentTexts/{sha256}      duplicate lock for comment text (separate from haikuTexts so the paste-in rules stay new)
+//   commentPosters/{uid}       the same 20s / 12-per-hour limit, counted on its own so poem rules can stay as they are
+//   Rules to paste: firestore.comments.rules (haiku-ooo only).
 //
 // Numbers: poems #1..SEED.length are the built-in samples (src/seed.js, shown on every phone, never stored, never
 // reportable); the counter starts at SEED.length and each create is ONE transaction that bumps it and writes the poem with
@@ -95,7 +101,12 @@ export class FirestoreStore {
   warm() { return this.uid().catch(() => null); }
   _post(d) {
     const x = d.data(), t = x.createdAt;
-    return { id: d.id, seq: x.seq, text: x.text, author: x.author || '', createdAt: t?.toMillis ? t.toMillis() : (+t || Date.now()) };
+    return { id: d.id, seq: x.seq, text: x.text, author: x.author || '', createdAt: t?.toMillis ? t.toMillis() : (+t || Date.now()), parentId: x.parentId || null };
+  }
+  _comment(d) {
+    const x = d.data(), t = x.createdAt;
+    return { id: d.id, parentId: x.parentId, parentSeq: x.parentSeq | 0, text: x.text, author: x.author || '', comment: true,
+      createdAt: t?.toMillis ? t.toMillis() : (+t || Date.now()) };
   }
   async _maxSeq() {
     const { F, db } = await this._init();
@@ -115,13 +126,30 @@ export class FirestoreStore {
         remote = (await F.getDocs(q)).docs.map(d => this._post(d));
       }
       const maxSeq = await this._maxSeq();
-      return mergePage(remote, { beforeSeq, afterSeq, limit, maxSeq });
+      const page = mergePage(remote, { beforeSeq, afterSeq, limit, maxSeq });
+      let comments = [];
+      try { comments = await this.listComments(page.posts.map(p => p.id)); } catch (e) { console.warn('comments', e); }
+      return { ...page, comments };
     })(), this.timeoutMs).catch(e => { throw e.reason ? e : err('load failed', { reason: 'the scroll is out of reach, try again', offline: true, cause: e }); });
   }
-  async create(text, { author = '' } = {}) {
+  async listComments(parentIds) {
+    const ids = [...new Set((parentIds || []).filter(id => typeof id === 'string' && id.length > 0 && id.length <= 128))];
+    if (!ids.length) return [];
+    const { F, db } = await this._init();
+    const out = [];
+    for (let i = 0; i < ids.length; i += 30) {
+      const chunk = ids.slice(i, i + 30);
+      const q = F.query(F.collection(db, 'comments'), F.where('removed', '==', false), F.where('parentId', 'in', chunk));
+      const snap = await F.getDocs(q);
+      snap.forEach(d => out.push(this._comment(d)));
+    }
+    return out;
+  }
+  async create(text, { author = '', parentId = null, parentSeq = null } = {}) {
     const r = checkHaiku(text);
     if (!r.ok) throw err(r.reason, { reason: r.reason, check: r });
     author = String(author || '').trim().slice(0, 12);
+    if (parentId) return this._createComment(r.normalized, author, parentId, parentSeq);
     const uid = await this.uid(), { F, db } = await this._init();
     const norm = r.normalized, hash = await sha256hex(norm.toLowerCase());
     if (SEED.some(p => p.text.toLowerCase() === norm.toLowerCase())) throw err('already posted', { reason: 'that haiku is already on the scroll' });
@@ -154,10 +182,49 @@ export class FirestoreStore {
     }
     return { id: ref.id, seq, text: norm, author, createdAt: Date.now() };
   }
-  async report(id, { reporter } = {}) {      // (reporter = the device id the UI passes; here the anonymous uid counts instead)
+  // A reply does not touch haikuMeta/counter. Its own text lock and rate limit live beside the poem ones.
+  async _createComment(norm, author, parentId, parentSeq) {
+    if (typeof parentId !== 'string' || !parentId || parentId.length > 128 || parentId.startsWith('local-')) throw err('no parent', { reason: 'that haiku is not on the scroll' });
+    const seq = +parentSeq;
+    if (!Number.isInteger(seq) || seq < 1) throw err('no parent', { reason: 'that haiku is not on the scroll' });
+    const uid = await this.uid(), { F, db } = await this._init();
+    const hash = await sha256hex(norm.toLowerCase());
+    if (SEED.some(p => p.text.toLowerCase() === norm.toLowerCase())) throw err('already posted', { reason: 'that haiku is already on the scroll' });
+    try {
+      const poemLock = await F.getDoc(F.doc(db, 'haikuTexts', hash));
+      if (poemLock.exists()) throw err('already posted', { reason: 'that haiku is already on the scroll', mine: true });
+    } catch (e) { if (e.mine) throw e; }
+    const ref = F.doc(F.collection(db, 'comments')), lock = F.doc(db, 'commentTexts', hash), poster = F.doc(db, 'commentPosters', uid);
+    for (let attempt = 0; ; attempt++) try {
+      await F.runTransaction(db, async tx => {
+        const [l, p] = [await tx.get(lock), await tx.get(poster)];
+        if (l.exists()) throw err('already posted', { reason: 'that haiku is already on the scroll', mine: true });
+        const now = Date.now(), pd = p.exists() ? p.data() : null, ms = t => t?.toMillis ? t.toMillis() : 0;
+        if (pd && now - ms(pd.last) < MIN_GAP_S * 1000) throw err('slow down', { reason: 'let the ink dry a moment, then try again', mine: true });
+        const fresh = !pd || now - ms(pd.windowStart) >= 3600e3;
+        if (!fresh && (pd.n || 0) >= PER_HOUR) throw err('rate', { reason: 'that is a lot of haiku. rest the brush a while', mine: true });
+        const T = F.serverTimestamp();
+        tx.set(ref, { parentId, parentSeq: seq, text: norm, author, uid, createdAt: T, reports: 0, removed: false, hash, comment: true });
+        tx.set(lock, { post: ref.id, uid });
+        tx.set(poster, fresh ? { last: T, windowStart: T, n: 1 } : { last: T, windowStart: pd.windowStart, n: (pd.n || 0) + 1 });
+      });
+      break;
+    } catch (e) {
+      if (e.mine) throw e;
+      if ((e.code === 'permission-denied' || e.code === 'aborted') && attempt < 5) { await new Promise(r => setTimeout(r, 120 + Math.random() * 280 * (attempt + 1))); continue; }
+      if (e.code === 'permission-denied') throw err('rejected', { reason: 'the scroll would not take that one. try again in a bit', cause: e });
+      throw err('offline', { ...OFFLINE, cause: e });
+    }
+    return { id: ref.id, parentId, parentSeq: seq, text: norm, author, createdAt: Date.now(), comment: true };
+  }
+  async report(id, { reporter, comment = false } = {}) {      // (reporter = the device id the UI passes; here the anonymous uid counts instead)
+    if (comment) return this._reportIn('comments', id);
+    return this._reportIn('haikus', id);
+  }
+  async _reportIn(col, id) {
     if (!isReportable({ id }) || SEED.some(p => p.id === id)) throw err('not reportable', { reason: 'that haiku cannot be reported' });
     const uid = await this.uid(), { F, db } = await this._init();
-    const ref = F.doc(db, 'haikus', id), mine = F.doc(db, 'haikus', id, 'reports', uid);
+    const ref = F.doc(db, col, id), mine = F.doc(db, col, id, 'reports', uid);
     try {
       return await F.runTransaction(db, async tx => {
         const m = await tx.get(mine);

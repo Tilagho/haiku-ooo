@@ -3,13 +3,14 @@
 // background pixel on screen is the same size. Poems are small <canvas> bitmaps on top. Everything sits in one
 // 390-unit-wide layer scaled to the phone width and positioned with CSS `bottom`, so new posts grow the scroll
 // upward without touching older nodes.
-import { ScrollComposer, SCROLL_W, U, AW, PX, paintRows } from './scroll-engine2.js';
+import { ScrollComposer, SCROLL_W, U, AW, PX, paintRows, tuckX } from './scroll-engine2.js?v=15.13';
 import { drawLine, drawSeal, sealDims, SEAL_PX, ditherBacking, font, rng, hash } from './brush-text.js';
 import { clock } from './clock.js';
 import { prefersReducedMotion } from './spring.js';
 import { sfx } from './sfx.js';
 
 const CH = 256;                    // art rows per background chunk canvas (768 units)
+const cssId = id => (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(id) : String(id).replace(/"/g, '');
 export class ScrollView {
   constructor(host, { seed = 575, lib, onTapPoem } = {}) {
     this.host = host; this.composer = new ScrollComposer({ seed, lib }); this.onTapPoem = onTapPoem;
@@ -90,16 +91,28 @@ export class ScrollView {
     const sigText = rec.sigText != null ? rec.sigText : L.sig.t;
     if (sig && sigText) drawLine(buf, sigText, L.sig.x + pad, L.sig.y + pad, S, R, { color: [86, 80, 88] });
     ditherBacking(buf, { solid: 1, fade: 4.5 });               // dithered paper behind the letters (art may peek in)
-    if (seal) drawSeal(buf, n, L.seal.x + pad, L.seal.y + pad, R);
+    if (post.parentId && L.tick) {                             // a quiet reply tick in the indent gutter; the parent keeps the seal
+      const g = [86, 80, 88], x = L.tick.x + pad, y0 = L.tick.y + pad;
+      for (let i = 0; i < L.tick.h; i++) {
+        const y = y0 + i; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const o = (y * W + x) * 4; img.data[o] = g[0]; img.data[o + 1] = g[1]; img.data[o + 2] = g[2]; img.data[o + 3] = 170;
+      }
+    }
+    if (seal && L.seal && !post.parentId) drawSeal(buf, n, L.seal.x + pad, L.seal.y + pad, R);
     ctx.putImageData(img, 0, 0);
   }
   poemNode(p) {
     const { layout: L, post, n } = p;
     const pad = 6, W = L.w + pad * 2, H = L.h + pad * 2;
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H; cv.className = 'pc';
-    const wrap = document.createElement('figure'); wrap.className = 'poem poem-' + L.kind; wrap.dataset.n = n; wrap.dataset.id = post.id;
+    const comment = !!post.parentId;
+    const wrap = document.createElement('figure'); wrap.className = 'poem poem-' + L.kind + (comment ? ' poem-comment' : ''); wrap.dataset.id = post.id;
+    if (comment) { wrap.dataset.comment = '1'; wrap.dataset.parent = post.parentId; }
+    else wrap.dataset.n = n;
     wrap.tabIndex = 0; wrap.setAttribute('role', 'button');
-    wrap.setAttribute('aria-label', `haiku ${n}: ${post.text.replace(/\n/g, ' / ')}. tap to copy`);
+    wrap.setAttribute('aria-label', comment
+      ? `comment on haiku ${post.parentSeq || ''}: ${post.text.replace(/\n/g, ' / ')}. tap to copy`
+      : `haiku ${n}: ${post.text.replace(/\n/g, ' / ')}. tap to copy`);
     const rec = { poem: p, post, cv, W, H, pad, el: wrap };
     this.byEl.set(wrap, rec); this.paintPoem(rec);
     this.pix.push([wrap, W, H, p, pad, L.u]); this.sizePix(wrap, W, H, p, pad, L.u);
@@ -188,7 +201,42 @@ export class ScrollView {
       { duration: 900, delay: i * 120, easing: 'steps(12)', fill: 'backwards' }));
     const rec = this.byEl.get(poem); this.paintPoem(rec, { chars: 0, sig: false, seal: false });
     await clock.wait(500);
-    await this.typePoem(poem); await this.stampSeal(poem);
+    await this.typePoem(poem);
+    if (!this.byEl.get(poem)?.post?.parentId) await this.stampSeal(poem);
+  }
+  // Pull each reply a little to the right of its parent. Comments are painted just before the parent, so the
+  // parent's x exists by the time we tuck. The rect the placer stored is the poem object itself.
+  tuckUnder(parentId) {
+    const poems = this.composer.poems;
+    const parent = poems.find(p => p.post?.id === parentId && !p.post.parentId);
+    if (!parent) return;
+    const i = poems.indexOf(parent);
+    for (let j = i - 1; j >= 0 && poems[j].post?.parentId === parentId; j--) {
+      const c = poems[j], x = tuckX(parent.x, c.w);
+      if (x === c.x) continue;
+      c.x = x;
+      const el = this.layer.querySelector(`.poem[data-id="${cssId(c.post.id)}"]`);
+      const rec = el && this.byEl.get(el);
+      if (rec) this.sizePix(el, rec.W, rec.H, c, rec.pad, c.layout.u);
+    }
+  }
+  // A new comment has to land between its parent and the older poem, so the block is composed again in
+  // that order. Same seed: poems below the reply keep their places. `animateId` types the new reply in.
+  rebuild(entries, { animateId = null } = {}) {
+    const seed = this.composer.seed, lib = this.composer.art.lib;
+    this.layer.querySelectorAll('.poem').forEach(el => el.remove());
+    this.byEl = new WeakMap(); this.pix = [];
+    this.composer = new ScrollComposer({ seed, lib });
+    for (const c of this.chunks) c.painted = false;
+    let animated = null;
+    for (const post of entries) {
+      const res = this.add(post, { animate: !!animateId && post.id === animateId });
+      if (!post.parentId) this.tuckUnder(post.id);
+      if (post.id === animateId) animated = res;
+    }
+    this.fit();
+    for (const c of this.chunks) if (this.visible.has(c)) this.paintChunk(c);
+    return animated || { poem: null, node: null, played: Promise.resolve() };
   }
   scrollToPoem(el, behavior = 'smooth') { const r = el.getBoundingClientRect(); scrollTo({ top: scrollY + r.top - innerHeight * 0.3, behavior }); }
   scenes() { return this.art.regions.map(r => ({ level: r.level, y: r.y0 * PX, h: (r.y1 - r.y0) * PX })); }
