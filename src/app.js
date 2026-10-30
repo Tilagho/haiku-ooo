@@ -16,7 +16,7 @@ import { mountCompose } from './compose.js?v=15.13';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.13';     // round 15.13: a comment (no seal) reports from a hold on the reply itself
-import { mountReactions } from './reactions.js?v=15.13d'; // round 15.13d: a Comment tap opens compose; only a real dismiss rolls back to Write
+import { mountReactions } from './reactions.js?v=15.13e'; // round 15.13e: the picker stays off the Comment button so a tap can open compose
 import { Feed } from './feed.js?v=15.13';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js?v=15.12h';   // round 15.12h: board scroll whoosh; report chimes still ride play()
 
@@ -306,17 +306,22 @@ function holdForComment(post) {
   if (!post?.id || post.parentId || composing()) return;
   if (window.HBBoot && !window.HBBoot.gone) return;
   commentTarget = { id: post.id, seq: post.seq, text: post.text, author: post.author || '' };
-  if (fabArt?.label !== COMMENT_LABEL) morphFab(COMMENT_LABEL);
+  fabEl?.classList.add('is-comment');   // above the reaction bubble, so the tap reaches the button
+  // Always re-arm. The paper can still say "comment" while a dismiss is rolling it shut
+  // to swap in Write. Skipping that roll left the next picker sitting over a Write button.
+  morphFab(COMMENT_LABEL);
 }
 // Click-away, Escape, or a scroll. Not a placed reaction, and not the tap that opens compose.
 function dismissCommentHold() {
   if (suppressFabReturn || composing()) return;
   if (!commentTarget && fabArt?.label !== COMMENT_LABEL) return;
   commentTarget = null;
+  fabEl?.classList.remove('is-comment');
   morphFab(WRITE_LABEL);
 }
 function leaveCommentMode() {
   commentTarget = null;
+  fabEl?.classList.remove('is-comment');
   morphWant = WRITE_LABEL;   // compose already rolled the button shut; it unrolls Write itself
   if (fabArt && fabArt.label !== WRITE_LABEL) fabArt.setLabel(WRITE_LABEL);
 }

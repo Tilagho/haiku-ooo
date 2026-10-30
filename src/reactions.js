@@ -185,6 +185,13 @@ export function mountReactions({ feed, store, inky, inkyFree = () => false, redu
     if (top < 8) { top = Math.min(hy + 22, innerHeight - H - 8); down = false; }
     left = Math.max(6, Math.min(innerWidth - W - 6, left));
     top = Math.max(6, Math.min(innerHeight - H - 8, top));
+    // Inky stands on the Comment button. The bubble used to land on that button (z-index 80 over the
+    // fab's 30), so a tap to write a reply hit a face instead. Keep the bubble above the button.
+    const fab = document.getElementById('fab')?.getBoundingClientRect();
+    if (fab && fab.width > 8 && top + H > fab.top - 8) {
+      const above = Math.round(fab.top - 8 - H);
+      if (above >= 6) { top = above; down = true; }
+    }
     left = Math.round(left / BU) * BU; top = Math.round(top / BU) * BU;
     pop.style.left = left + 'px'; pop.style.top = top + 'px';
     const tipx = Math.max(4, Math.min(bw - 4, Math.round((hx - left) / BU)));
@@ -322,6 +329,8 @@ const RX_CSS = `
 .rx-row .rx-g { position: absolute; z-index: 0; image-rendering: pixelated; pointer-events: none; }
 .poem.rx-holding .pc, .poem.rpt-holding .pc { transform: scale(.965); }
 .rx-pop { position: fixed; z-index: 80; display: grid; place-items: center; pointer-events: auto; touch-action: manipulation; }
+/* the Comment button stays tappable while the picker is up */
+.fab.is-comment { z-index: 90; }
 .rx-pop[hidden] { display: none !important; }
 .rx-pop .rx-bcv { position: absolute; z-index: 0; image-rendering: pixelated; pointer-events: none; }
 .rx-grid { position: relative; z-index: 1; display: grid; gap: 4px; padding: 2px; grid-template-columns: repeat(3, auto); }
