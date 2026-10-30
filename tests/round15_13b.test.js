@@ -40,7 +40,7 @@ ok('a reply keeps that same brush', () => {
 
 ok('cache-bust is 15.13b on the brush only', () => {
   const html = src('index.html'), app = src('src/app.js'), view = src('src/scroll-view.js');
-  assert.ok(/src\/app\.js\?v=15\.13e"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.13f"/.test(html));
   assert.ok(/scroll-view\.js\?v=15\.13b/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(view));

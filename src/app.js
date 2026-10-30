@@ -307,7 +307,9 @@ function holdForComment(post) {
   if (window.HBBoot && !window.HBBoot.gone) return;
   commentTarget = { id: post.id, seq: post.seq, text: post.text, author: post.author || '' };
   fabEl?.classList.add('is-comment');   // above the reaction bubble, so the tap reaches the button
-  if (fabArt?.label !== COMMENT_LABEL) morphFab(COMMENT_LABEL);
+  // Always re-arm. The paper can still say "comment" while a dismiss is rolling it shut
+  // to swap in Write. Skipping that roll left the next picker sitting over a Write button.
+  morphFab(COMMENT_LABEL);
 }
 // Click-away, Escape, or a scroll. Not a placed reaction, and not the tap that opens compose.
 function dismissCommentHold() {
