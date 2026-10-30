@@ -20,10 +20,10 @@ export const GLYPH_BOX = {
   star:     { w: 24, h: 21, ox: 2, oy: 3, ow: 17, oh: 17 },
   flushed:  { w: 24, h: 22, ox: 4, oy: 4, ow: 16, oh: 16 },
   relieved: { w: 24, h: 31, ox: 4, oy: 1, ow: 16, oh: 16 },
-  // Poop: three coil lines and a top hook, flushed eyes, red cheeks. The top row is a steam wisp.
-  poop:     { w: 17, h: 18, ox: 0, oy: 1, ow: 16, oh: 16 },
-  // Fire: unequal spikes, the tall one a needle. Row 0 is the spark that leaves a tip.
-  fire:     { w: 18, h: 18, ox: 0, oy: 1, ow: 17, oh: 14 },
+  // Poop: soft-serve coils in flat ochre, small eyes and cheeks from the face set.
+  poop:     { w: 17, h: 18, ox: 0, oy: 1, ow: 17, oh: 16 },
+  // Fire: two ink tongues, flat hot core (highlight, gold) over red. No gradient.
+  fire:     { w: 16, h: 16, ox: 0, oy: 1, ow: 14, oh: 12 },
 };
 export const RX_FILE = {
   cry: 'cry', eyes: 'eyes', heart: 'broken-heart', star: 'star', flushed: 'flushed', relieved: 'relieved',
@@ -62,7 +62,7 @@ export const COUNT_FROM = 2;
 // The relieved drip does fall (13 art px on the 1× strip) but it paints behind the
 // numeral — reserving that reach would drop one count off the line the other faces share.
 export const COUNT_UNDER_ART = 2;
-// Square picker cell, in art px: the largest resting face (the star; the flame is as wide). Every
+// Square picker cell, in art px: the largest resting face (the star, tied with the poop). Every
 // mobile cell is this size so the glyphs share one grid; animation frames may overflow the cell.
 export const PICKER_CELL = Math.max(...RX_ORDER.map(k => Math.max(GLYPH_BOX[k].ow, GLYPH_BOX[k].oh)));
 export const GLYPH_PAD = 2;

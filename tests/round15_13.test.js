@@ -119,7 +119,7 @@ ok('hold a poem arms comment mode; hold a reply does not; publish clears it', ()
 
 ok('cache-bust for this round is 15.13; whoosh and Inky stay put', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.14a"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.14b"/.test(html));
   assert.ok(/store\.js\?v=15\.14/.test(app));
   assert.ok(/scroll-view\.js\?v=15\.13b/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(app));

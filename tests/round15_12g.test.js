@@ -139,7 +139,7 @@ ok('a phone star of count 1 still leaves a left-hand seal, and a numeral under a
 
 ok('cache-bust is 15.12g on the date line only', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.14a"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.14b"/.test(html));
   assert.ok(/reactions\.js\?v=15\.14/.test(app));
   assert.ok(/react-data\.js\?v=15\.14/.test(rx));
   assert.ok(/react-glyphs\.js\?v=15\.14/.test(rx));
