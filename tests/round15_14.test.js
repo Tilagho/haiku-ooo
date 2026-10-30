@@ -75,7 +75,7 @@ ok('rules paste grows the same poemRx doc; comment and the seal hold are untouch
   assert.ok(/\.fab\.is-comment \{ z-index: 90; \}/.test(rx));
   assert.ok(/report\.js\?v=15\.13/.test(app), 'report was not part of this round');
   const html = src('index.html');
-  assert.ok(/src\/app\.js\?v=15\.14"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.14a"/.test(html));
   assert.ok(/reactions\.js\?v=15\.14/.test(app));
   assert.ok(/react-glyphs\.js\?v=15\.14/.test(rx));
   assert.ok(/store\.js\?v=15\.14/.test(app));

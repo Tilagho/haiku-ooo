@@ -6,7 +6,7 @@
 // Round 15.12d: a date-line face plays for about a second when it is placed, then sits on frame 0.
 // The picker still loops, so the choices keep moving. Every face (picker and date line) is washed
 // toward the sumi paper so it reads as ink on the sheet.
-import { GLYPH_BOX, RX_ORDER, RX_FILE } from './react-data.js?v=15.14';
+import { GLYPH_BOX, RX_ORDER, RX_FILE } from './react-data.js?v=15.14a';
 
 // [ms, dx, dy] per frame. dx/dy is the approved whole-pixel shake.
 const FRAMES = {
@@ -18,7 +18,7 @@ const FRAMES = {
   relieved: [[300, 0, 0], [110, 0, 0], [120, 0, 0], [160, 0, 0], [110, 0, 0], [110, 0, 0], [150, 0, 0], [70, 0, 0], [60, 0, 0], [60, 0, 0], [60, 0, 0], [120, 0, 0], [300, 0, 0]],
   // One second: rest, a stamp-squash, a blink, a wisp, then the resting cel again. The dy/dx is the cry's whole-pixel shake.
   poop: [[280, 0, 0], [90, 0, 1], [80, 1, 0], [70, 0, 0], [90, 0, 0], [110, 0, 0], [140, 0, 0], [140, 0, 0]],
-  // One second, the star's shape of motion: hold, flare, lean, run the highlight down, throw the spark, sit.
+  // One second: the tall spike flares, a left lick, a thinner right needle, a three-tongue fork, then the spark.
   fire: [[320, 0, 0], [70, 0, 0], [70, 0, 0], [80, 0, 0], [80, 0, 0], [90, 0, 0], [120, 0, 0], [170, 0, 0]],
 };
 const TOTAL = Object.fromEntries(RX_ORDER.map(k => [k, FRAMES[k].reduce((s, f) => s + f[0], 0)]));
@@ -42,8 +42,8 @@ const URLS = {
   star: new URL('../assets/reactions/star-frames-1x.png', import.meta.url).href,
   flushed: new URL('../assets/reactions/flushed-frames-1x.png', import.meta.url).href,
   relieved: new URL('../assets/reactions/relieved-frames-1x.png', import.meta.url).href,
-  poop: new URL('../assets/reactions/poop-frames-1x.png', import.meta.url).href,
-  fire: new URL('../assets/reactions/fire-frames-1x.png', import.meta.url).href,
+  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.14a', import.meta.url).href,
+  fire: new URL('../assets/reactions/fire-frames-1x.png?v=15.14a', import.meta.url).href,
 };
 void RX_FILE;
 
