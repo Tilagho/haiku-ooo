@@ -99,7 +99,7 @@ ok('relieved shares the other faces\' gap, and a packed row still centers the di
     return count.y + (Sm.ascent - cap) - (glyph.y + glyph.h);
   };
   assert.ok(Math.abs(gap(relieved) - gap(flushed)) <= 1, 'the drip does not drop the relieved count');
-  const counts = { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12 };
+  const counts = { cry: 12, eyes: 12, heart: 12, star: 12, flushed: 12, relieved: 12, poop: 12, fire: 12 };
   const tight = row(counts, { gaps: { glyph: 1, kind: 1, date: 3 } });
   for (const k of RX_ORDER) {
     const p = pair(tight, k);
@@ -139,13 +139,13 @@ ok('a phone star of count 1 still leaves a left-hand seal, and a numeral under a
 
 ok('cache-bust is 15.12g on the date line only', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.13e"/.test(html));
-  assert.ok(/reactions\.js\?v=15\.13/.test(app));
-  assert.ok(/react-data\.js\?v=15\.13/.test(rx));
-  assert.ok(/react-glyphs\.js\?v=15\.12d/.test(rx), 'playback was not part of this round');
+  assert.ok(/src\/app\.js\?v=15\.14"/.test(html));
+  assert.ok(/reactions\.js\?v=15\.14/.test(app));
+  assert.ok(/react-data\.js\?v=15\.14/.test(rx));
+  assert.ok(/react-glyphs\.js\?v=15\.14/.test(rx));
   assert.ok(/report\.js\?v=15\.13/.test(app));
-  assert.ok(/sound-wire\.js\?v=15\.12h/.test(app));
-  assert.ok(/sound\.js\?v=15\.12h/.test(src('src/sound-wire.js')));
+  assert.ok(/sound-wire\.js\?v=15\.14/.test(app));
+  assert.ok(/sound\.js\?v=15\.14/.test(src('src/sound-wire.js')));
   assert.ok(/inky\.js\?v=15\.12c/.test(app));
   assert.ok(/z-index: 1/.test(rx) && /z-index: 0/.test(rx), 'the numeral paints above the face');
   assert.ok(/COUNT_FROM/.test(src('src/react-data.js')));

@@ -119,19 +119,19 @@ ok('hold a poem arms comment mode; hold a reply does not; publish clears it', ()
 
 ok('cache-bust for this round is 15.13; whoosh and Inky stay put', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.13g"/.test(html));
-  assert.ok(/store\.js\?v=15\.13/.test(app));
+  assert.ok(/src\/app\.js\?v=15\.14"/.test(html));
+  assert.ok(/store\.js\?v=15\.14/.test(app));
   assert.ok(/scroll-view\.js\?v=15\.13b/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(app));
   assert.ok(/scroll-button\.js\?v=15\.13/.test(app));
   assert.ok(/compose\.js\?v=15\.13/.test(app));
   assert.ok(/feed\.js\?v=15\.13/.test(app));
   assert.ok(/report\.js\?v=15\.13/.test(app));
-  assert.ok(/reactions\.js\?v=15\.13/.test(app));
-  assert.ok(/react-data\.js\?v=15\.13/.test(rx));
+  assert.ok(/reactions\.js\?v=15\.14/.test(app));
+  assert.ok(/react-data\.js\?v=15\.14/.test(rx));
   assert.ok(/inky\.js\?v=15\.12c/.test(app));
-  assert.ok(/sound-wire\.js\?v=15\.12h/.test(app));
-  assert.ok(/sound\.js\?v=15\.12h/.test(src('src/sound-wire.js')));
+  assert.ok(/sound-wire\.js\?v=15\.14/.test(app));
+  assert.ok(/sound\.js\?v=15\.14/.test(src('src/sound-wire.js')));
   assert.ok(/src\/style\.css\?v=15\.12h/.test(html));
   assert.ok(/src\/no-select\.js\?v=15\.12h/.test(html));
   const rules = src('firestore.comments.rules');

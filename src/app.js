@@ -1,5 +1,5 @@
 import { checkHaiku } from './haiku.js';
-import { createStore } from './store.js?v=15.13';
+import { createStore } from './store.js?v=15.14';
 import { ScrollView } from './scroll-view.js?v=15.13b';
 import { loadLibrary } from './scroll-engine2.js?v=15.13b';
 import SPRITES from './sprites6.js';
@@ -16,9 +16,9 @@ import { mountCompose } from './compose.js?v=15.13';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.13';     // round 15.13: a comment (no seal) reports from a hold on the reply itself
-import { mountReactions } from './reactions.js?v=15.13e'; // round 15.13e: the picker stays off the Comment button so a tap can open compose
+import { mountReactions } from './reactions.js?v=15.14'; // round 15.14: poop and fire join the picker. 15.13e: the picker stays off the Comment button
 import { Feed } from './feed.js?v=15.13';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
-import { mountSound } from './sound-wire.js?v=15.12h';   // round 15.12h: board scroll whoosh; report chimes still ride play()
+import { mountSound } from './sound-wire.js?v=15.14';   // round 15.14: poop/fire spell on the same babble. 15.12h: board scroll whoosh
 
 const $ = s => document.querySelector(s);
 // round 15.6b: one store handle for everything (compose, reports, the feed); `cur` swaps to this device's own board if the
@@ -367,7 +367,7 @@ reports = mountReports({ feed, store, ask, reduced, busy: () => composing() || !
   if (!composing() && inkyFree()) { inky.setMood(error ? 'worry' : 'cheer'); if (!error) inky.jump(.6); say(text, 1600); clock.wait(1200).then(() => inky.mode === 'roam' && inky.setMood('happy')); }
   else floatNote(error ? 'could not report' : removed ? 'removed' : 'reported', r ? r.left + r.width / 2 : innerWidth / 2, r ? r.top : innerHeight / 2);
 } });
-// round 15.11: hold the poem body → Inky's bubble of six glyphs. Hold the seal → report (above).
+// round 15.11: hold the poem body → Inky's reaction bubble. Hold the seal → report (above). Round 15.14 adds poop and fire.
 reactions = mountReactions({ feed, store, inky, inkyFree, reduced, busy: () => composing() || !!asking || !!reports?.asking,
   hush: () => { if (!asking) popBubble(); }, onHoldPoem: holdForComment, onDismissHold: dismissCommentHold,
   onFail: msg => { const x = innerWidth / 2, y = innerHeight / 2; if (!composing() && inkyFree()) { inky.setMood('worry'); say(msg, 1600); } else floatNote(msg, x, y); } });

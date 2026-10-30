@@ -329,7 +329,7 @@ export class SoundEngine {
 export const BABBLE = { maxRate: 15, poly: 3, level: 1.0, f0: 300, slot: 0.1, dur: 0.06 };
 // One word per reaction, spelled letter by letter with the babble above. The bang is not a phoneme
 // (punctuation stays silent); spellSteps marks the last letter punchy instead.
-export const RX_SAY = { cry: 'Cry', eyes: 'Look', heart: 'Love', star: 'Star', flushed: 'Oof!', relieved: 'Joy!' };
+export const RX_SAY = { cry: 'Cry', eyes: 'Look', heart: 'Love', star: 'Star', flushed: 'Oof!', relieved: 'Joy!', poop: 'Poop', fire: 'Fire' };
 export const SPELL_STEP = 0.09;   // just slower than the babble's 15/s merge, so every letter is heard
 export const BABBLE_VOWELS = { a: [900, 1450, 3000], e: [580, 2300, 3100], i: [380, 2800, 3500], o: [620, 1050, 2900], u: [420, 1100, 2800], '@': [650, 1600, 2900] };
 const ONSET_OF = {}; for (const [k, s] of [['plosive', 'pbtdkgcq'], ['fric', 'fvszhxj'], ['nasal', 'mn'], ['liquid', 'lrwy']]) for (const ch of s) ONSET_OF[ch] = k;

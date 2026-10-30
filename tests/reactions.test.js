@@ -10,8 +10,8 @@ import {
 const src = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
 let n = 0; const ok = (name, fn) => { fn(); n++; console.log('ok', name); };
 
-ok('the six approved glyphs, star in, thumbs out', () => {
-  assert.deepEqual(RX_ORDER, ['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved']);
+ok('the approved glyphs, star in, thumbs out, poop and fire on the end', () => {
+  assert.deepEqual(RX_ORDER, ['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved', 'poop', 'fire']);
   assert.equal(RX_LABEL.heart, 'broken heart');
   assert.equal(RX_LABEL.star, 'star');
   const blob = src('src/react-data.js') + src('src/reactions.js') + src('src/react-glyphs.js');
@@ -187,7 +187,8 @@ ok('phone picker cells are one square and every face is centered in it', () => {
   assert.equal(star.left + (GLYPH_PAD + GLYPH_BOX.star.ox) * css, 0, 'the star fills the cell');
   const js = src('src/reactions.js');
   assert.ok(js.includes('gap: 2px; padding: 4px'), 'the phone grid gutters are tighter than the row');
-  assert.ok(js.includes(".rx-grid.is-row { grid-template-columns: repeat(6, auto); }"), 'the wide row stays on its own track');
+  assert.ok(js.includes(".rx-grid.is-row { grid-template-columns: repeat(8, auto); }"), 'the wide row stays on its own track');
+  assert.ok(js.includes('grid-template-columns: repeat(4, var(--rx-cell, 51px))'), 'the phone grid is two rows of four');
 });
 
 ok('seal hit box is the stamp, not the whole poem', () => {
@@ -207,9 +208,9 @@ ok('seal hit box is the stamp, not the whole poem', () => {
   assert.ok(/if \(!z \|\| z\.stamp\) return/.test(reactions), 'the reaction hold skips the seal');
 });
 
-ok('shipped strips are the six faces, linked so the dist build keeps them', () => {
+ok('shipped strips are the faces, linked so the dist build keeps them', () => {
   const js = src('src/react-glyphs.js');
-  for (const f of ['cry', 'eyes', 'broken-heart', 'star', 'flushed', 'relieved']) {
+  for (const f of ['cry', 'eyes', 'broken-heart', 'star', 'flushed', 'relieved', 'poop', 'fire']) {
     assert.ok(js.includes(`assets/reactions/${f}-frames-1x.png`), f);
     assert.ok(readFileSync(new URL(`../assets/reactions/${f}-frames-1x.png`, import.meta.url)).length > 50);
   }

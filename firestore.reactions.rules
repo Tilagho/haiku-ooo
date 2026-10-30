@@ -5,14 +5,19 @@
 //
 // Put the match next to match /haikus/{id}, inside the same `match /databases/{database}/documents`.
 //
-//   poemRx/{poemId}            { cry, eyes, heart, star, flushed, relieved }  public totals (heart = broken heart)
+//   poemRx/{poemId}            { cry, eyes, heart, star, flushed, relieved, poop, fire }  public totals (heart = broken heart)
 //   poemRx/{poemId}/by/{uid}   { kind, at }                                   that anonymous uid's one reaction
+//
+//   Round 15.14: poop and fire are two more int fields on the same doc. Paste this whole match
+//   over the live one when the stamps ship. Until then the live hasOnly list refuses any write
+//   that includes the new keys — and this client always writes every key, so do not ship the
+//   client ahead of the paste. No new index: totals are still one doc, read by document id.
 //
 // A toggle is one transaction: the caller's by/{uid} doc is created, updated, or deleted, and every
 // total moves by exactly that delta (−1 / 0 / +1). Nobody else's slot counts.
 
     function signedIn() { return request.auth != null; }
-    function rxKind(k) { return k in ['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved']; }
+    function rxKind(k) { return k in ['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved', 'poop', 'fire']; }
     function rxMine(poemId) {
       return /databases/$(database)/documents/poemRx/$(poemId)/by/$(request.auth.uid);
     }
@@ -32,19 +37,23 @@
     match /poemRx/{poemId} {
       allow read: if true;
       allow create, update: if signedIn()
-        && request.resource.data.keys().hasOnly(['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved'])
+        && request.resource.data.keys().hasOnly(['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved', 'poop', 'fire'])
         && request.resource.data.cry is int && request.resource.data.eyes is int
         && request.resource.data.heart is int && request.resource.data.star is int
         && request.resource.data.flushed is int && request.resource.data.relieved is int
+        && request.resource.data.poop is int && request.resource.data.fire is int
         && request.resource.data.cry >= 0 && request.resource.data.eyes >= 0
         && request.resource.data.heart >= 0 && request.resource.data.star >= 0
         && request.resource.data.flushed >= 0 && request.resource.data.relieved >= 0
+        && request.resource.data.poop >= 0 && request.resource.data.fire >= 0
         && request.resource.data.cry == rxOldCount('cry') + rxDelta(poemId, 'cry')
         && request.resource.data.eyes == rxOldCount('eyes') + rxDelta(poemId, 'eyes')
         && request.resource.data.heart == rxOldCount('heart') + rxDelta(poemId, 'heart')
         && request.resource.data.star == rxOldCount('star') + rxDelta(poemId, 'star')
         && request.resource.data.flushed == rxOldCount('flushed') + rxDelta(poemId, 'flushed')
         && request.resource.data.relieved == rxOldCount('relieved') + rxDelta(poemId, 'relieved')
+        && request.resource.data.poop == rxOldCount('poop') + rxDelta(poemId, 'poop')
+        && request.resource.data.fire == rxOldCount('fire') + rxDelta(poemId, 'fire')
         && (rxNewKind(poemId) == '' || rxKind(rxNewKind(poemId)))
         && (rxOldKind(poemId) == '' || rxKind(rxOldKind(poemId)));
       allow delete: if false;

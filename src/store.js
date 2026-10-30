@@ -27,7 +27,7 @@ import { SEED } from './seed.js';
 import { tally, isRemoved, isReportable, deviceId } from './moderation.js';
 import { applyCounts, emptyCounts, isKind, normalizeCounts } from './react-data.js';
 import { API_BASE, FIREBASE } from './config.js';
-import { FirestoreStore } from './firebase-store.js?v=15.13';
+import { FirestoreStore } from './firebase-store.js?v=15.14';
 
 const KEY = 'haiku-board:posts:v1', REPORTS_KEY = 'haiku-board:reports:v1', RX_KEY = 'haiku-board:reactions:v1';
 // ?api=local&demo=comments paints these under the newest sample (sample-01) so the board can be tried offline.

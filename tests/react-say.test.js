@@ -7,7 +7,7 @@ const src = f => readFileSync(new URL('../' + f, import.meta.url), 'utf8');
 let n = 0; const ok = (name, fn) => { fn(); n++; console.log('ok', name); };
 
 ok('each reaction spells its word, and a bang punches the last letter only', () => {
-  assert.deepEqual(RX_SAY, { cry: 'Cry', eyes: 'Look', heart: 'Love', star: 'Star', flushed: 'Oof!', relieved: 'Joy!' });
+  assert.deepEqual(RX_SAY, { cry: 'Cry', eyes: 'Look', heart: 'Love', star: 'Star', flushed: 'Oof!', relieved: 'Joy!', poop: 'Poop', fire: 'Fire' });
   assert.deepEqual(spellSteps('Cry').map(s => s.i), [0, 1, 2]);
   assert.ok(spellSteps('Cry').every(s => !s.punch));
   assert.deepEqual(spellSteps('Look').map(s => s.i), [0, 1, 2, 3]);
