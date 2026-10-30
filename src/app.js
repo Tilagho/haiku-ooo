@@ -277,13 +277,18 @@ const fabEl = $('#fab'), fabArt = fabEl ? mountScrollButton(fabEl, { wind: () =>
 const WRITE_LABEL = 'write a haiku', COMMENT_LABEL = 'comment';
 let suppressFabReturn = false, morphWant = null, morphRunning = null;
 // Roll shut, swap the word while the paper is hidden, unroll. A newer want (dismiss during the
-// open) is picked up after the roll-up, so Comment never unrolls if the hold is already gone.
+// open, or a new hold during that dismiss) is picked up after the roll-up.
+// A same-word call while the paper is already open must not start a runner. An async runner
+// that never awaits finishes before `morphRunning` is assigned and leaves a settled promise
+// there, so every later dismiss sets the want and returns. The button stays on Comment.
 function morphFab(label) {
   if (!fabArt || composing()) return morphRunning;
   if (window.HBBoot && !window.HBBoot.gone) return morphRunning;
   morphWant = label;
-  if (morphRunning) return morphRunning;
-  morphRunning = (async () => {
+  if (morphRunning) return morphRunning;   // a dismiss already rolling picks up the new want
+  if (fabArt.label === label && (fabArt.p || 0) < 0.02) return morphRunning;
+  const runner = (async () => {
+    await Promise.resolve();   // the assignment below wins; finally cannot settle the runner first
     try {
       while (fabArt && morphWant && fabArt.label !== morphWant && !composing()) {
         const want = morphWant;
@@ -293,14 +298,21 @@ function morphFab(label) {
         const next = (!composing() && morphWant) || want;
         if (fabArt.label !== next) fabArt.setLabel(next);
         if (morphWant && morphWant !== next) continue;   // hold cancelled while shut: reopen as Write, don't flash Comment
-        await fabArt.unroll();
+        const opened = fabArt.unroll();
+        // A dismiss mid-open must start rolling shut now, not after Comment finishes unrolling.
+        while (morphWant === next) {
+          const step = await Promise.race([opened, clock.wait(40).then(() => 'tick')]);
+          if (step !== 'tick') break;
+        }
       }
     } finally {
-      rolling = false; morphRunning = null;
+      rolling = false;
+      if (morphRunning === runner) morphRunning = null;
       if (morphWant && fabArt && fabArt.label !== morphWant && !composing()) morphFab(morphWant);
     }
   })();
-  return morphRunning;
+  morphRunning = runner;
+  return runner;
 }
 function holdForComment(post) {
   if (!post?.id || post.parentId || composing()) return;
@@ -361,6 +373,19 @@ reactions = mountReactions({ feed, store, inky, inkyFree, reduced, busy: () => c
   onFail: msg => { const x = innerWidth / 2, y = innerHeight / 2; if (!composing() && inkyFree()) { inky.setMood('worry'); say(msg, 1600); } else floatNote(msg, x, y); } });
 pickerOpen = () => !!reactions?.picking;
 closeReactions = () => reactions?.close();
+// round 15.13g: click-away still rolls to Write after the picker is gone (a placed face,
+// or a hold that found the paper already saying comment). The open picker dismisses
+// itself. The Comment button is not a deselect — that tap opens compose.
+document.addEventListener('pointerdown', e => {
+  if (e.button > 0 || composing()) return;
+  if (e.target?.closest?.('#fab, #rx-pop, #compose')) return;
+  if (reactions?.picking) return;
+  dismissCommentHold();
+}, true);
+addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || composing() || reactions?.picking) return;
+  dismissCommentHold();
+}, true);
 // the shared scroll unreachable (offline, server down): fall back to this device's own board so the page still works
 const booted = feed.boot().catch(async e => {
   console.warn('feed: shared scroll unreachable, using this device only', e);
