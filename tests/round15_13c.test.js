@@ -36,12 +36,12 @@ ok('a placed reaction and the Comment tap do not roll back to Write', () => {
 
 ok('cache-bust is 15.13c on the hold handoff only', () => {
   const html = src('index.html'), app = src('src/app.js');
-  assert.ok(/src\/app\.js\?v=15\.14d"/.test(html));
-  assert.ok(/reactions\.js\?v=15\.14/.test(app));
+  assert.ok(/src\/app\.js\?v=15\.15"/.test(html));
+  assert.ok(/reactions\.js\?v=15\.15/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(app));
   assert.ok(/scroll-view\.js\?v=15\.13b/.test(app));
   assert.ok(/report\.js\?v=15\.13/.test(app) && !/report\.js\?v=15\.13c/.test(app));
-  assert.ok(/sound-wire\.js\?v=15\.14/.test(app));
+  assert.ok(/sound-wire\.js\?v=15\.15/.test(app));
 });
 
 console.log(n + ' round 15.13c checks passed');

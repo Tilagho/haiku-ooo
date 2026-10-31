@@ -132,13 +132,13 @@ ok('ink wash desaturates toward the paper and leaves the used-grey path alone', 
 
 ok('reaction behavior stays 15.12d; the board entry moved with the 15.12g count clearance', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.14d"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.15"/.test(html));
   assert.ok(!/app\.js\?v=15\.12[cde]"/.test(html));
-  assert.ok(/reactions\.js\?v=15\.14/.test(app));
-  assert.ok(/react-glyphs\.js\?v=15\.14/.test(rx));
-  assert.ok(/react-data\.js\?v=15\.14/.test(rx));
+  assert.ok(/reactions\.js\?v=15\.15/.test(app));
+  assert.ok(/react-glyphs\.js\?v=15\.15/.test(rx));
+  assert.ok(/react-data\.js\?v=15\.15/.test(rx));
   assert.ok(/inky\.js\?v=15\.12c/.test(app), 'Inky was not part of this round');
-  assert.ok(/sound\.js\?v=15\.14/.test(src('src/sound-wire.js')));
+  assert.ok(/sound\.js\?v=15\.15/.test(src('src/sound-wire.js')));
 });
 
 console.log(n + ' round 15.12d checks passed');
