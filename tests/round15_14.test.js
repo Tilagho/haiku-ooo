@@ -75,11 +75,11 @@ ok('rules paste grows the same poemRx doc; comment and the seal hold are untouch
   assert.ok(/\.fab\.is-comment \{ z-index: 90; \}/.test(rx));
   assert.ok(/report\.js\?v=15\.13/.test(app), 'report was not part of this round');
   const html = src('index.html');
-  assert.ok(/src\/app\.js\?v=15\.14d"/.test(html));
-  assert.ok(/reactions\.js\?v=15\.14/.test(app));
-  assert.ok(/react-glyphs\.js\?v=15\.14/.test(rx));
+  assert.ok(/src\/app\.js\?v=15\.15b"/.test(html));
+  assert.ok(/reactions\.js\?v=15\.15/.test(app));
+  assert.ok(/react-glyphs\.js\?v=15\.15/.test(rx));
   assert.ok(/store\.js\?v=15\.14/.test(app));
-  assert.ok(/sound\.js\?v=15\.14/.test(src('src/sound-wire.js')));
+  assert.ok(/sound\.js\?v=15\.15/.test(src('src/sound-wire.js')));
 });
 
 console.log(n + ' round 15.14 checks passed');

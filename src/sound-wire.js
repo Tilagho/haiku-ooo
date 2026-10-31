@@ -8,7 +8,7 @@
 // - The sound toggle (header, right of the 俳句の掲示板 line) mutes and SUSPENDS the context; the choice is kept in localStorage
 //   ('hb-sound-muted'). Hidden page: faded and suspended (src/sound.js). round 15.10i (t236u): the first tap (and any later
 //   unlock / rebuild) sets navigator.audioSession.type = "playback" so the iPhone silent switch does not mute the bed.
-import { SoundEngine, SITE_LEVELS, whooshAmount, stepWhooshSpeed, WHOOSH_DEAD } from './sound.js?v=15.14';
+import { SoundEngine, SITE_LEVELS, whooshAmount, stepWhooshSpeed, WHOOSH_DEAD } from './sound.js?v=15.15';
 import { setSfxSink, sfxLog, sfx } from './sfx.js';
 import { WATER_RE } from './waterfall.js';
 import { PX, SCROLL_W } from './scroll-engine2.js';

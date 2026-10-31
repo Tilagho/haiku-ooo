@@ -282,7 +282,10 @@ export class SoundEngine {
     const gen = this._spellGen, steps = spellSteps(word);
     const t0 = Math.max(when ?? 0, this.now + 0.03);
     steps.forEach((step, k) => this.babble({ line: word, i: step.i, u: steps.length > 1 ? k / (steps.length - 1) : 0.35, punch: step.punch, spell: true }, t0 + k * SPELL_STEP));
-    this.play('reactStamp', { when: t0 + Math.max(0, steps.length - 1) * SPELL_STEP + 0.12, gen });
+    const land = t0 + Math.max(0, steps.length - 1) * SPELL_STEP + 0.12;
+    // Fire skips the kalimba stamp and lands as a crackle. Every other kind keeps the chime.
+    if (kind === 'fire') this.play('fireCrackle', { when: land, gen });
+    else this.play('reactStamp', { when: land, gen });
     return 'played';
   }
   _playBuf(buf, t, offset = 0) { const s = this.ctx.createBufferSource(), g = this.gain(this.settings.inky.volume); s.buffer = buf; s.connect(g).connect(this.master); s.start(t, offset); return s; }
@@ -818,6 +821,32 @@ const fxShots = {
     mallet(E, t + 0.055, g, 698.5, 0.2, 0.26, -0.18);
     mallet(E, t + 0.15, g, 1046.5, 0.18, 0.34, 0.22);
     chime(E, t + 0.15, g, 1568, 0.04, 0.5, 0.12);
+  },
+  // round 15.15: the fire stamp. A short whoosh, a low burn, and a handful of crackle pops.
+  // Replaces reactStamp for fire only, and lands on the same beat (after the word "Fire").
+  fireCrackle(E, t, p = {}) {
+    if (p.gen != null && p.gen !== E._spellGen) return;
+    const d = fxOut(E), g = E.gain(3.4); g.connect(d); E._spellGate = g;
+    const whoosh = E.src('pink', t, { loop: false }), bp = E.filt('bandpass', 480, 0.65), ng = E.gain(0);
+    bp.frequency.setValueAtTime(380, t);
+    bp.frequency.exponentialRampToValueAtTime(2400, t + 0.16);
+    bp.frequency.exponentialRampToValueAtTime(640, t + 0.62);
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(0.62, t + 0.05);
+    ng.gain.setTargetAtTime(0.0001, t + 0.2, 0.18);
+    whoosh.connect(bp).connect(ng).connect(g); whoosh.stop(t + 0.85);
+    const burn = E.src('brown', t, { loop: false }), lp = E.filt('lowpass', 320, 0.6), bg = E.gain(0);
+    bg.gain.setValueAtTime(0.0001, t);
+    bg.gain.exponentialRampToValueAtTime(0.42, t + 0.04);
+    bg.gain.setTargetAtTime(0.0001, t + 0.12, 0.22);
+    burn.connect(lp).connect(bg).connect(g); burn.stop(t + 0.9);
+    for (const [at, f, amp] of [[0.02, 3200, 0.28], [0.09, 2100, 0.18], [0.15, 4100, 0.22], [0.24, 2600, 0.16], [0.33, 3600, 0.2], [0.46, 1900, 0.14], [0.58, 4400, 0.12]]) {
+      const n = E.src('white', t + at, { loop: false }), hi = E.filt('highpass', 1400, 0.7), pk = E.filt('bandpass', f, 3.2), pg = E.gain(0), T = t + at;
+      pg.gain.setValueAtTime(0.0001, T);
+      pg.gain.exponentialRampToValueAtTime(amp, T + 0.002);
+      pg.gain.exponentialRampToValueAtTime(0.0001, T + 0.028);
+      n.connect(hi).connect(pk).connect(pg).connect(g); n.stop(T + 0.05);
+    }
   },
   // round 15.12c: Inky opens the reaction picker. A short ink hello, then two kalimba notes rising a fourth
   // (A5 → D6) and one glass wink. Same mallet/chime family as reactStamp and inkyCelebrate, a smaller gesture.
