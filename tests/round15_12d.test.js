@@ -132,7 +132,7 @@ ok('ink wash desaturates toward the paper and leaves the used-grey path alone', 
 
 ok('reaction behavior stays 15.12d; the board entry moved with the 15.12g count clearance', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.15"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.15b"/.test(html));
   assert.ok(!/app\.js\?v=15\.12[cde]"/.test(html));
   assert.ok(/reactions\.js\?v=15\.15/.test(app));
   assert.ok(/react-glyphs\.js\?v=15\.15/.test(rx));

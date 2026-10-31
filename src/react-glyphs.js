@@ -1,7 +1,7 @@
 // Round 15.11: the reaction glyphs, drawn nearest-neighbour from the approved 1× frame strips.
 // The frame strips are the reaction pack (cry tears, eyes look + blink, heart break and roll, star
-// twinkle, flushed eyes balloon, relieved drip). Round 15.15: the poop is a soft-serve cone that
-// wobbles, blinks and breathes; the fire is a teardrop whose tongues dance, the core flares and a
+// twinkle, flushed eyes balloon, relieved drip). Round 15.15b: the poop is a soft-serve swirl that
+// leans, blinks and breathes; the fire is a teardrop whose tongues dance, the core flares and a
 // spark leaves. After the place second those two keep a quiet idle loop. No GIFs: one shared rAF,
 // paused off screen.
 // Round 15.12d: a date-line face plays for about a second when it is placed, then sits on frame 0.
@@ -48,7 +48,7 @@ const URLS = {
   star: new URL('../assets/reactions/star-frames-1x.png', import.meta.url).href,
   flushed: new URL('../assets/reactions/flushed-frames-1x.png', import.meta.url).href,
   relieved: new URL('../assets/reactions/relieved-frames-1x.png', import.meta.url).href,
-  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.15', import.meta.url).href,
+  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.15b', import.meta.url).href,
   fire: new URL('../assets/reactions/fire-frames-1x.png?v=15.15', import.meta.url).href,
 };
 void RX_FILE;

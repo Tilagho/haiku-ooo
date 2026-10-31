@@ -40,7 +40,7 @@ ok('click-away and Escape still leave comment mode when the picker is already go
 
 ok('cache-bust is 15.13g on the comment toggle', () => {
   const html = src('index.html'), app = src('src/app.js');
-  assert.ok(/src\/app\.js\?v=15\.15"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.15b"/.test(html));
   assert.ok(/reactions\.js\?v=15\.15/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(app));
   assert.ok(/report\.js\?v=15\.13/.test(app) && !/report\.js\?v=15\.13g/.test(app));
