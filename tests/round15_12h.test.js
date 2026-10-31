@@ -76,7 +76,7 @@ ok('the whoosh is one wind-bus voice, mute and hide stop it, and a jump is not a
   assert.ok(/scroll-lock/.test(wire) && /dt < GAP/.test(wire) && /const GAP = 0\.12/.test(wire));
   assert.ok(/stepWhooshSpeed/.test(wire) && /whooshAmount/.test(wire));
   assert.ok(/navigator\.audioSession\.type = "playback"/.test(sound), 'silent-switch path stays');
-  assert.ok(/src\/app\.js\?v=15\.14c"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.14d"/.test(html));
   assert.ok(/sound-wire\.js\?v=15\.14/.test(app));
   assert.ok(/sound\.js\?v=15\.14/.test(wire));
   assert.ok(/reactions\.js\?v=15\.14/.test(app), '15.13 retouches reactions for comments; the whoosh stays on the sound wire');

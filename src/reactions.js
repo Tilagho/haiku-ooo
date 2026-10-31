@@ -9,8 +9,8 @@ import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
-} from './react-data.js?v=15.14c';
-import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD, GLYPH_PLAY_MS, planPlays } from './react-glyphs.js?v=15.14c';
+} from './react-data.js?v=15.14d';
+import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD, GLYPH_PLAY_MS, planPlays } from './react-glyphs.js?v=15.14d';
 import { sfx } from './sfx.js';
 
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)

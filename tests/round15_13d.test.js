@@ -29,7 +29,7 @@ ok('a real dismiss still rolls back to Write, a placed reaction does not', () =>
 
 ok('cache-bust is 15.13d on the Comment tap only', () => {
   const html = src('index.html'), app = src('src/app.js');
-  assert.ok(/src\/app\.js\?v=15\.14c"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.14d"/.test(html));
   assert.ok(/reactions\.js\?v=15\.14/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(app));
   assert.ok(/report\.js\?v=15\.13/.test(app) && !/report\.js\?v=15\.13d/.test(app));

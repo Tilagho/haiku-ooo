@@ -1,13 +1,13 @@
 // Round 15.11: the reaction glyphs, drawn nearest-neighbour from the approved 1× frame strips.
 // The frame strips are the reaction pack (cry tears, eyes look + blink, heart break and roll, star
-// twinkle, flushed eyes balloon, relieved drip). Round 15.14c: the poop is a mound that squashes,
+// twinkle, flushed eyes balloon, relieved drip). Round 15.14d: the poop is a mound that squashes,
 // blinks and lets off a wisp; the fire is a tall flame whose tip flares, a lick reaches, and a
 // spark leaves. No GIFs: one shared rAF,
 // paused off screen.
 // Round 15.12d: a date-line face plays for about a second when it is placed, then sits on frame 0.
 // The picker still loops, so the choices keep moving. Every face (picker and date line) is washed
 // toward the sumi paper so it reads as ink on the sheet.
-import { GLYPH_BOX, RX_ORDER, RX_FILE } from './react-data.js?v=15.14c';
+import { GLYPH_BOX, RX_ORDER, RX_FILE } from './react-data.js?v=15.14d';
 
 // [ms, dx, dy] per frame. dx/dy is the approved whole-pixel shake.
 const FRAMES = {
@@ -43,8 +43,8 @@ const URLS = {
   star: new URL('../assets/reactions/star-frames-1x.png', import.meta.url).href,
   flushed: new URL('../assets/reactions/flushed-frames-1x.png', import.meta.url).href,
   relieved: new URL('../assets/reactions/relieved-frames-1x.png', import.meta.url).href,
-  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.14c', import.meta.url).href,
-  fire: new URL('../assets/reactions/fire-frames-1x.png?v=15.14c', import.meta.url).href,
+  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.14d', import.meta.url).href,
+  fire: new URL('../assets/reactions/fire-frames-1x.png?v=15.14d', import.meta.url).href,
 };
 void RX_FILE;
 
