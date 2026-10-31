@@ -1,13 +1,15 @@
 // Round 15.11: poem reactions. Pure layout / hit-testing (no DOM), shared by the picker, the date-line
 // row, the report retarget (hold the number seal only) and the tests.
 //
-// The six approved glyphs, in picker and date-line order. Star replaced the earlier approval mark.
-// `heart` is the broken heart (Firestore field names stay bare words).
+// The reaction glyphs, in picker and date-line order. Star replaced the earlier approval mark.
+// Round 15.14 adds poop and fire in the same ink set. `heart` is the broken heart
+// (Firestore field names stay bare words).
 import { sealDims } from './brush-text.js';
 
-export const RX_ORDER = ['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved'];
+export const RX_ORDER = ['cry', 'eyes', 'heart', 'star', 'flushed', 'relieved', 'poop', 'fire'];
 export const RX_LABEL = {
   cry: 'cry', eyes: 'eyes', heart: 'broken heart', star: 'star', flushed: 'flushed', relieved: 'relieved',
+  poop: 'poop', fire: 'fire',
 };
 // Resting opaque box inside each animation frame (art px). ox/oy is the box's top-left in the frame.
 // Measured off the approved 1x strips (assets/reactions/*-frames-1x.png).
@@ -18,12 +20,17 @@ export const GLYPH_BOX = {
   star:     { w: 24, h: 21, ox: 2, oy: 3, ow: 17, oh: 17 },
   flushed:  { w: 24, h: 22, ox: 4, oy: 4, ow: 16, oh: 16 },
   relieved: { w: 24, h: 31, ox: 4, oy: 1, ow: 16, oh: 16 },
+  // Poop: a mound of stacked coils, hooked tip, flat atlas brown, the set's small eyes and cheeks.
+  poop:     { w: 17, h: 17, ox: 0, oy: 0, ow: 17, oh: 17 },
+  // Fire: a tall flame. Pointed main tongue, side licks, flat red over gold. No gradient.
+  fire:     { w: 16, h: 17, ox: 0, oy: 0, ow: 16, oh: 17 },
 };
 export const RX_FILE = {
   cry: 'cry', eyes: 'eyes', heart: 'broken-heart', star: 'star', flushed: 'flushed', relieved: 'relieved',
+  poop: 'poop', fire: 'fire',
 };
 
-export const emptyCounts = () => ({ cry: 0, eyes: 0, heart: 0, star: 0, flushed: 0, relieved: 0 });
+export const emptyCounts = () => ({ cry: 0, eyes: 0, heart: 0, star: 0, flushed: 0, relieved: 0, poop: 0, fire: 0 });
 export const isKind = k => RX_ORDER.includes(k);
 export const hasReactions = counts => RX_ORDER.some(k => (counts?.[k] | 0) > 0);
 export const nextKind = (prev, tapped) => (prev === tapped ? null : tapped);
@@ -55,8 +62,8 @@ export const COUNT_FROM = 2;
 // The relieved drip does fall (13 art px on the 1× strip) but it paints behind the
 // numeral — reserving that reach would drop one count off the line the other faces share.
 export const COUNT_UNDER_ART = 2;
-// Square picker cell, in art px: the largest resting face (the star). Every mobile cell is this
-// size so the six glyphs share one grid; animation frames may overflow the cell.
+// Square picker cell, in art px: the largest resting face (the star, tied with the poop). Every
+// mobile cell is this size so the glyphs share one grid; animation frames may overflow the cell.
 export const PICKER_CELL = Math.max(...RX_ORDER.map(k => Math.max(GLYPH_BOX[k].ow, GLYPH_BOX[k].oh)));
 export const GLYPH_PAD = 2;
 
@@ -176,7 +183,7 @@ const LOOSE_GAPS = { glyph: 2, kind: 4, date: DATE_GAP };
 const TIGHT_GAPS = { glyph: 1, kind: 1, date: 3 };   // only when the airy row would leave the viewing area
 
 // Whole-pixel shake the strip actually plays (±1 art px). The star, the eyes and the relieved face sit still.
-const GLYPH_SHAKE = { cry: 1, eyes: 0, heart: 1, star: 0, flushed: 1, relieved: 0 };
+const GLYPH_SHAKE = { cry: 1, eyes: 0, heart: 1, star: 0, flushed: 1, relieved: 0, poop: 1, fire: 0 };
 
 // Opaque frame of one date-line face, in row font px. This is the animation cel, not the transparent
 // canvas pad around it. `shake` is the cel sliding inside that pad while the face plays.

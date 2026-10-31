@@ -8,7 +8,7 @@
 // Collections (rules: firestore.rules; anything else in the project is denied):
 //   haikus/{id}                 { seq, text, author, uid, createdAt (server time), reports: 0, removed: false, hash }
 //   haikus/{id}/reports/{uid}   { at }                    one report per signed-in device per poem (the doc id IS the uid)
-//   poemRx/{poemId}             { cry, eyes, heart, star, flushed, relieved }   totals, public. heart = broken heart
+//   poemRx/{poemId}             { cry, eyes, heart, star, flushed, relieved, poop, fire }   totals, public. heart = broken heart
 //   poemRx/{poemId}/by/{uid}    { kind, at }              that device's one reaction (round 15.11). Samples use id sample-01…
 //   haikuMeta/counter           { seq, last }             the last permanent number handed out, and to which poem
 //   haikuTexts/{sha256}         { post, uid }             duplicate lock: one poem per normalized (lower-cased) text
@@ -31,7 +31,7 @@
 import { checkHaiku } from './haiku.js';
 import { SEED } from './seed.js';
 import { TAKEDOWN_REPORTS, isReportable } from './moderation.js';
-import { emptyCounts, isKind, normalizeCounts } from './react-data.js';
+import { emptyCounts, isKind, normalizeCounts } from './react-data.js?v=15.14';
 
 export const SDK_VERSION = '10.14.1';        // Firebase JS SDK, official gstatic ESM build
 export const MIN_GAP_S = 20, PER_HOUR = 12;   // keep in sync with firestore.rules (tests/round15_6c.test.js checks)

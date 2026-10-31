@@ -9,8 +9,8 @@ import { LONG_PRESS_MS, LONG_PRESS_SLOP } from './moderation.js';
 import {
   RX_ORDER, RX_LABEL, GLYPH_BOX, emptyCounts, hasReactions, nextKind, applyCounts, normalizeCounts,
   fitByline, rowFitScale, reactionScale, pickerScale, pickerGlyphOrigin, PICKER_CELL, poemZone,
-} from './react-data.js?v=15.13';
-import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD, GLYPH_PLAY_MS, planPlays } from './react-glyphs.js?v=15.12d';
+} from './react-data.js?v=15.14d';
+import { loadSprites, sizeGlyph, trackGlyph, untrackGlyph, setGlyphMotion, GLYPH_PAD, GLYPH_PLAY_MS, planPlays } from './react-glyphs.js?v=15.14d';
 import { sfx } from './sfx.js';
 
 const INK = [86, 80, 88];   // the signature's own grey (scroll-view paintPoem)
@@ -334,9 +334,9 @@ const RX_CSS = `
 .rx-pop[hidden] { display: none !important; }
 .rx-pop .rx-bcv { position: absolute; z-index: 0; image-rendering: pixelated; pointer-events: none; }
 .rx-grid { position: relative; z-index: 1; display: grid; gap: 4px; padding: 2px; grid-template-columns: repeat(3, auto); }
-.rx-grid.is-row { grid-template-columns: repeat(6, auto); }
-/* phone 2×3: one cell per face (the star's 17 art px), 2px gutters, 4px inset from the bubble ink */
-.rx-grid:not(.is-row) { gap: 2px; padding: 4px; grid-template-columns: repeat(3, var(--rx-cell, 51px)); grid-template-rows: repeat(2, var(--rx-cell, 51px)); }
+.rx-grid.is-row { grid-template-columns: repeat(8, auto); }
+/* phone 4×2: one cell per face (the star's 17 art px), 2px gutters, 4px inset from the bubble ink */
+.rx-grid:not(.is-row) { gap: 2px; padding: 4px; grid-template-columns: repeat(4, var(--rx-cell, 51px)); grid-template-rows: repeat(2, var(--rx-cell, 51px)); }
 .rx-btn { display: grid; place-items: center; margin: 0; padding: 4px; border: 0; background: transparent; cursor: pointer;
   touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .rx-grid:not(.is-row) .rx-btn { position: relative; padding: 0; width: var(--rx-cell, 51px); height: var(--rx-cell, 51px); overflow: visible; }
