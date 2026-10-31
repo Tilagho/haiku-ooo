@@ -122,7 +122,7 @@ ok('a full set that cannot sit on the seal scales clear instead of covering it',
 
 ok('cache-bust moved to 15.12g; the seal is still passed into the packer', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.14b"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.14c"/.test(html));
   assert.ok(/reactions\.js\?v=15\.14/.test(app));
   assert.ok(/react-data\.js\?v=15\.14/.test(rx));
   assert.ok(/react-glyphs\.js\?v=15\.14/.test(rx));

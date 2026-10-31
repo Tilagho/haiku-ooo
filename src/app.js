@@ -16,7 +16,7 @@ import { mountCompose } from './compose.js?v=15.13';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.13';     // round 15.13: a comment (no seal) reports from a hold on the reply itself
-import { mountReactions } from './reactions.js?v=15.14b'; // round 15.14b: new ink flame and soft-serve. 15.13e: the picker stays off the Comment button
+import { mountReactions } from './reactions.js?v=15.14c'; // round 15.14c: mound poop, tall flame. 15.13e: the picker stays off the Comment button
 import { Feed } from './feed.js?v=15.13';               // round 15.6b: the shared scroll, newest first, older blocks load as you swipe down
 import { mountSound } from './sound-wire.js?v=15.14';   // round 15.14: poop/fire spell on the same babble. 15.12h: board scroll whoosh
 

@@ -1,12 +1,13 @@
 // Round 15.11: the reaction glyphs, drawn nearest-neighbour from the approved 1× frame strips.
 // The frame strips are the reaction pack (cry tears, eyes look + blink, heart break and roll, star
-// twinkle, flushed eyes balloon, relieved drip). Round 15.14: poop squashes, blinks and lets off
-// a wisp; fire leans, runs a highlight down its core and throws a spark. No GIFs: one shared rAF,
+// twinkle, flushed eyes balloon, relieved drip). Round 15.14c: the poop is a mound that squashes,
+// blinks and lets off a wisp; the fire is a tall flame whose tip flares, a lick reaches, and a
+// spark leaves. No GIFs: one shared rAF,
 // paused off screen.
 // Round 15.12d: a date-line face plays for about a second when it is placed, then sits on frame 0.
 // The picker still loops, so the choices keep moving. Every face (picker and date line) is washed
 // toward the sumi paper so it reads as ink on the sheet.
-import { GLYPH_BOX, RX_ORDER, RX_FILE } from './react-data.js?v=15.14b';
+import { GLYPH_BOX, RX_ORDER, RX_FILE } from './react-data.js?v=15.14c';
 
 // [ms, dx, dy] per frame. dx/dy is the approved whole-pixel shake.
 const FRAMES = {
@@ -16,9 +17,9 @@ const FRAMES = {
   star: [[700, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [60, 0, 0], [120, 0, 0], [60, 0, 0], [520, 0, 0]],
   flushed: [[300, 0, 0], [70, 0, 0], [70, 0, 0], [70, 0, 0], [90, 1, 0], [70, -1, 0], [70, 1, 0], [380, 0, 0], [90, 0, 0], [90, 0, 0], [90, 0, 0], [200, 0, 0]],
   relieved: [[300, 0, 0], [110, 0, 0], [120, 0, 0], [160, 0, 0], [110, 0, 0], [110, 0, 0], [150, 0, 0], [70, 0, 0], [60, 0, 0], [60, 0, 0], [60, 0, 0], [120, 0, 0], [300, 0, 0]],
-  // One second: rest, a stamp-squash, a blink, a wisp, then the resting cel again. The dy/dx is the cry's whole-pixel shake.
+  // One second: rest, a stamp-squash, a blink, a wisp, then the hook settles. The dy/dx is the cry's whole-pixel shake.
   poop: [[280, 0, 0], [90, 0, 1], [80, 1, 0], [70, 0, 0], [90, 0, 0], [110, 0, 0], [140, 0, 0], [140, 0, 0]],
-  // One second: the hot tip flares, the short tongue climbs, a fleck leaves, the core runs, then it sits.
+  // One second: the tip flares, a side lick reaches, a spark leaves, the core runs down, then it sits.
   fire: [[320, 0, 0], [70, 0, 0], [70, 0, 0], [80, 0, 0], [80, 0, 0], [90, 0, 0], [120, 0, 0], [170, 0, 0]],
 };
 const TOTAL = Object.fromEntries(RX_ORDER.map(k => [k, FRAMES[k].reduce((s, f) => s + f[0], 0)]));
@@ -42,8 +43,8 @@ const URLS = {
   star: new URL('../assets/reactions/star-frames-1x.png', import.meta.url).href,
   flushed: new URL('../assets/reactions/flushed-frames-1x.png', import.meta.url).href,
   relieved: new URL('../assets/reactions/relieved-frames-1x.png', import.meta.url).href,
-  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.14b', import.meta.url).href,
-  fire: new URL('../assets/reactions/fire-frames-1x.png?v=15.14b', import.meta.url).href,
+  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.14c', import.meta.url).href,
+  fire: new URL('../assets/reactions/fire-frames-1x.png?v=15.14c', import.meta.url).href,
 };
 void RX_FILE;
 

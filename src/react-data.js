@@ -20,10 +20,10 @@ export const GLYPH_BOX = {
   star:     { w: 24, h: 21, ox: 2, oy: 3, ow: 17, oh: 17 },
   flushed:  { w: 24, h: 22, ox: 4, oy: 4, ow: 16, oh: 16 },
   relieved: { w: 24, h: 31, ox: 4, oy: 1, ow: 16, oh: 16 },
-  // Poop: soft-serve coils in flat ochre, small eyes and cheeks from the face set.
-  poop:     { w: 17, h: 18, ox: 0, oy: 1, ow: 17, oh: 16 },
-  // Fire: two ink tongues, flat hot core (highlight, gold) over red. No gradient.
-  fire:     { w: 16, h: 16, ox: 0, oy: 1, ow: 14, oh: 12 },
+  // Poop: a mound of stacked coils, hooked tip, flat atlas brown, the set's small eyes and cheeks.
+  poop:     { w: 17, h: 17, ox: 0, oy: 0, ow: 17, oh: 17 },
+  // Fire: a tall flame. Pointed main tongue, side licks, flat red over gold. No gradient.
+  fire:     { w: 16, h: 17, ox: 0, oy: 0, ow: 16, oh: 17 },
 };
 export const RX_FILE = {
   cry: 'cry', eyes: 'eyes', heart: 'broken-heart', star: 'star', flushed: 'flushed', relieved: 'relieved',

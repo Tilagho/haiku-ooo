@@ -25,7 +25,7 @@ ok('a new hold re-arms Comment even while the paper still says comment', () => {
 
 ok('cache-bust is 15.13f on the hold handoff', () => {
   const html = src('index.html'), app = src('src/app.js');
-  assert.ok(/src\/app\.js\?v=15\.14b"/.test(html));
+  assert.ok(/src\/app\.js\?v=15\.14c"/.test(html));
   assert.ok(/reactions\.js\?v=15\.14/.test(app));
   assert.ok(/scroll-engine2\.js\?v=15\.13b/.test(app));
   assert.ok(/report\.js\?v=15\.13/.test(app) && !/report\.js\?v=15\.13f/.test(app));
