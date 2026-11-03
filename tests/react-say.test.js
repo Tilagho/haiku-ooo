@@ -38,6 +38,7 @@ ok('the live react path spells a placed kind on the tap and poofs a clear after 
   assert.ok(/name === 'reactSay'/.test(wire) && /sayReaction\(p\.kind\)/.test(wire));
   const sound = src('src/sound.js');
   assert.ok(/sayReaction\(kind/.test(sound) && /reactStamp\(/.test(sound));
+  assert.ok(/kind === 'fire'/.test(sound) && /fireCrackle/.test(sound), 'fire places with a crackle instead of the stamp chime');
   assert.ok(/poof\(E, t0\)/.test(sound), 'the poof shot already lives in the sound engine');
   assert.ok(sound.includes("this.babble({ line: word, i: step.i"), 'the spell uses the typing babble, one call per letter');
   assert.ok(/sfx\('poof'\)/.test(src('src/credits.js')) && /sfx\('poof'\)/.test(src('src/noren.js')), 'credits and the noren egg already call the same key');

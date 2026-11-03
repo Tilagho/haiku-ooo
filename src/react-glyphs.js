@@ -1,13 +1,13 @@
 // Round 15.11: the reaction glyphs, drawn nearest-neighbour from the approved 1× frame strips.
 // The frame strips are the reaction pack (cry tears, eyes look + blink, heart break and roll, star
-// twinkle, flushed eyes balloon, relieved drip). Round 15.14d: the poop is a mound that squashes,
-// blinks and lets off a wisp; the fire is a tall flame whose tip flares, a lick reaches, and a
-// spark leaves. No GIFs: one shared rAF,
+// twinkle, flushed eyes balloon, relieved drip). Round 15.15b: the poop is a soft-serve swirl that
+// leans, blinks and breathes; the fire is a teardrop whose tongues dance, the core flares and a
+// spark leaves. After the place second those two keep a quiet idle loop. No GIFs: one shared rAF,
 // paused off screen.
 // Round 15.12d: a date-line face plays for about a second when it is placed, then sits on frame 0.
 // The picker still loops, so the choices keep moving. Every face (picker and date line) is washed
 // toward the sumi paper so it reads as ink on the sheet.
-import { GLYPH_BOX, RX_ORDER, RX_FILE } from './react-data.js?v=15.14d';
+import { GLYPH_BOX, RX_ORDER, RX_FILE } from './react-data.js?v=15.15';
 
 // [ms, dx, dy] per frame. dx/dy is the approved whole-pixel shake.
 const FRAMES = {
@@ -17,10 +17,15 @@ const FRAMES = {
   star: [[700, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [45, 0, 0], [60, 0, 0], [120, 0, 0], [60, 0, 0], [520, 0, 0]],
   flushed: [[300, 0, 0], [70, 0, 0], [70, 0, 0], [70, 0, 0], [90, 1, 0], [70, -1, 0], [70, 1, 0], [380, 0, 0], [90, 0, 0], [90, 0, 0], [90, 0, 0], [200, 0, 0]],
   relieved: [[300, 0, 0], [110, 0, 0], [120, 0, 0], [160, 0, 0], [110, 0, 0], [110, 0, 0], [150, 0, 0], [70, 0, 0], [60, 0, 0], [60, 0, 0], [60, 0, 0], [120, 0, 0], [300, 0, 0]],
-  // One second: rest, a stamp-squash, a blink, a wisp, then the hook settles. The dy/dx is the cry's whole-pixel shake.
-  poop: [[280, 0, 0], [90, 0, 1], [80, 1, 0], [70, 0, 0], [90, 0, 0], [110, 0, 0], [140, 0, 0], [140, 0, 0]],
-  // One second: the tip flares, a side lick reaches, a spark leaves, the core runs down, then it sits.
-  fire: [[320, 0, 0], [70, 0, 0], [70, 0, 0], [80, 0, 0], [80, 0, 0], [90, 0, 0], [120, 0, 0], [170, 0, 0]],
+  // One second: rest, the tip leans, a squash, a blink, the shine, a breathe, then it settles.
+  poop: [[160, 0, 0], [120, 0, 0], [120, 0, 0], [100, 0, 1], [140, 0, 0], [120, 0, 0], [120, 0, 0], [120, 0, 0]],
+  // One second: rest, the left tongue, the right tongue, a taller tip, the hot core, a white flare, a spark, then it settles.
+  fire: [[180, 0, 0], [110, 0, 0], [110, 0, 0], [100, 0, 0], [120, 0, 0], [120, 0, 0], [140, 0, 0], [120, 0, 0]],
+};
+// After the place second, these two keep moving. [ms, frame index]. Other faces still sit on frame 0.
+const IDLE_LOOP = {
+  poop: [[320, 0], [200, 1], [280, 0], [200, 2]],
+  fire: [[180, 0], [140, 1], [160, 2], [140, 1]],
 };
 const TOTAL = Object.fromEntries(RX_ORDER.map(k => [k, FRAMES[k].reduce((s, f) => s + f[0], 0)]));
 const PAD = 2;   // room for the ±1 px shake without clipping
@@ -43,8 +48,8 @@ const URLS = {
   star: new URL('../assets/reactions/star-frames-1x.png', import.meta.url).href,
   flushed: new URL('../assets/reactions/flushed-frames-1x.png', import.meta.url).href,
   relieved: new URL('../assets/reactions/relieved-frames-1x.png', import.meta.url).href,
-  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.14d', import.meta.url).href,
-  fire: new URL('../assets/reactions/fire-frames-1x.png?v=15.14d', import.meta.url).href,
+  poop: new URL('../assets/reactions/poop-frames-1x.png?v=15.15b', import.meta.url).href,
+  fire: new URL('../assets/reactions/fire-frames-1x.png?v=15.15', import.meta.url).href,
 };
 void RX_FILE;
 
@@ -63,8 +68,20 @@ export function loadSprites() {
   }))).then(() => { repaintLive(); });
 }
 
+export function idleFrameAt(kind, t) {
+  const frames = IDLE_LOOP[kind];
+  if (!frames) return { i: 0, dx: 0, dy: 0 };
+  const total = frames.reduce((s, f) => s + f[0], 0);
+  let x = ((t % total) + total) % total;
+  for (let i = 0; i < frames.length; i++) {
+    if (x < frames[i][0]) return { i: frames[i][1], dx: 0, dy: 0 };
+    x -= frames[i][0];
+  }
+  return { i: 0, dx: 0, dy: 0 };
+}
 export function frameAt(kind, t, idle = false) {
   // The settled stamp is the strip's first cel with the shake taken off, so a cry face does not sit 1px off center.
+  // Poop and fire pass idle through paintGlyph, which loops IDLE_LOOP instead of this freeze.
   if (idle) return { i: 0, dx: 0, dy: 0 };
   const frames = FRAMES[kind], total = TOTAL[kind];
   let x = ((t % total) + total) % total;
@@ -125,7 +142,9 @@ export function paintGlyph(cv, kind, t, reduced = false, idle = false) {
   if (!img || !g) return false;
   const W = g.w + PAD * 2, H = g.h + PAD * 2;
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
-  const fr = frameAt(kind, reduced ? 0 : t, idle);
+  const fr = reduced ? { i: 0, dx: 0, dy: 0 }
+    : idle && IDLE_LOOP[kind] ? idleFrameAt(kind, t)
+    : frameAt(kind, t, idle);
   const ctx = cv.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   ctx.clearRect(0, 0, W, H);
@@ -153,11 +172,12 @@ let raf = 0, reduced = false;
 function playing(node, now) { return !reduced && (node.loop || now < node.until); }
 function paintNode(node, now) {
   const go = playing(node, now);
-  paintGlyph(node.cv, node.kind, go ? now + node.phase : 0, reduced, !go);
+  const flick = !go && !reduced && !!IDLE_LOOP[node.kind];
+  paintGlyph(node.cv, node.kind, (go || flick) ? now + node.phase : 0, reduced, !go);
 }
 function needsFrame(now) {
   if (reduced) return false;
-  for (const n of live) if (n.loop || now < n.until) return true;
+  for (const n of live) if (n.loop || now < n.until || IDLE_LOOP[n.kind]) return true;
   return false;
 }
 function kick() {

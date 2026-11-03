@@ -20,9 +20,9 @@ export const GLYPH_BOX = {
   star:     { w: 24, h: 21, ox: 2, oy: 3, ow: 17, oh: 17 },
   flushed:  { w: 24, h: 22, ox: 4, oy: 4, ow: 16, oh: 16 },
   relieved: { w: 24, h: 31, ox: 4, oy: 1, ow: 16, oh: 16 },
-  // Poop: a mound of stacked coils, hooked tip, flat atlas brown, the set's small eyes and cheeks.
+  // Poop: a soft-serve swirl, left-leaning tip, big white eyes and a white smile bar.
   poop:     { w: 17, h: 17, ox: 0, oy: 0, ow: 17, oh: 17 },
-  // Fire: a tall flame. Pointed main tongue, side licks, flat red over gold. No gradient.
+  // Fire: a teardrop flame, side tongues, pale core inside gold inside red. No gradient.
   fire:     { w: 16, h: 17, ox: 0, oy: 0, ow: 16, oh: 17 },
 };
 export const RX_FILE = {

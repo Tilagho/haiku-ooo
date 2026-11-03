@@ -122,13 +122,13 @@ ok('a full set that cannot sit on the seal scales clear instead of covering it',
 
 ok('cache-bust moved to 15.12g; the seal is still passed into the packer', () => {
   const html = src('index.html'), app = src('src/app.js'), rx = src('src/reactions.js');
-  assert.ok(/src\/app\.js\?v=15\.14d"/.test(html));
-  assert.ok(/reactions\.js\?v=15\.14/.test(app));
-  assert.ok(/react-data\.js\?v=15\.14/.test(rx));
-  assert.ok(/react-glyphs\.js\?v=15\.14/.test(rx));
+  assert.ok(/src\/app\.js\?v=15\.15b"/.test(html));
+  assert.ok(/reactions\.js\?v=15\.15/.test(app));
+  assert.ok(/react-data\.js\?v=15\.15/.test(rx));
+  assert.ok(/react-glyphs\.js\?v=15\.15/.test(rx));
   assert.ok(/report\.js\?v=15\.13/.test(app));
-  assert.ok(/sound-wire\.js\?v=15\.14/.test(app));
-  assert.ok(/sound\.js\?v=15\.14/.test(src('src/sound-wire.js')));
+  assert.ok(/sound-wire\.js\?v=15\.15/.test(app));
+  assert.ok(/sound\.js\?v=15\.15/.test(src('src/sound-wire.js')));
   assert.ok(/sigY: L\.sig\.y/.test(rx) && /avoid: \{ x: L\.seal\.x/.test(rx), 'the row passes the seal rect into the packer');
   assert.ok(!/firestore\.rules/.test(app + rx + src('src/react-data.js')));
 });
