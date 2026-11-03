@@ -127,7 +127,7 @@ const MARKUP = `
       <div class="paper" id="cpaper">
         <div id="clines"><textarea id="cpoem" rows="3" wrap="off" maxlength="240" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="text" enterkeyhint="next" data-1p-ignore data-lpignore="true" data-form-type="other" aria-multiline="true" aria-label="your haiku: three lines of 5, 7 and 5 syllables. return goes to the next line"></textarea></div>
         <p class="sr" id="cnote" aria-live="polite"></p>
-        <div class="sign" id="csign"><span class="nm"><span class="nmm" aria-hidden="true"></span><span class="nph" aria-hidden="true">Sign? (optional)</span><i class="rl" aria-hidden="true"></i><input id="cname" type="text" maxlength="12" disabled tabindex="-1" name="given-name" autocomplete="given-name" autocorrect="off" autocapitalize="words" spellcheck="false" inputmode="text" enterkeyhint="done" data-1p-ignore data-lpignore="true" data-form-type="other" placeholder="Sign? (optional)" aria-label="sign with your first name, up to 12 characters, optional"><button class="nmb" id="cnamebtn" type="button" aria-label="sign with your name (optional)"></button></span></div>
+        <div class="sign" id="csign"><span class="nm"><span class="nmm" aria-hidden="true"></span><span class="nph" aria-hidden="true">Sign? (optional)</span><i class="rl" aria-hidden="true"></i><input id="cname" type="text" maxlength="12" disabled tabindex="-1" name="haiku-sign" autocomplete="haiku-sign" autocorrect="off" autocapitalize="words" spellcheck="false" inputmode="text" enterkeyhint="done" data-1p-ignore data-lpignore="true" data-form-type="other" placeholder="Sign? (optional)" aria-label="sign with a name, up to 12 characters, optional"><button class="nmb" id="cnamebtn" type="button" aria-label="sign with your name (optional)"></button></span></div>
         <button class="back" id="cback" type="button" aria-label="back to the board, discard this haiku"><span class="blot"><canvas id="arw"></canvas></span></button>
         <button class="cpost" id="cpost" type="button" aria-label="seal and post"><span class="wax"><canvas id="wax"></canvas></span></button>
       </div>
@@ -594,7 +594,11 @@ export function mountCompose(deps) {
   $('#cnamebtn').addEventListener('pointerdown', e => e.preventDefault());
   $('#cnamebtn').addEventListener('click', e => { e.preventDefault(); openName(); });
   nameIn.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== nameIn) closeName(); }, 0));
-  nameIn.addEventListener('input', () => { const c = cleanName(nameIn.value); if (c !== nameIn.value) nameIn.value = c; fitName(); poke(); });
+  const syncName = () => { const c = cleanName(nameIn.value); if (c !== nameIn.value) nameIn.value = c; fitName(); };
+  nameIn.addEventListener('input', () => { syncName(); poke(); });
+  nameIn.addEventListener('change', syncName);
+  // WebKit autofill can fill the value without a normal input event. The mirror (.nmm) is what the scroll shows.
+  nameIn.addEventListener('animationstart', e => { if (e.animationName === 'hb-autofill') syncName(); });
   function fitName() {                          // round 15.10f5c: typed name = poem line 3; placeholder ~75% so "Sign? (optional)" fits clear of stamps; never below 16px
     const nm = nameNm, mm = nm.querySelector('.nmm'), ph = nm.querySelector('.nph'), v = nameIn.value;
     mm.textContent = v; nm.classList.toggle('has', !!v); nm.style.removeProperty('--nfs');
