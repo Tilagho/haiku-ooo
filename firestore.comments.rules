@@ -1,9 +1,23 @@
-// Round 15.13 — PASTE these matches into the LIVE haiku-ooo Firestore rules.
+// Round 15.16 — PASTE these matches into the LIVE haiku-ooo Firestore rules, REPLACING the
+// round 15.13 comment snippet (sampleParent, poemParent, comments, commentTexts, commentPosters).
 // Do NOT deploy this file by itself. It is not the whole ruleset. Replacing production rules with
 // only this block would lock posting and reporting. The full rules live in the Firebase console
 // (project haiku-ooo, never tiago.ooo) and are not in this repo.
 //
+// If signedIn() or haikuShape() already exist once above this paste, delete the copies below and
+// keep the single definition. Two functions with the same name will not compile.
+//
 // Put the matches next to match /haikus/{id}, inside the same `match /databases/{database}/documents`.
+// The ruleset is already rules_version = '2' (reactions use `in`). duration.value needs that.
+//
+// WHY THIS PASTE: the 15.13 commentPosters update only allowed n == old.n + 1 and the same
+// windowStart. The client opens a new hour with n == 1 and windowStart == request.time. Live
+// rules deny that, so anyone who already left a comment (Tiago, 29 Oct) cannot post another
+// once the hour has passed. The reply transaction rolls back and the board never shows it.
+// This paste allows that hour reset (still 20s apart, 12 per hour) and checks it on the
+// comment create itself, so a client cannot skip the poster write.
+//
+// The composite index is ALREADY live (removed ASC, parentId ASC). Do not add another.
 //
 // Comments are flat replies under a top-level poem. They do NOT take a kanji seal: there is no `seq`
 // field and haikuMeta/counter is not touched. The parent keeps its number.
@@ -16,7 +30,7 @@
 // The 5-7-5 count cannot run inside rules (same as poems). Rules enforce the shape: exactly 3 non-empty
 // lines, each <= 80 chars, whole text <= 220. The client still runs checkHaiku() before the write.
 //
-// Composite index the first comments query will ask for (create it when the console offers the link):
+// Composite index (already created on the live haiku-ooo project; do not add a second one):
 //   collection comments: removed ASC, parentId ASC
 //
 // Reactions are not stored on comments in this round. Reporting uses the subcollection below.
@@ -34,6 +48,34 @@
         && get(/databases/$(database)/documents/haikus/$(request.resource.data.parentId)).data.seq == request.resource.data.parentSeq
         && get(/databases/$(database)/documents/haikus/$(request.resource.data.parentId)).data.removed == false;
     }
+    function posterDoc() {
+      return /databases/$(database)/documents/commentPosters/$(request.auth.uid);
+    }
+    // First comment, or a new hour: poster n is 1 and both stamps are request.time.
+    function posterFresh() {
+      return existsAfter(posterDoc())
+        && getAfter(posterDoc()).data.n == 1
+        && getAfter(posterDoc()).data.last == request.time
+        && getAfter(posterDoc()).data.windowStart == request.time
+        && (
+          !exists(posterDoc())
+          || (
+            request.time >= get(posterDoc()).data.windowStart + duration.value(1, 'h')
+            && request.time >= get(posterDoc()).data.last + duration.value(20, 's')
+          )
+        );
+    }
+    // Another comment in the same hour: n bumps by 1, windowStart stays, at least 20s later.
+    function posterBump() {
+      return exists(posterDoc())
+        && existsAfter(posterDoc())
+        && getAfter(posterDoc()).data.n == get(posterDoc()).data.n + 1
+        && getAfter(posterDoc()).data.n <= 12
+        && getAfter(posterDoc()).data.last == request.time
+        && getAfter(posterDoc()).data.windowStart == get(posterDoc()).data.windowStart
+        && request.time < get(posterDoc()).data.windowStart + duration.value(1, 'h')
+        && request.time >= get(posterDoc()).data.last + duration.value(20, 's');
+    }
 
     match /comments/{id} {
       allow read: if resource.data.removed == false;
@@ -49,7 +91,8 @@
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.createdAt == request.time
         && request.resource.data.reports == 0 && request.resource.data.removed == false
-        && request.resource.data.hash is string && request.resource.data.hash.size() == 64;
+        && request.resource.data.hash is string && request.resource.data.hash.size() == 64
+        && (posterFresh() || posterBump());
       allow update: if signedIn()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['reports', 'removed'])
         && request.resource.data.reports == resource.data.reports + 1
@@ -88,7 +131,19 @@
         && request.resource.data.keys().hasOnly(['last', 'windowStart', 'n'])
         && request.resource.data.last == request.time
         && request.resource.data.n is int && request.resource.data.n > 0 && request.resource.data.n <= 12
-        && request.resource.data.n == resource.data.n + 1
-        && request.resource.data.windowStart == resource.data.windowStart;
+        && (
+          (
+            request.resource.data.n == resource.data.n + 1
+            && request.resource.data.windowStart == resource.data.windowStart
+            && request.time < resource.data.windowStart + duration.value(1, 'h')
+            && request.time >= resource.data.last + duration.value(20, 's')
+          )
+          || (
+            request.resource.data.n == 1
+            && request.resource.data.windowStart == request.time
+            && request.time >= resource.data.windowStart + duration.value(1, 'h')
+            && request.time >= resource.data.last + duration.value(20, 's')
+          )
+        );
       allow delete: if false;
     }

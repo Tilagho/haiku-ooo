@@ -1,5 +1,5 @@
 import { checkHaiku } from './haiku.js';
-import { createStore } from './store.js?v=15.14';
+import { createStore } from './store.js?v=15.16';
 import { ScrollView } from './scroll-view.js?v=15.13b';
 import { loadLibrary } from './scroll-engine2.js?v=15.13b';
 import SPRITES from './sprites6.js';
@@ -12,7 +12,7 @@ import { mountWind } from './wind.js?v=15.10j';
 import { mountScrollButton } from './scroll-button.js?v=15.13';
 import { sfx } from './sfx.js';
 import { mountNoren } from './noren.js?v=15.10j';   // round 15.10j (t237u): period flag gets two chichi, same as the other eight
-import { mountCompose } from './compose.js?v=15.13';
+import { mountCompose } from './compose.js?v=15.16';
 import { mountCredits } from './credits.js';
 import { springAnimate, SPRINGS, prefersReducedMotion } from './spring.js';
 import { mountReports } from './report.js?v=15.13';     // round 15.13: a comment (no seal) reports from a hold on the reply itself

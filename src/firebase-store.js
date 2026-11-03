@@ -17,8 +17,11 @@
 //                               NO seq. The parent's seal is unchanged. Flat only: parentId is a haiku or sample-XX.
 //   comments/{id}/reports/{uid}  one report per anonymous uid
 //   commentTexts/{sha256}      duplicate lock for comment text (separate from haikuTexts so the paste-in rules stay new)
-//   commentPosters/{uid}       the same 20s / 12-per-hour limit, counted on its own so poem rules can stay as they are
-//   Rules to paste: firestore.comments.rules (haiku-ooo only).
+//   commentPosters/{uid}       the same 20s / 12-per-hour limit, counted on its own so poem rules can stay as they are.
+//                              A new hour resets n to 1. The 15.13 paste rejected that update, so a phone that
+//                              had already commented could not post again. Rules to paste: firestore.comments.rules
+//                              (haiku-ooo only). Until that paste is live, a denied reset retries once as n+1 on
+//                              the old window (src/comment-rate.js).
 //
 // Numbers: poems #1..SEED.length are the built-in samples (src/seed.js, shown on every phone, never stored, never
 // reportable); the counter starts at SEED.length and each create is ONE transaction that bumps it and writes the poem with
@@ -32,6 +35,7 @@ import { checkHaiku } from './haiku.js';
 import { SEED } from './seed.js';
 import { TAKEDOWN_REPORTS, isReportable } from './moderation.js';
 import { emptyCounts, isKind, normalizeCounts } from './react-data.js?v=15.14';
+import { commentPosterPlan } from './comment-rate.js?v=15.16';
 
 export const SDK_VERSION = '10.14.1';        // Firebase JS SDK, official gstatic ESM build
 export const MIN_GAP_S = 20, PER_HOUR = 12;   // keep in sync with firestore.rules (tests/round15_6c.test.js checks)
@@ -195,26 +199,35 @@ export class FirestoreStore {
       if (poemLock.exists()) throw err('already posted', { reason: 'that haiku is already on the scroll', mine: true });
     } catch (e) { if (e.mine) throw e; }
     const ref = F.doc(F.collection(db, 'comments')), lock = F.doc(db, 'commentTexts', hash), poster = F.doc(db, 'commentPosters', uid);
-    for (let attempt = 0; ; attempt++) try {
-      await F.runTransaction(db, async tx => {
-        const [l, p] = [await tx.get(lock), await tx.get(poster)];
-        if (l.exists()) throw err('already posted', { reason: 'that haiku is already on the scroll', mine: true });
-        const now = Date.now(), pd = p.exists() ? p.data() : null, ms = t => t?.toMillis ? t.toMillis() : 0;
-        if (pd && now - ms(pd.last) < MIN_GAP_S * 1000) throw err('slow down', { reason: 'let the ink dry a moment, then try again', mine: true });
-        const fresh = !pd || now - ms(pd.windowStart) >= 3600e3;
-        if (!fresh && (pd.n || 0) >= PER_HOUR) throw err('rate', { reason: 'that is a lot of haiku. rest the brush a while', mine: true });
-        const T = F.serverTimestamp();
-        tx.set(ref, { parentId, parentSeq: seq, text: norm, author, uid, createdAt: T, reports: 0, removed: false, hash, comment: true });
-        tx.set(lock, { post: ref.id, uid });
-        tx.set(poster, fresh ? { last: T, windowStart: T, n: 1 } : { last: T, windowStart: pd.windowStart, n: (pd.n || 0) + 1 });
-      });
-      break;
-    } catch (e) {
-      if (e.mine) throw e;
-      if ((e.code === 'permission-denied' || e.code === 'aborted') && attempt < 5) { await new Promise(r => setTimeout(r, 120 + Math.random() * 280 * (attempt + 1))); continue; }
-      if (e.code === 'permission-denied') throw err('rejected', { reason: 'the scroll would not take that one. try again in a bit', cause: e });
-      throw err('offline', { ...OFFLINE, cause: e });
-    }
+    const commit = async legacy => {
+      let allowLegacy = false;
+      for (let attempt = 0; ; attempt++) try {
+        await F.runTransaction(db, async tx => {
+          const [l, p] = [await tx.get(lock), await tx.get(poster)];
+          if (l.exists()) throw err('already posted', { reason: 'that haiku is already on the scroll', mine: true });
+          const now = Date.now(), pd = p.exists() ? p.data() : null, ms = t => t?.toMillis ? t.toMillis() : 0;
+          const prev = pd ? { last: ms(pd.last), windowStart: ms(pd.windowStart), n: pd.n || 0 } : null;
+          const honest = commentPosterPlan(prev, now);
+          allowLegacy = !!(honest.ok && honest.freshWindow && prev && prev.n < PER_HOUR);
+          const plan = legacy ? commentPosterPlan(prev, now, { legacy: true }) : honest;
+          if (!plan.ok) throw err(plan.error, { reason: plan.reason, mine: true });
+          const T = F.serverTimestamp();
+          tx.set(ref, { parentId, parentSeq: seq, text: norm, author, uid, createdAt: T, reports: 0, removed: false, hash, comment: true });
+          tx.set(lock, { post: ref.id, uid });
+          tx.set(poster, { last: T, windowStart: plan.freshWindow ? T : pd.windowStart, n: plan.n });
+        });
+        return true;
+      } catch (e) {
+        if (e.mine) throw e;
+        if (e.code === 'aborted' && attempt < 5) { await new Promise(r => setTimeout(r, 120 + Math.random() * 280 * (attempt + 1))); continue; }
+        // 15.13 poster rules reject a new hour. The same window plus n+1 still passes, so one
+        // reply can land before the 15.16 paste. After that paste this shape is refused.
+        if (e.code === 'permission-denied' && !legacy && allowLegacy) return false;
+        if (e.code === 'permission-denied') throw err('rejected', { reason: 'the scroll would not take that one. try again in a bit', cause: e });
+        throw err('offline', { ...OFFLINE, cause: e });
+      }
+    };
+    if (!await commit(false) && !await commit(true)) throw err('rejected', { reason: 'the scroll would not take that one. try again in a bit' });
     return { id: ref.id, parentId, parentSeq: seq, text: norm, author, createdAt: Date.now(), comment: true };
   }
   async report(id, { reporter, comment = false } = {}) {      // (reporter = the device id the UI passes; here the anonymous uid counts instead)

@@ -105,6 +105,25 @@ body.ready #compose .sign { display: flex; }
 #compose .sign input { position: relative; z-index: 1; width: 100%; font: 400 max(16px, var(--nfs, var(--fs, 32px)))/1 var(--ui); color: var(--ink); padding: 3px 0 5px; text-align: center; text-shadow: none; letter-spacing: normal; }
 #compose .sign input::placeholder { color: #9c8662; opacity: 1; font-size: var(--phfs, 28px); font-family: var(--ui); font-weight: 400; letter-spacing: normal; text-shadow: none; }
 #compose .sign .nm.has input { color: transparent; text-shadow: none; caret-color: var(--ink); font-size: max(16px, var(--nfs, var(--fs, 32px))); }
+/* iOS Safari paints a yellow wash on contact autofill. The name the reader sees is the mirror (.nmm),
+   so the field itself stays clear: no yellow plate, no second black copy of the name over the brush. */
+#compose .sign input:-webkit-autofill,
+#compose .sign input:-webkit-autofill:hover,
+#compose .sign input:-webkit-autofill:focus,
+#compose .sign input:-webkit-autofill:active,
+#compose .sign input:autofill {
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--ink);
+  color: transparent;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+  box-shadow: 0 0 0 1000px transparent inset !important;
+  transition: background-color 99999s ease-out 0s;
+  animation: hb-autofill 0.01s;
+}
+@keyframes hb-autofill { from { opacity: 1; } to { opacity: 1; } }
 #compose .sign .nm .nmm { position: absolute; left: 50%; top: 3px; z-index: 1; transform: translateX(-50%); width: max-content; max-width: 100%; font: 400 var(--nfs, var(--fs, 32px))/1 var(--ui); color: var(--ink); white-space: pre; pointer-events: none; text-align: center; text-shadow: none; letter-spacing: normal; }
 #compose .sign .nm:not(.has) .nmm { display: none; }
 /* touch/kb: typed name kerns like poem mirrors; pretext uses its own smaller size */
